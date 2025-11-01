@@ -15,17 +15,25 @@
 ## 📁 项目结构
 
 ```bash
-├── Y_FFC.py              # 主要的网络实现（详细注释版本）
-├── Y_FFC_Net.py          # 网络结构显示工具（支持torchsummary/torchinfo）
-├── ffc.py                # FFC（Fourier Feature Convolution）模块
-├── train.py              # 训练脚本（带进度条和中文支持）
-├── simple_test.py        # 简单测试脚本
-├── requirements.txt      # 项目依赖
-├── README.md            # 项目说明（本文件）
-├── PROJECT_OVERVIEW.md  # 项目概览
-└── data/                # 数据目录
-    ├── inputs/          # 输入图像（高反射条纹）
-    └── targets/         # 目标图像（漫反射条纹）
+├── Y_FFC.py                    # 主要的网络实现（详细注释版本）
+├── Y_FFC_Net.py                # 网络结构显示工具（支持torchsummary/torchinfo）
+├── ffc.py                      # FFC（Fourier Feature Convolution）模块
+├── train.py                    # 训练脚本（带进度条和中文支持）
+├── inference.py                # ⭐ 单张图像推理脚本
+├── batch_inference.py          # ⭐ 批量图像推理脚本
+├── inference_example.py        # 推理代码示例
+├── test_inference.py           # 推理功能测试脚本
+├── demo_inference.py           # 一键演示脚本
+├── simple_test.py              # 简单测试脚本
+├── requirements.txt            # 项目依赖
+├── README.md                   # 项目说明（本文件）
+├── INFERENCE_GUIDE.md          # 推理详细使用指南
+├── QUICK_START_INFERENCE.md    # 推理快速开始指南
+├── PROJECT_OVERVIEW.md         # 项目概览
+├── best_model.pth              # 训练好的最佳模型（训练后生成）
+└── data/                       # 数据目录
+    ├── inputs/                 # 输入图像（高反射条纹）
+    └── targets/                # 目标图像（漫反射条纹）
 ```
 
 ## 项目功能说明
@@ -93,7 +101,7 @@ Y-FFC网络采用创新的Y形架构，结合了U-Net的编码器-解码器结�
 
 ### 数据流动过程
 
-```
+```bash
 输入图像 [B,1,H,W] 
     ↓
 编码器 (VGG16-BN) → 多尺度特征 [x_bb_1, x_bb_2, x_bb_3, x_bb_4, x_c]
@@ -186,17 +194,20 @@ data/
 ### 环境设置
 
 1. **克隆仓库:**
+
    ```bash
    git clone <repository-url>
    cd Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces
    ```
 
 2. **安装依赖:**
+
    ```bash
    pip install -r requirements.txt
    ```
 
 3. **安装可视化工具（可选）:**
+
    ```bash
    pip install torchinfo torchsummary
    ```
@@ -229,6 +240,7 @@ python train.py
 ```
 
 训练过程中会显示：
+
 - 实时进度条
 - 训练/验证损失
 - 模型性能指标
@@ -239,6 +251,50 @@ python train.py
 ```bash
 python simple_test.py
 ```
+
+#### 5. 使用训练好的模型进行推理
+
+训练完成后，你可以使用训练好的模型对新图像进行高反光去除：
+
+##### 单张图像推理
+
+```bash
+# 基本用法（使用默认的 best_model.pth）
+python inference.py --input your_image.png
+
+# 指定模型路径
+python inference.py --input your_image.png --model best_model.pth
+
+# 指定输出目录
+python inference.py --input your_image.png --output my_results
+
+# 使用CPU运行
+python inference.py --input your_image.png --device cpu
+```
+
+##### 批量图像推理
+
+```bash
+# 处理整个目录
+python batch_inference.py --input images_folder
+
+# 指定输出目录
+python batch_inference.py --input images_folder --output processed_results
+
+# 使用特定模型
+python batch_inference.py --input images_folder --model my_model.pth
+```
+
+##### 输出文件说明
+
+推理完成后会生成以下文件：
+
+- `*_diffuse.png` - ⭐ **主要结果**：去除高反光后的漫反射图像
+- `*_specular.png` - 提取的镜面反射（高反光部分）
+- `*_gradient.png` - 梯度图像（用于内部处理）
+- `*_visualization.png` - 完整的四宫格对比图
+
+详细使用说明请参考：[INFERENCE_GUIDE.md](INFERENCE_GUIDE.md)
 
 ## 📊 输出说明
 
@@ -305,6 +361,7 @@ python simple_test.py
 ### 不同场景的推荐配置
 
 #### 🚀 **高性能GPU (RTX 4090, A100等)**
+
 ```python
 # 训练参数
 epochs = 100
@@ -319,6 +376,7 @@ ratio_gout = 0.6
 ```
 
 #### 💻 **中等GPU (RTX 3060, RTX 4060等)**
+
 ```python
 # 训练参数
 epochs = 50
@@ -333,6 +391,7 @@ ratio_gout = 0.5
 ```
 
 #### 📱 **低端GPU或显存不足 (GTX 1660, RTX 3050等)**
+
 ```python
 # 训练参数
 epochs = 30
@@ -347,6 +406,7 @@ ratio_gout = 0.4
 ```
 
 #### 🖥️ **CPU训练 (仅用于测试)**
+
 ```python
 # 训练参数
 epochs = 10
@@ -363,24 +423,28 @@ ratio_gout = 0.3
 ### 参数调优建议
 
 #### 提高精度
+
 - 增加 `epochs` 和 `out_channels_branch`
 - 调整学习率调度策略
 - 使用更大的 `image_size`（如果显存允许）
 - 增加 `ratio_gin` 和 `ratio_gout`
 
 #### 加快训练
+
 - 增加 `batch_size`（如果显存允许）
 - 减小 `image_size`
 - 减少 `out_channels_branch`
 - 使用GPU加速
 
 #### 防止过拟合
+
 - 增加 `weight_decay`
 - 使用数据增强
 - 早停机制
 - 减少模型复杂度
 
 #### 平衡精度与速度
+
 - 根据具体应用场景调整参数组合
 - 优先保证训练稳定性
 - 监控验证损失变化
@@ -390,7 +454,6 @@ ratio_gout = 0.3
 ### 复合损失函数
 
 网络使用多分支复合损失函数，确保各分量都能得到有效训练：
-
 **总损失 = L_d + L_s + L_g**
 
 其中：
@@ -404,8 +467,8 @@ ratio_gout = 0.3
 | 损失类型 | 公式 | 作用 | 权重 |
 |---------|------|------|------|
 | **SSIM损失** | `1 - SSIM(pred, gt)` | 保持结构相似性 | 所有分支 |
-| **MAE损失** | `|pred - gt|` | 像素级精度 | 仅漫反射分支 |
-| **统计损失** | `|μ_pred - μ_gt| + |σ_pred - σ_gt|` | 保持统计特性 | 漫反射+镜面反射 |
+| **MAE损失** | pred - gt| 像素级精度 | 仅漫反射分支 |
+| **统计损失** | μ_pred - μ_gt + σ_pred - σ_gt | 保持统计特性 | 漫反射+镜面反射 |
 
 ### 性能指标
 
@@ -496,6 +559,7 @@ total_loss = ld + ls + lg + phase_loss
 ## 📝 更新日志
 
 ### v2.0 (最新) - 全面优化版本
+
 - ✅ **修复Y_FFC_Net.py**：修复bug，添加命令行接口和模型结构显示
 - ✅ **增强训练体验**：添加tqdm进度条，支持中文显示，优化可视化
 - ✅ **完善文档**：大幅扩展README，添加详细的参数配置说明
@@ -503,6 +567,7 @@ total_loss = ld + ls + lg + phase_loss
 - ✅ **参数调优指南**：提供不同硬件配置的推荐参数设置
 
 ### v1.0 - 基础实现
+
 - ✅ **Y-FFC网络**：实现完整的Y形快速傅立叶卷积网络
 - ✅ **反射分离**：从高反射条纹中分离漫反射和镜面反射分量
 - ✅ **梯度预测**：预测梯度信息，辅助3D重建

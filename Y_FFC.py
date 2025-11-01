@@ -6,6 +6,8 @@ from torchvision import models  # 预训练模型
 import os  # 操作系统接口
 from PIL import Image  # 图像处理
 import numpy as np  # 数值计算
+import argparse  # 命令行参数解析
+import sys  # 系统相关功能
 
 # 导入FFC（Fourier Feature Convolution）模块
 from ffc import *
@@ -900,52 +902,203 @@ class FringeDataset(Dataset):
         
         return input_img, target_img, gt_specular, gt_gradient
 
-if __name__ == '__main__':
+# ==================== 工具函数 ====================
+def display_basic_model_info(model):
     """
-    模型测试代码：验证Y-FFC网络的正确性
+    显示基本的模型信息（不需要额外库）
+    
+    参数:
+        model: 要显示的模型
+    """
+    print("\n" + "=" * 60)
+    print("模型层次结构")
+    print("=" * 60)
+    
+    # 显示主要模块
+    print("\n【主要模块】")
+    for name, module in model.named_children():
+        print(f"  • {name}: {module.__class__.__name__}")
+    
+    # 显示各模块的子模块（第二层）
+    print("\n【详细结构】")
+    for name, module in model.named_children():
+        print(f"\n{name} ({module.__class__.__name__}):")
+        for sub_name, sub_module in module.named_children():
+            print(f"  └─ {sub_name}: {sub_module.__class__.__name__}")
+    
+    # 显示参数信息
+    print("\n" + "=" * 60)
+    print("模型参数信息")
+    print("=" * 60)
+    
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    
+    print(f"总参数数量: {total_params:,}")
+    print(f"可训练参数: {trainable_params:,}")
+    print(f"模型大小: {total_params * 4 / 1024 / 1024:.2f} MB (假设float32)")
+    
+    # 按模块显示参数量
+    print("\n【各模块参数量】")
+    for name, module in model.named_children():
+        module_params = sum(p.numel() for p in module.parameters())
+        percentage = (module_params / total_params * 100) if total_params > 0 else 0
+        print(f"  • {name}: {module_params:,} ({percentage:.1f}%)")
+
+def display_model_summary(model, input_size, device='cpu'):
+    """
+    显示模型结构摘要，优先使用 torchinfo，回退到 torchsummary，最后使用基本信息显示
+    
+    参数:
+        model: 要显示的模型
+        input_size: 输入数据的形状，格式为 (batch_size, channels, height, width)
+        device: 运行设备，'cpu' 或 'cuda'
+    
+    返回:
+        bool: 成功返回 True，失败返回 False
+    """
+    try:
+        from torchinfo import summary
+        print("使用 torchinfo 显示详细模型结构...")
+        print("=" * 60)
+        summary(model, input_size=input_size, device=device, verbose=1)
+        return True
+    except ImportError:
+        try:
+            from torchsummary import summary
+            print("使用 torchsummary 显示详细模型结构...")
+            print("=" * 60)
+            summary(model, input_size[1:], device=device)  # torchsummary 不需要 batch 维度
+            return True
+        except ImportError:
+            print("\n⚠️  提示: 未安装 torchinfo 或 torchsummary")
+            print("   建议安装以获得更详细的模型结构信息:")
+            print("   pip install torchinfo")
+            print("\n   现在将显示基本模型信息...\n")
+            display_basic_model_info(model)
+            return True
+
+def main():
+    """
+    主函数：解析命令行参数并显示模型结构
     
     功能：
-    1. 创建YFFC模型实例
-    2. 生成测试输入数据
-    3. 执行前向传播
-    4. 验证输出形状和网络完整性
+    1. 解析命令行参数（图像大小、批次大小、设备等）
+    2. 创建 Y-FFC 模型实例
+    3. 测试模型前向传播
+    4. 显示模型结构摘要（可选）
+    5. 显示参数统计（可选）
     """
-    print("=" * 50)
-    print("Y-FFC网络模型测试")
-    print("=" * 50)
+    parser = argparse.ArgumentParser(description='Y-FFC网络模型结构显示工具')
+    parser.add_argument('--input_channels', type=int, default=1, 
+                       help='输入图像通道数 (默认: 1)')
+    parser.add_argument('--image_size', type=int, default=512, 
+                       help='输入图像尺寸 (默认: 512)')
+    parser.add_argument('--batch_size', type=int, default=1, 
+                       help='批次大小 (默认: 1)')
+    parser.add_argument('--device', type=str, default='cpu', 
+                       choices=['cpu', 'cuda'], help='运行设备 (默认: cpu)')
+    parser.add_argument('--show_params', action='store_true', default=True,
+                       help='显示详细参数统计（默认开启，使用 --no-show_params 关闭）')
+    parser.add_argument('--no-show_params', action='store_true',
+                       help='不显示参数统计')
+    parser.add_argument('--show_summary', action='store_true', default=True,
+                       help='显示模型结构摘要（默认开启，使用 --no-show_summary 关闭）')
+    parser.add_argument('--no-show_summary', action='store_true',
+                       help='不显示模型结构摘要')
     
-    # 创建模型实例
-    model = YFFC()
-    print("✓ YFFC模型创建成功")
+    args = parser.parse_args()
     
-    # 设置计算设备（优先使用CUDA）
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    # 处理 --no-* 参数
+    if args.no_show_params:
+        args.show_params = False
+    if args.no_show_summary:
+        args.show_summary = False
+    
+    print("=" * 60)
+    print("Y-FFC网络模型结构显示")
+    print("=" * 60)
+    print(f"输入通道数: {args.input_channels}")
+    print(f"图像尺寸: {args.image_size}x{args.image_size}")
+    print(f"批次大小: {args.batch_size}")
+    print(f"运行设备: {args.device}")
+    print("=" * 60)
+    
+    # 创建模型
+    try:
+        model = YFFC()
+        print("✓ Y-FFC模型创建成功")
+    except Exception as e:
+        print(f"❌ 模型创建失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return
+    
+    # 设置设备
+    device = torch.device(args.device)
+    if args.device == 'cuda' and not torch.cuda.is_available():
+        print("警告: CUDA不可用，切换到CPU")
+        device = torch.device('cpu')
+    
     model.to(device)
     print(f"✓ 模型已移动到设备: {device}")
     
-    # 生成测试输入数据：批次大小2，单通道，512x512分辨率
-    test_input = torch.randn(2, 1, 512, 512).to(device)
+    # 准备输入数据
+    input_size = (args.batch_size, args.input_channels, args.image_size, args.image_size)
+    test_input = torch.randn(input_size).to(device)
     print(f"✓ 测试输入数据生成成功，形状: {test_input.shape}")
     
+    # 测试前向传播
     try:
-        # 执行前向传播（不计算梯度）
         with torch.no_grad():
             output = model(test_input)
-            
             print("\n" + "=" * 30)
-            print("模型测试成功!")
+            print("模型前向传播测试成功!")
             print("=" * 30)
             print(f"输入形状: {test_input.shape}")
             print(f"漫反射输出形状: {output['r'].shape}")
             print(f"梯度输出形状: {output['g'].shape}")
             print(f"镜面反射输出形状: {output['b'].shape}")
             
-            # 验证输出形状的一致性
+            # 验证输出形状
             assert output['r'].shape == test_input.shape, "漫反射输出形状不匹配"
             assert output['g'].shape == test_input.shape, "梯度输出形状不匹配"
             assert output['b'].shape == test_input.shape, "镜面反射输出形状不匹配"
             print("✓ 所有输出形状验证通过")
-            
     except Exception as e:
         print(f"\n❌ 模型测试失败: {e}")
-        print("请检查网络架构和FFC模块是否正确导入") 
+        import traceback
+        traceback.print_exc()
+        return
+    
+    # 显示参数统计
+    if args.show_params:
+        total_params = sum(p.numel() for p in model.parameters())
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        print(f"\n" + "=" * 60)
+        print("参数统计")
+        print("=" * 60)
+        print(f"总参数数量: {total_params:,}")
+        print(f"可训练参数: {trainable_params:,}")
+        print(f"模型大小: {total_params * 4 / 1024 / 1024:.2f} MB (假设float32)")
+    
+    # 显示模型结构
+    if args.show_summary:
+        print("\n" + "=" * 60)
+        print("模型结构详情")
+        print("=" * 60)
+        display_model_summary(model, input_size, device)
+    
+    print("\n" + "=" * 60)
+    print("✅ 模型分析完成!")
+    print("=" * 60)
+    
+    # 提示信息
+    if not args.show_summary and not args.show_params:
+        print("\n💡 提示: 使用以下参数获取更多信息:")
+        print("   --show_params   : 显示参数统计")
+        print("   --show_summary  : 显示模型结构")
+        print("   或直接运行 'python Y_FFC.py' 查看所有信息")
+
+if __name__ == '__main__':
+    main() 
