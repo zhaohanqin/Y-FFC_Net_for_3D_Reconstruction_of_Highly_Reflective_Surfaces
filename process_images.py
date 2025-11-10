@@ -1,7 +1,23 @@
 """
 Y-FFC Net 图像处理脚本 - 去除高反光
-支持单张图像和批量处理，无需命令行参数
-直接在 main() 函数的配置区修改路径即可使用
+
+功能特点：
+    - 支持单张图像和批量处理
+    - 保持原始图像尺寸，输出与输入尺寸完全一致
+    - 无需命令行参数，直接在 main() 函数配置区修改路径
+    - 自动生成漫反射、镜面反射、梯度和可视化对比图
+
+使用方法：
+    1. 打开本文件，找到 main() 函数的配置区
+    2. 修改 INPUT_PATH 为你的图像路径或文件夹路径
+    3. 修改 MODEL_PATH 为训练好的模型路径
+    4. 运行: python process_images.py
+
+输出说明：
+    - *_diffuse.png   : 去除高反光后的漫反射图像（主要结果）
+    - *_specular.png  : 提取的镜面反射分量（高反光部分）
+    - *_gradient.png  : 梯度图像
+    - *_visualization.png : 完整可视化对比图
 """
 
 import torch
@@ -16,17 +32,23 @@ from tqdm import tqdm
 from Y_FFC import YFFC
 
 
-def load_image(image_path, target_size=512):
+def load_image(image_path, target_size=None):
     """
-    加载并预处理图像
+    加载并预处理图像（保持原始尺寸）
     
     参数:
         image_path: 图像路径
-        target_size: 目标尺寸，默认512x512
+        target_size: 目标尺寸（可选）
+            - None: 保持原始尺寸（推荐用于推理）
+            - int: resize到正方形，如512表示512x512
+            - tuple: resize到指定尺寸，如(768, 1024)表示高768宽1024
     
     返回:
         image_tensor: 预处理后的tensor [1, 1, H, W]
         original_size: 原始图像尺寸 (width, height)
+    
+    注意:
+        推理时建议使用 target_size=None 保持原始尺寸，以获得最佳效果
     """
     # 读取图像
     image = Image.open(image_path)
@@ -38,21 +60,14 @@ def load_image(image_path, target_size=512):
     if image.mode != 'L':
         image = image.convert('L')
     
-    # 调整大小（保持长宽比）
+    # 可选：调整大小
     if target_size is not None:
-        # 计算缩放比例，保持长宽比
-        width, height = image.size
-        scale = target_size / max(width, height)
-        new_width = int(width * scale)
-        new_height = int(height * scale)
-        image = image.resize((new_width, new_height), Image.LANCZOS)
-        
-        # 创建目标大小的画布，将图像居中放置
-        canvas = Image.new('L', (target_size, target_size), 0)
-        offset_x = (target_size - new_width) // 2
-        offset_y = (target_size - new_height) // 2
-        canvas.paste(image, (offset_x, offset_y))
-        image = canvas
+        if isinstance(target_size, int):
+            # 正方形resize
+            image = image.resize((target_size, target_size), Image.LANCZOS)
+        elif isinstance(target_size, tuple) and len(target_size) == 2:
+            # 指定尺寸resize (width, height)
+            image = image.resize(target_size, Image.LANCZOS)
     
     # 转换为numpy数组并归一化到[0, 1]
     image_array = np.array(image).astype(np.float32) / 255.0
@@ -63,14 +78,16 @@ def load_image(image_path, target_size=512):
     return image_tensor, original_size
 
 
-def save_result(tensor, save_path, original_size=None):
+def save_result(tensor, save_path):
     """
     保存tensor为图像文件
     
     参数:
         tensor: 图像tensor [1, 1, H, W]
         save_path: 保存路径
-        original_size: 如果提供，将结果调整回原始尺寸 (width, height)
+    
+    注意:
+        输出图像尺寸与输入tensor尺寸一致，不进行resize
     """
     # 转换为numpy数组
     image_array = tensor.squeeze().cpu().numpy()
@@ -81,14 +98,8 @@ def save_result(tensor, save_path, original_size=None):
     # 转换为0-255
     image_array = (image_array * 255).astype(np.uint8)
     
-    # 转换为PIL图像
+    # 转换为PIL图像并保存
     image = Image.fromarray(image_array)
-    
-    # 如果提供了原始尺寸，调整回原始大小
-    if original_size is not None:
-        image = image.resize(original_size, Image.LANCZOS)
-    
-    # 保存
     image.save(save_path)
 
 
@@ -169,16 +180,13 @@ def process_single_image(model, image_path, output_dir, device, show_visualizati
         # 生成输出文件名
         base_name = os.path.splitext(os.path.basename(image_path))[0]
         
-        # 保存结果
+        # 保存结果（输出尺寸与输入一致）
         save_result(diffuse_output, 
-                    os.path.join(output_dir, f'{base_name}_diffuse.png'),
-                    original_size)
+                    os.path.join(output_dir, f'{base_name}_diffuse.png'))
         save_result(specular_output, 
-                    os.path.join(output_dir, f'{base_name}_specular.png'),
-                    original_size)
+                    os.path.join(output_dir, f'{base_name}_specular.png'))
         save_result(gradient_output, 
-                    os.path.join(output_dir, f'{base_name}_gradient.png'),
-                    original_size)
+                    os.path.join(output_dir, f'{base_name}_gradient.png'))
         
         # 可视化结果
         if show_visualization:

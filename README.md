@@ -449,6 +449,369 @@ ratio_gout = 0.3
 - 优先保证训练稳定性
 - 监控验证损失变化
 
+---
+
+## 🎛️ 训练参数完整配置指南
+
+`train.py` 提供了 **30+ 个可配置参数**，涵盖训练的各个方面。所有参数都集中在配置区域（第424-517行），无需修改核心代码即可灵活调整。
+
+### 📋 参数分类总览
+
+#### 1️⃣ 基础训练参数
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `EPOCHS` | int | 50 | 训练轮数 |
+| `LEARNING_RATE` | float | 0.001 | 初始学习率 |
+| `BATCH_SIZE` | int | 1 | 批次大小 |
+| `GRADIENT_ACCUMULATION_STEPS` | int | 4 | 梯度累积步数 |
+
+**显存与配置关系**：
+- 4GB显存：`BATCH_SIZE=1`, `IMAGE_RESIZE=512`
+- 8GB显存：`BATCH_SIZE=2`, `IMAGE_RESIZE=768`
+- 12GB+显存：`BATCH_SIZE=4`, `IMAGE_RESIZE=1024`
+
+#### 2️⃣ 优化器参数
+
+| 参数 | 类型 | 默认值 | 可选值 |
+|------|------|--------|--------|
+| `OPTIMIZER_TYPE` | str | 'adam' | 'adam', 'sgd', 'adamw' |
+| `ADAM_BETAS` | tuple | (0.9, 0.999) | - |
+| `ADAM_EPS` | float | 1e-8 | - |
+| `ADAM_WEIGHT_DECAY` | float | 0.0 | 0-0.01 |
+| `SGD_MOMENTUM` | float | 0.9 | 0.9-0.99 |
+| `SGD_WEIGHT_DECAY` | float | 0.0001 | - |
+
+**优化器选择建议**：
+- **Adam**：自适应学习率，适合大多数任务（推荐）
+- **AdamW**：Adam + 权重衰减，更好的正则化
+- **SGD**：传统方法，需要手动调整学习率
+
+#### 3️⃣ 学习率调度器参数
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `SCHEDULER_TYPE` | str | 'step' | 调度器类型 |
+| `STEP_SIZE` | int | 30 | StepLR步长 |
+| `GAMMA` | float | 0.5 | 衰减系数 |
+| `T_MAX` | int | 50 | 余弦周期 |
+| `ETA_MIN` | float | 1e-6 | 最小学习率 |
+| `PATIENCE` | int | 10 | Plateau容忍轮数 |
+| `PLATEAU_FACTOR` | float | 0.5 | Plateau衰减系数 |
+
+**调度器类型说明**：
+- **step**：阶梯式衰减，每隔`STEP_SIZE`轮降低学习率
+- **cosine**：余弦退火，学习率按余弦曲线变化
+- **plateau**：自适应衰减，验证损失不下降时降低学习率
+- **exponential**：指数衰减，每轮按指数衰减
+
+#### 4️⃣ 损失函数参数
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `SSIM_WINDOW_SIZE` | int | 11 | SSIM窗口大小（必须是奇数） |
+| `SSIM_SIGMA` | float | 1.5 | SSIM高斯标准差 |
+| `LOSS_WEIGHT_DIFFUSE` | float | 1.0 | 漫反射损失权重 |
+| `LOSS_WEIGHT_SPECULAR` | float | 1.0 | 镜面反射损失权重 |
+| `LOSS_WEIGHT_GRADIENT` | float | 1.0 | 梯度损失权重 |
+
+**损失权重调优**：
+- 漫反射效果不好 → 增大 `LOSS_WEIGHT_DIFFUSE`
+- 镜面反射分离不好 → 增大 `LOSS_WEIGHT_SPECULAR`
+- 梯度是辅助监督 → 可适当降低 `LOSS_WEIGHT_GRADIENT`
+
+#### 5️⃣ 图像和数据参数
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `IMAGE_RESIZE` | int/tuple/None | (1024, 768) | 图像尺寸 |
+| `TRAIN_SPLIT_RATIO` | float | 0.8 | 训练集比例 |
+| `NUM_WORKERS` | int | 0 | 数据加载进程数 |
+| `PIN_MEMORY` | bool | True | 是否固定内存 |
+| `SHUFFLE_TRAIN` | bool | True | 是否打乱数据 |
+
+**图像尺寸设置**：
+- `512`：正方形512×512
+- `(768, 1024)`：矩形，高768宽1024
+- `None`：使用原始尺寸
+
+#### 6️⃣ 训练策略参数
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `USE_AMP` | bool | True | 混合精度训练 |
+| `USE_GRAD_CLIP` | bool | False | 梯度裁剪 |
+| `GRAD_CLIP_VALUE` | float | 1.0 | 梯度裁剪阈值 |
+| `USE_EARLY_STOPPING` | bool | False | 早停策略 |
+| `EARLY_STOPPING_PATIENCE` | int | 20 | 早停容忍轮数 |
+
+**训练策略建议**：
+- **混合精度训练**：节省显存，加速训练（推荐开启）
+- **梯度裁剪**：防止梯度爆炸，训练不稳定时开启
+- **早停策略**：验证损失不下降时自动停止，防止过拟合
+
+#### 7️⃣ 模型保存和可视化
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `MODEL_SAVE_PATH` | str | 'best_model.pth' | 最佳模型保存路径 |
+| `CHECKPOINT_DIR` | str | 'checkpoints' | 检查点目录 |
+| `SAVE_EVERY_N_EPOCHS` | int | 10 | 检查点保存频率 |
+| `VISUALIZATION_SAMPLES` | int | 3 | 可视化样本数 |
+
+### 🎯 推荐配置方案
+
+#### 🚀 快速开始配置（4GB显存）
+
+```python
+EPOCHS = 50
+LEARNING_RATE = 0.001
+BATCH_SIZE = 1
+GRADIENT_ACCUMULATION_STEPS = 4
+IMAGE_RESIZE = 512
+OPTIMIZER_TYPE = 'adam'
+SCHEDULER_TYPE = 'step'
+USE_AMP = True
+```
+
+#### 💪 高性能配置（12GB+显存）
+
+```python
+EPOCHS = 100
+LEARNING_RATE = 0.001
+BATCH_SIZE = 4
+GRADIENT_ACCUMULATION_STEPS = 2
+IMAGE_RESIZE = 1024
+OPTIMIZER_TYPE = 'adamw'
+ADAM_WEIGHT_DECAY = 0.01
+SCHEDULER_TYPE = 'cosine'
+USE_AMP = True
+USE_GRAD_CLIP = True
+GRAD_CLIP_VALUE = 1.0
+```
+
+#### 🎨 精细调优配置
+
+```python
+EPOCHS = 150
+LEARNING_RATE = 0.0005
+BATCH_SIZE = 2
+GRADIENT_ACCUMULATION_STEPS = 4
+IMAGE_RESIZE = (768, 1024)
+OPTIMIZER_TYPE = 'adamw'
+ADAM_WEIGHT_DECAY = 0.01
+SCHEDULER_TYPE = 'plateau'
+PATIENCE = 15
+LOSS_WEIGHT_DIFFUSE = 1.5  # 增强漫反射
+LOSS_WEIGHT_SPECULAR = 1.0
+LOSS_WEIGHT_GRADIENT = 0.5  # 降低梯度权重
+USE_AMP = True
+USE_GRAD_CLIP = True
+USE_EARLY_STOPPING = True
+EARLY_STOPPING_PATIENCE = 30
+SAVE_EVERY_N_EPOCHS = 10
+```
+
+### 📊 调优流程建议
+
+#### 第一阶段：快速验证（1-2小时）
+
+```python
+# 使用小图像和少量轮数快速验证
+IMAGE_RESIZE = 512
+EPOCHS = 20
+BATCH_SIZE = 1
+```
+
+**目标**：验证模型能否正常训练，损失是否下降
+
+#### 第二阶段：参数搜索（半天）
+
+```python
+# 尝试不同的学习率和优化器
+LEARNING_RATE = [0.0001, 0.0005, 0.001, 0.005]
+OPTIMIZER_TYPE = ['adam', 'adamw']
+SCHEDULER_TYPE = ['step', 'cosine', 'plateau']
+```
+
+**目标**：找到最佳的学习率和优化器组合
+
+#### 第三阶段：精细调优（1-2天）
+
+```python
+# 增大图像尺寸，增加训练轮数
+IMAGE_RESIZE = 1024
+EPOCHS = 100
+# 调整损失权重
+LOSS_WEIGHT_DIFFUSE = 1.5
+LOSS_WEIGHT_SPECULAR = 1.0
+LOSS_WEIGHT_GRADIENT = 0.5
+```
+
+**目标**：优化各分支的效果，提高整体性能
+
+#### 第四阶段：最终训练（2-3天）
+
+```python
+# 使用最佳参数组合完整训练
+EPOCHS = 150-200
+USE_EARLY_STOPPING = True
+SAVE_EVERY_N_EPOCHS = 10
+```
+
+**目标**：获得最佳模型，定期保存检查点
+
+### ⚠️ 常见问题与解决方案
+
+#### 问题1：显存不足（OOM）
+
+**症状**：训练时出现 CUDA out of memory 错误
+
+**解决方案**：
+```python
+# 方案1：减小图像尺寸
+IMAGE_RESIZE = 512  # 或更小
+
+# 方案2：减小批次大小
+BATCH_SIZE = 1
+
+# 方案3：启用混合精度训练
+USE_AMP = True
+
+# 方案4：增加梯度累积
+GRADIENT_ACCUMULATION_STEPS = 8
+```
+
+#### 问题2：训练不稳定
+
+**症状**：损失震荡，不收敛
+
+**解决方案**：
+```python
+# 方案1：降低学习率
+LEARNING_RATE = 0.0005  # 或更小
+
+# 方案2：启用梯度裁剪
+USE_GRAD_CLIP = True
+GRAD_CLIP_VALUE = 1.0
+
+# 方案3：增大批次大小
+BATCH_SIZE = 4  # 或使用梯度累积
+GRADIENT_ACCUMULATION_STEPS = 4
+```
+
+#### 问题3：过拟合
+
+**症状**：训练损失持续下降，验证损失上升
+
+**解决方案**：
+```python
+# 方案1：增大权重衰减
+ADAM_WEIGHT_DECAY = 0.01
+
+# 方案2：启用早停
+USE_EARLY_STOPPING = True
+EARLY_STOPPING_PATIENCE = 20
+
+# 方案3：使用AdamW优化器
+OPTIMIZER_TYPE = 'adamw'
+```
+
+#### 问题4：欠拟合
+
+**症状**：训练和验证损失都很高
+
+**解决方案**：
+```python
+# 方案1：增加训练轮数
+EPOCHS = 150
+
+# 方案2：提高学习率
+LEARNING_RATE = 0.001
+
+# 方案3：减小正则化
+ADAM_WEIGHT_DECAY = 0.0
+```
+
+#### 问题5：某个分支效果不好
+
+**症状**：漫反射或镜面反射分离效果差
+
+**解决方案**：
+```python
+# 调整损失权重
+LOSS_WEIGHT_DIFFUSE = 1.5   # 增强漫反射
+LOSS_WEIGHT_SPECULAR = 1.2  # 增强镜面反射
+LOSS_WEIGHT_GRADIENT = 0.5  # 降低梯度权重
+```
+
+### 💡 高级技巧
+
+#### 技巧1：学习率预热
+
+```python
+# 使用较小的初始学习率，逐渐增大
+LEARNING_RATE = 0.0001  # 前10轮
+# 然后手动调整为 0.001
+```
+
+#### 技巧2：周期性保存
+
+```python
+# 定期保存检查点，方便恢复训练
+SAVE_EVERY_N_EPOCHS = 10
+CHECKPOINT_DIR = 'checkpoints'
+```
+
+#### 技巧3：多阶段训练
+
+```python
+# 阶段1：快速收敛
+LEARNING_RATE = 0.001
+SCHEDULER_TYPE = 'step'
+
+# 阶段2：精细调优
+LEARNING_RATE = 0.0001
+SCHEDULER_TYPE = 'plateau'
+```
+
+#### 技巧4：损失权重动态调整
+
+```python
+# 初期：平衡各分支
+LOSS_WEIGHT_DIFFUSE = 1.0
+LOSS_WEIGHT_SPECULAR = 1.0
+LOSS_WEIGHT_GRADIENT = 1.0
+
+# 后期：根据效果调整
+# 如果漫反射不好，增大其权重
+LOSS_WEIGHT_DIFFUSE = 1.5
+```
+
+### 📝 配置文件位置
+
+所有参数都在 `train.py` 的配置区域（第424-517行）：
+
+```python
+# ==================== ⭐ 训练参数配置区 ⭐ ====================
+# 在这里修改所有训练相关的参数，无需深入代码内部
+
+# 基础训练参数
+EPOCHS = 50
+LEARNING_RATE = 0.001
+BATCH_SIZE = 1
+GRADIENT_ACCUMULATION_STEPS = 4
+
+# ... 更多参数
+```
+
+### 📚 参考资源
+
+- **完整配置指南**：`TRAINING_CONFIG_GUIDE.md`
+- **推理使用指南**：`INFERENCE_GUIDE.md`
+- **快速开始指南**：`QUICK_START_INFERENCE.md`
+- **项目概览**：`PROJECT_OVERVIEW.md`
+
 ## 📈 损失函数与性能指标
 
 ### 复合损失函数

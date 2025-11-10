@@ -1,3 +1,79 @@
+"""
+Y-FFC网络 - 用于高反射表面3D重建的深度学习模型
+
+====================================================================================
+网络架构概述
+====================================================================================
+
+Y-FFC网络采用Y形结构，专门设计用于从高反射条纹图像中分离漫反射和镜面反射分量。
+
+整体架构：
+    输入图像 (I)
+        ↓
+    [编码器] ← 基于VGG16-BN，提取多尺度特征
+        ↓
+    ┌───────┴───────┐
+    ↓               ↓
+[梯度解码器]    [主解码器]
+    ↓               ↓
+梯度图(g)    镜面反射(b)
+                    ↓
+            漫反射(r) = I - b
+
+核心组件：
+    1. Encoder (编码器)
+       - 基于VGG16-BN预训练模型
+       - 提取5个尺度的特征：1/2, 1/4, 1/8, 1/16, 1/32
+       - 输出多尺度特征供两个解码器使用
+    
+    2. GradientDecoder (梯度解码器)
+       - 生成梯度图作为辅助监督信号
+       - 逐步上采样，输出与输入同分辨率的梯度图
+       - 产生4个中间特征用于增强主解码器
+    
+    3. EnhancementLayers (增强层)
+       - 对梯度解码器的中间特征进行增强
+       - 使用7x7大感受野卷积提取更丰富的特征
+    
+    4. MainDecoder (主解码器)
+       - 使用FFC模块在频域处理特征
+       - 融合编码器特征、增强特征和梯度图
+       - 使用注意力机制自适应融合多尺度特征
+       - 输出镜面反射分量
+
+关键技术：
+    1. FFC (Fast Fourier Convolution)
+       - 在频域中处理特征，获得全局感受野
+       - 特别适合处理周期性条纹模式
+       - 局部-全局双分支设计，同时利用空间域和频域信息
+    
+    2. 注意力门控机制
+       - 自适应融合不同层级的特征
+       - 根据深层特征对浅层特征进行加权
+    
+    3. 多尺度特征融合
+       - 跳跃连接保留细节信息
+       - 多个并行卷积分支捕获不同尺度的特征
+    
+    4. Y形双分支设计
+       - 梯度分支提供辅助监督和特征增强
+       - 主分支专注于镜面反射预测
+       - 两分支协同工作，提升整体性能
+
+损失函数：
+    - L1损失：像素级重建误差
+    - SSIM损失：结构相似性
+    - 统计损失：均值和标准差一致性
+    
+应用场景：
+    - 高反射表面的3D重建
+    - 条纹投影测量系统
+    - 镜面反射去除
+    - 漫反射分量提取
+
+====================================================================================
+"""
+
 import torch  # PyTorch深度学习框架
 import torch.nn as nn  # 神经网络模块
 import torch.nn.functional as F  # 函数式接口
@@ -9,7 +85,8 @@ import numpy as np  # 数值计算
 import argparse  # 命令行参数解析
 import sys  # 系统相关功能
 
-# 导入FFC（Fourier Feature Convolution）模块
+# 导入FFC（Fast Fourier Convolution）模块
+# FFC是本网络的核心组件，通过傅里叶变换在频域中处理特征
 from ffc import *
 
 def truncated_normal_(tensor, mean=0.0, std=1.0):
@@ -812,7 +889,7 @@ class FringeDataset(Dataset):
         - gt_specular: [1, H, W] = input - target
         - gt_gradient: [1, H, W] = target 在 (x,y) 方向的梯度（此处使用 torch.gradient）
     """
-    def __init__(self, input_dir, target_dir, transform=None):
+    def __init__(self, input_dir, target_dir, transform=None, resize=None):
         """
         初始化数据集
         
@@ -820,10 +897,12 @@ class FringeDataset(Dataset):
             input_dir: 输入图像目录（高反射条纹）
             target_dir: 目标图像目录（漫反射条纹）
             transform: 数据增强变换（可选）
+            resize: 图像resize尺寸，格式为(H, W)或单个整数（正方形），None表示不resize
         """
         self.input_dir = input_dir
         self.target_dir = target_dir
         self.transform = transform
+        self.resize = resize
         # 获取所有支持的图像文件，按名称排序
         self.files = sorted([f for f in os.listdir(input_dir) 
                            if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff'))])
@@ -878,9 +957,28 @@ class FringeDataset(Dataset):
             raise FileNotFoundError(f"Could not find matching target for input '{img_name}' in '{self.target_dir}'. Tried: {set(candidate_names)}")
         
         # ==================== 图像加载与预处理 ====================
-        # 加载图像并转换为灰度，归一化到[0,1]范围
-        input_img = np.array(Image.open(input_path).convert('L'), dtype=np.float32) / 255.0
-        target_img = np.array(Image.open(target_path).convert('L'), dtype=np.float32) / 255.0
+        # 加载图像并转换为灰度
+        input_pil = Image.open(input_path).convert('L')
+        target_pil = Image.open(target_path).convert('L')
+        
+        # 如果指定了resize，则调整图像尺寸
+        if self.resize is not None:
+            if isinstance(self.resize, (int, float)):
+                # 单个数值，resize为正方形，PIL需要(width, height)格式
+                resize_size = (int(self.resize), int(self.resize))
+            elif isinstance(self.resize, (tuple, list)) and len(self.resize) == 2:
+                # 元组格式，假设为(width, height)，PIL直接使用
+                resize_size = (int(self.resize[0]), int(self.resize[1]))
+            else:
+                resize_size = None
+            
+            if resize_size:
+                input_pil = input_pil.resize(resize_size, Image.LANCZOS)
+                target_pil = target_pil.resize(resize_size, Image.LANCZOS)
+        
+        # 归一化到[0,1]范围
+        input_img = np.array(input_pil, dtype=np.float32) / 255.0
+        target_img = np.array(target_pil, dtype=np.float32) / 255.0
         
         # 转换为PyTorch张量，添加通道维度 [H,W] → [1,H,W]
         input_img = torch.from_numpy(input_img).unsqueeze(0)
