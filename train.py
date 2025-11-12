@@ -8,6 +8,8 @@ from PIL import Image  # 图像读写
 import matplotlib.pyplot as plt  # 可视化
 from matplotlib import rcParams  # 字体/渲染设置
 from tqdm import tqdm  # 进度条
+import time  # 时间跟踪
+from datetime import datetime, timedelta  # 日期时间处理
 from Y_FFC import YFFC, FringeDataset, SSIM, statistical_loss  # 导入模型、数据集与损失
 
 def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='cuda', 
@@ -139,6 +141,9 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
     # 记录训练/验证历史损失，用于绘制学习曲线
     train_losses = []  # 每轮训练平均损失
     val_losses = []    # 每轮验证平均损失
+    train_accuracies = []  # 每轮训练平均精度（基于SSIM）
+    val_accuracies = []    # 每轮验证平均精度（基于SSIM）
+    epoch_times = []   # 每轮训练时间
     
     best_val_loss = float('inf')  # 最佳验证损失（越小越好），用于模型保存
     
@@ -167,10 +172,18 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
     if gradient_accumulation_steps > 1:
         print(f"使用梯度累积，累积步数: {gradient_accumulation_steps}")
     
+    # 打印训练开始时间
+    start_time_total = time.time()
+    print(f"\n 训练开始时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("=" * 80)
+    
     for epoch in range(epochs):  # 逐轮训练
+        epoch_start_time = time.time()  # 记录本轮开始时间
+        
         # ==================== 训练阶段 ====================
         model.train()  # 切换到训练模式（启用BN/Dropout等正则化）
         train_loss = 0  # 本轮训练损失累计
+        train_ssim_total = 0  # 本轮训练SSIM累计（用于计算精度）
         
         # 使用 tqdm 展示训练批次进度
         optimizer.zero_grad()  # 在循环开始前清空梯度
@@ -206,6 +219,9 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
                     # 总损失 = 漫反射损失 + 镜面反射损失 + 梯度损失（加权）
                     loss = weight_diffuse * ld + weight_specular * ls + weight_gradient * lg
                     loss = loss / gradient_accumulation_steps  # 梯度累积时缩放损失
+                    
+                    # 计算SSIM精度（用于训练精度统计）
+                    train_ssim_total += ssim_loss(pred_diffuse, gt_diffuse).item()
             else:
                 estimations = model(inputs)  # 模型输出字典：{'r': 漫反射, 'g': 梯度, 'b': 镜面反射}
                 pred_diffuse = estimations['r']    # 预测漫反射分量
@@ -231,6 +247,9 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
                 # 总损失 = 漫反射损失 + 镜面反射损失 + 梯度损失（加权）
                 loss = weight_diffuse * ld + weight_specular * ls + weight_gradient * lg
                 loss = loss / gradient_accumulation_steps  # 梯度累积时缩放损失
+                
+                # 计算SSIM精度（用于训练精度统计）
+                train_ssim_total += ssim_loss(pred_diffuse, gt_diffuse).item()
             
             # ==================== 反向传播与参数更新 ====================
             if use_amp and scaler is not None:
@@ -271,6 +290,7 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
         # ==================== 验证阶段 ====================
         model.eval()  # 切换到评估模式（禁用BN/Dropout等）
         val_loss = 0  # 本轮验证损失累计
+        val_ssim_total = 0  # 本轮验证SSIM累计（用于计算精度）
         
         with torch.no_grad():  # 关闭梯度计算以节省显存与加速
             # 使用 tqdm 展示验证批次进度
@@ -299,6 +319,9 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
                         lg = lg_ssim
                         
                         loss = weight_diffuse * ld + weight_specular * ls + weight_gradient * lg
+                        
+                        # 计算SSIM精度（用于验证精度统计）
+                        val_ssim_total += ssim_loss(pred_diffuse, gt_diffuse).item()
                 else:
                     estimations = model(inputs)
                     pred_diffuse = estimations['r']
@@ -319,32 +342,70 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
                     lg = lg_ssim
                     
                     loss = weight_diffuse * ld + weight_specular * ls + weight_gradient * lg
+                    
+                    # 计算SSIM精度（用于验证精度统计）
+                    val_ssim_total += ssim_loss(pred_diffuse, gt_diffuse).item()
                 
                 val_loss += loss.item()
         
         # ==================== 统计与记录 ====================
-        # 计算本轮的平均训练/验证损失
+        # 计算本轮的平均训练/验证损失和精度
         avg_train_loss = train_loss / len(train_loader)
         avg_val_loss = val_loss / len(val_loader)
+        avg_train_acc = train_ssim_total / len(train_loader)  # SSIM作为精度指标
+        avg_val_acc = val_ssim_total / len(val_loader)
         
-        # 记录损失历史
+        # 记录损失和精度历史
         train_losses.append(avg_train_loss)
         val_losses.append(avg_val_loss)
+        train_accuracies.append(avg_train_acc)
+        val_accuracies.append(avg_val_acc)
+        
+        # 计算本轮耗时和预估剩余时间
+        epoch_time = time.time() - epoch_start_time
+        epoch_times.append(epoch_time)
+        avg_epoch_time = np.mean(epoch_times)
+        remaining_epochs = epochs - (epoch + 1)
+        eta_seconds = avg_epoch_time * remaining_epochs
+        eta = timedelta(seconds=int(eta_seconds))
         
         # 获取当前学习率
         current_lr = optimizer.param_groups[0]['lr']
-        print(f'Epoch {epoch+1}/{epochs}: Train Loss: {avg_train_loss:.6f}, Val Loss: {avg_val_loss:.6f}, LR: {current_lr:.6f}')
+        
+        # ==================== 打印详细训练信息 ====================
+        print("\n" + "=" * 80)
+        print(f"Epoch [{epoch+1}/{epochs}] 训练统计")
+        print("=" * 80)
+        print(f"本轮耗时: {epoch_time:.2f}秒 | 平均耗时: {avg_epoch_time:.2f}秒/轮 | 预计剩余: {eta}")
+        print(f"损失值:   训练损失 = {avg_train_loss:.6f} | 验证损失 = {avg_val_loss:.6f}")
+        print(f"精度值:   训练精度 = {avg_train_acc:.4f} | 验证精度 = {avg_val_acc:.4f} (SSIM)")
+        print(f"超参数:   学习率 = {current_lr:.6f} | 批大小 = {train_loader.batch_size} | 累积步数 = {gradient_accumulation_steps}")
+        if device.type == 'cuda':
+            print(f"显存使用: {torch.cuda.memory_allocated(device)/1024**3:.2f} GB / {torch.cuda.max_memory_allocated(device)/1024**3:.2f} GB (当前/峰值)")
         
         # ==================== 保存最佳模型 ====================
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             early_stopping_counter = 0  # 重置早停计数器
             torch.save(model.state_dict(), model_save_path)
-            print(f'✅ 最佳模型已保存: {model_save_path}, 验证损失: {best_val_loss:.6f}')
+            print(f'最佳模型已保存: {model_save_path}, 验证损失: {best_val_loss:.6f}, 验证精度: {avg_val_acc:.4f}')
         else:
             early_stopping_counter += 1
             if use_early_stopping:
-                print(f'⚠ 验证损失未改善 ({early_stopping_counter}/{early_stopping_patience})')
+                print(f'⚠️ 验证损失未改善 ({early_stopping_counter}/{early_stopping_patience})')
+        
+        # ==================== 实时绘制训练曲线 ====================
+        if (epoch + 1) % 5 == 0 or epoch == 0:  # 每5轮或第一轮绘制一次
+            output_folder = os.path.dirname(model_save_path)
+            plot_training_curves(train_losses, val_losses, train_accuracies, val_accuracies, 
+                               output_folder, epoch + 1)
+            print(f'训练曲线已更新: {os.path.join(output_folder, "training_curves_realtime.png")}')
+        
+        # ==================== 定期可视化样本结果 ====================
+        if (epoch + 1) % 10 == 0 or epoch == 0:  # 每10轮或第一轮可视化一次
+            output_folder = os.path.dirname(model_save_path)
+            visualize_sample_during_training(model, val_loader, device, output_folder, epoch + 1)
+            print(f'样本可视化已更新: {os.path.join(output_folder, f"sample_epoch_{epoch+1}.png")}')
         
         # ==================== 定期保存检查点 ====================
         if save_every_n_epochs > 0 and (epoch + 1) % save_every_n_epochs == 0:
@@ -355,13 +416,15 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
                 'optimizer_state_dict': optimizer.state_dict(),
                 'train_loss': avg_train_loss,
                 'val_loss': avg_val_loss,
-                'best_val_loss': best_val_loss
+                'best_val_loss': best_val_loss,
+                'train_acc': avg_train_acc,
+                'val_acc': avg_val_acc
             }, checkpoint_path)
-            print(f'💾 检查点已保存: {checkpoint_path}')
+            print(f'检查点已保存: {checkpoint_path}')
         
         # ==================== 早停检查 ====================
         if use_early_stopping and early_stopping_counter >= early_stopping_patience:
-            print(f'\n⛔ 早停触发！验证损失在 {early_stopping_patience} 轮内未改善，停止训练。')
+            print(f'\n⛔早停触发！验证损失在 {early_stopping_patience} 轮内未改善，停止训练。')
             break
         
         # ==================== 学习率调度 ====================
@@ -371,8 +434,18 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
             else:
                 scheduler.step()  # 其他调度器按epoch步进
     
-    print(f"训练完成！最佳验证损失: {best_val_loss:.6f}")
-    return train_losses, val_losses  # 返回训练过程中的损失曲线
+    # 打印训练总结
+    total_time = time.time() - start_time_total
+    total_time_str = str(timedelta(seconds=int(total_time)))
+    print("\n" + "=" * 80)
+    print("训练完成！")
+    print("=" * 80)
+    print(f"总训练时间: {total_time_str}")
+    print(f"最佳验证损失: {best_val_loss:.6f}")
+    print(f"最终训练精度: {train_accuracies[-1]:.4f} | 最终验证精度: {val_accuracies[-1]:.4f}")
+    print("=" * 80)
+    
+    return train_losses, val_losses, train_accuracies, val_accuracies  # 返回训练过程中的损失和精度曲线
 
 def test_model(model, test_loader, device='cuda'):
     """
@@ -439,7 +512,7 @@ def test_model(model, test_loader, device='cuda'):
     
     return avg_ssim, avg_mae, avg_psnr  # 返回测试集上的平均指标
 
-def visualize_results(model, test_loader, device='cuda', num_samples=5):
+def visualize_results(model, test_loader, device='cuda', num_samples=5, output_folder=''):
     """
     可视化测试结果：显示输入、预测与差异图，帮助理解模型效果
     
@@ -448,8 +521,16 @@ def visualize_results(model, test_loader, device='cuda', num_samples=5):
         test_loader: 测试数据加载器
         device: 计算设备
         num_samples: 要可视化的样本数量
+        output_folder: 输出文件夹路径
     """
     model.eval()  # 评估模式
+    
+    # 创建可视化结果子文件夹
+    if output_folder:
+        vis_folder = os.path.join(output_folder, 'visualizations')
+        os.makedirs(vis_folder, exist_ok=True)
+    else:
+        vis_folder = ''
     
     print(f"开始可视化{num_samples}个测试样本...")
     
@@ -513,10 +594,124 @@ def visualize_results(model, test_loader, device='cuda', num_samples=5):
             axes[1, 2].axis('off')
             
             plt.tight_layout()
-            plt.savefig(f'results_sample_{i}.png', dpi=300, bbox_inches='tight')  # 保存高分辨率结果
-            plt.show()
             
-            print(f"样本 {i+1} 可视化完成，已保存为 results_sample_{i}.png")
+            # 保存到输出文件夹
+            if vis_folder:
+                save_path = os.path.join(vis_folder, f'results_sample_{i+1}.png')
+            else:
+                save_path = f'results_sample_{i+1}.png'
+            
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')  # 保存高分辨率结果
+            plt.close()  # 关闭图形，节省内存
+            
+            print(f"样本 {i+1} 可视化完成，已保存为 {save_path}")
+
+def plot_training_curves(train_losses, val_losses, train_accs, val_accs, output_folder, current_epoch):
+    """
+    实时绘制训练曲线（损失和精度）
+    
+    参数:
+        train_losses: 训练损失列表
+        val_losses: 验证损失列表
+        train_accs: 训练精度列表
+        val_accs: 验证精度列表
+        output_folder: 输出文件夹
+        current_epoch: 当前epoch数
+    """
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
+    epochs = range(1, len(train_losses) + 1)
+    
+    # 绘制损失曲线
+    ax1.plot(epochs, train_losses, 'b-o', label='训练损失', linewidth=2, markersize=4)
+    ax1.plot(epochs, val_losses, 'r-s', label='验证损失', linewidth=2, markersize=4)
+    ax1.set_xlabel('Epoch', fontsize=12)
+    ax1.set_ylabel('损失值 (Loss)', fontsize=12)
+    ax1.set_title(f'训练和验证损失 (Epoch {current_epoch})', fontsize=14, fontweight='bold')
+    ax1.legend(fontsize=10)
+    ax1.grid(True, alpha=0.3)
+    
+    # 绘制精度曲线
+    ax2.plot(epochs, train_accs, 'b-o', label='训练精度 (SSIM)', linewidth=2, markersize=4)
+    ax2.plot(epochs, val_accs, 'r-s', label='验证精度 (SSIM)', linewidth=2, markersize=4)
+    ax2.set_xlabel('Epoch', fontsize=12)
+    ax2.set_ylabel('精度 (Accuracy)', fontsize=12)
+    ax2.set_title(f'训练和验证精度 (Epoch {current_epoch})', fontsize=14, fontweight='bold')
+    ax2.legend(fontsize=10)
+    ax2.grid(True, alpha=0.3)
+    ax2.set_ylim([0, 1])  # SSIM范围为0-1
+    
+    plt.tight_layout()
+    save_path = os.path.join(output_folder, 'training_curves_realtime.png')
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.close()
+
+def visualize_sample_during_training(model, val_loader, device, output_folder, current_epoch):
+    """
+    训练过程中可视化样本结果
+    
+    参数:
+        model: 模型
+        val_loader: 验证数据加载器
+        device: 计算设备
+        output_folder: 输出文件夹
+        current_epoch: 当前epoch数
+    """
+    model.eval()
+    with torch.no_grad():
+        # 获取一个批次的数据
+        batch = next(iter(val_loader))
+        inputs, gt_diffuse, gt_specular, gt_gradient = [x.to(device) for x in batch]
+        
+        # 前向传播
+        estimations = model(inputs)
+        pred_diffuse = estimations['r']
+        pred_specular = estimations['b']
+        pred_gradient = estimations['g']
+        
+        # 转换为numpy
+        input_img = inputs[0, 0].cpu().numpy()
+        gt_diffuse_img = gt_diffuse[0, 0].cpu().numpy()
+        pred_diffuse_img = pred_diffuse[0, 0].cpu().numpy()
+        pred_specular_img = pred_specular[0, 0].cpu().numpy()
+        pred_gradient_img = pred_gradient[0, 0].cpu().numpy()
+        
+        # 创建可视化
+        fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+        
+        axes[0, 0].imshow(input_img, cmap='gray')
+        axes[0, 0].set_title('输入图像', fontsize=12)
+        axes[0, 0].axis('off')
+        
+        axes[0, 1].imshow(gt_diffuse_img, cmap='gray')
+        axes[0, 1].set_title('真实漫反射', fontsize=12)
+        axes[0, 1].axis('off')
+        
+        axes[0, 2].imshow(pred_diffuse_img, cmap='gray')
+        axes[0, 2].set_title('预测漫反射', fontsize=12)
+        axes[0, 2].axis('off')
+        
+        axes[1, 0].imshow(pred_specular_img, cmap='gray')
+        axes[1, 0].set_title('预测镜面反射', fontsize=12)
+        axes[1, 0].axis('off')
+        
+        axes[1, 1].imshow(pred_gradient_img, cmap='gray')
+        axes[1, 1].set_title('预测梯度', fontsize=12)
+        axes[1, 1].axis('off')
+        
+        diff = np.abs(pred_diffuse_img - gt_diffuse_img)
+        im = axes[1, 2].imshow(diff, cmap='hot')
+        axes[1, 2].set_title('差异图', fontsize=12)
+        axes[1, 2].axis('off')
+        plt.colorbar(im, ax=axes[1, 2], fraction=0.046)
+        
+        fig.suptitle(f'Epoch {current_epoch} - 样本可视化', fontsize=16, fontweight='bold')
+        plt.tight_layout()
+        
+        save_path = os.path.join(output_folder, f'sample_epoch_{current_epoch}.png')
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        plt.close()
+    
+    model.train()  # 恢复训练模式
 
 def create_dummy_data(input_dir, target_dir, num_samples=100):
     """
@@ -650,7 +845,10 @@ def main():
     EARLY_STOPPING_PATIENCE = 20  # 验证损失不下降的最大容忍轮数
     
     # ========== 模型保存和可视化 ==========
-    # 模型保存路径
+    # 统一输出文件夹（所有训练结果都保存在这里）
+    OUTPUT_FOLDER = 'training_output'  # 主输出文件夹
+    
+    # 模型保存路径（相对于OUTPUT_FOLDER）
     MODEL_SAVE_PATH = 'best_model.pth'  # 最佳模型保存路径
     CHECKPOINT_DIR = 'checkpoints'  # 检查点保存目录
     SAVE_EVERY_N_EPOCHS = 10  # 每隔N轮保存一次检查点（0表示不保存）
@@ -661,6 +859,15 @@ def main():
     # 虚拟数据生成数量（仅在数据目录不存在时使用）
     # DUMMY_DATA_SAMPLES = 200  # 生成的虚拟样本数量
     
+    # ==================== 创建输出文件夹 ====================
+    os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+    print(f"\n 输出文件夹: {os.path.abspath(OUTPUT_FOLDER)}")
+    print("   所有训练结果将保存在此文件夹中\n")
+    
+    # 更新路径为绝对路径
+    MODEL_SAVE_PATH = os.path.join(OUTPUT_FOLDER, MODEL_SAVE_PATH)
+    CHECKPOINT_DIR = os.path.join(OUTPUT_FOLDER, CHECKPOINT_DIR)
+    
     print("\n当前训练配置:")
     print(f"  - 训练轮数: {EPOCHS}")
     print(f"  - 学习率: {LEARNING_RATE}")
@@ -668,6 +875,7 @@ def main():
     print(f"  - 梯度累积步数: {GRADIENT_ACCUMULATION_STEPS} (等效batch_size: {BATCH_SIZE * GRADIENT_ACCUMULATION_STEPS})")
     print(f"  - 图像尺寸: {IMAGE_RESIZE if IMAGE_RESIZE else '原始尺寸'}")
     print(f"  - 训练集比例: {TRAIN_SPLIT_RATIO}")
+    print(f"  - 输出文件夹: {OUTPUT_FOLDER}")
     print(f"  - 混合精度训练: {'启用' if USE_AMP else '禁用'}")
     print("=" * 60)
     
@@ -759,7 +967,7 @@ def main():
     print("\n" + "=" * 40)
     print("开始模型训练...")
     print("=" * 40)
-    train_losses, val_losses = train_model(
+    train_losses, val_losses, train_accuracies, val_accuracies = train_model(
         model, train_loader, val_loader, 
         epochs=EPOCHS, 
         lr=LEARNING_RATE,
@@ -784,23 +992,111 @@ def main():
     print("\n" + "=" * 40)
     print("开始结果可视化...")
     print("=" * 40)
-    visualize_results(model, test_loader, device=device, num_samples=VISUALIZATION_SAMPLES)
+    visualize_results(model, test_loader, device=device, num_samples=VISUALIZATION_SAMPLES, output_folder=OUTPUT_FOLDER)
     
     # ==================== 训练历史可视化 ====================
-    print("保存训练历史曲线...")
-    plt.figure(figsize=(10, 5))
-    plt.plot(train_losses, label='训练损失', linewidth=2)
-    plt.plot(val_losses, label='验证损失', linewidth=2)
-    plt.xlabel('训练轮数 (Epoch)')
-    plt.ylabel('损失值 (Loss)')
-    plt.title('Y-FFC Net 训练历史')
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.savefig('training_history.png', dpi=300, bbox_inches='tight')
-    plt.show()
+    print("保存最终训练历史曲线...")
+    
+    # 创建2x2子图：损失和精度
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 12))
+    epochs_range = range(1, len(train_losses) + 1)
+    
+    # 左上：训练和验证损失
+    ax1.plot(epochs_range, train_losses, 'b-o', label='训练损失', linewidth=2, markersize=3)
+    ax1.plot(epochs_range, val_losses, 'r-s', label='验证损失', linewidth=2, markersize=3)
+    ax1.set_xlabel('Epoch', fontsize=12)
+    ax1.set_ylabel('损失值 (Loss)', fontsize=12)
+    ax1.set_title('训练和验证损失', fontsize=14, fontweight='bold')
+    ax1.legend(fontsize=10)
+    ax1.grid(True, alpha=0.3)
+    
+    # 右上：训练和验证精度
+    ax2.plot(epochs_range, train_accuracies, 'b-o', label='训练精度 (SSIM)', linewidth=2, markersize=3)
+    ax2.plot(epochs_range, val_accuracies, 'r-s', label='验证精度 (SSIM)', linewidth=2, markersize=3)
+    ax2.set_xlabel('Epoch', fontsize=12)
+    ax2.set_ylabel('精度 (Accuracy)', fontsize=12)
+    ax2.set_title('训练和验证精度', fontsize=14, fontweight='bold')
+    ax2.legend(fontsize=10)
+    ax2.grid(True, alpha=0.3)
+    ax2.set_ylim([0, 1])
+    
+    # 左下：损失对比
+    ax3.plot(epochs_range, train_losses, 'b-', label='训练损失', linewidth=2, alpha=0.7)
+    ax3.plot(epochs_range, val_losses, 'r-', label='验证损失', linewidth=2, alpha=0.7)
+    ax3.fill_between(epochs_range, train_losses, val_losses, alpha=0.2)
+    ax3.set_xlabel('Epoch', fontsize=12)
+    ax3.set_ylabel('损失值 (Loss)', fontsize=12)
+    ax3.set_title('损失对比（填充区域）', fontsize=14, fontweight='bold')
+    ax3.legend(fontsize=10)
+    ax3.grid(True, alpha=0.3)
+    
+    # 右下：精度对比
+    ax4.plot(epochs_range, train_accuracies, 'b-', label='训练精度', linewidth=2, alpha=0.7)
+    ax4.plot(epochs_range, val_accuracies, 'r-', label='验证精度', linewidth=2, alpha=0.7)
+    ax4.fill_between(epochs_range, train_accuracies, val_accuracies, alpha=0.2)
+    ax4.set_xlabel('Epoch', fontsize=12)
+    ax4.set_ylabel('精度 (Accuracy)', fontsize=12)
+    ax4.set_title('精度对比（填充区域）', fontsize=14, fontweight='bold')
+    ax4.legend(fontsize=10)
+    ax4.grid(True, alpha=0.3)
+    ax4.set_ylim([0, 1])
+    
+    fig.suptitle('Y-FFC Net 训练历史总览', fontsize=16, fontweight='bold')
+    plt.tight_layout()
+    
+    # 保存到输出文件夹
+    history_path = os.path.join(OUTPUT_FOLDER, 'training_history.png')
+    plt.savefig(history_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"训练历史曲线已保存: {history_path}")
+    
+    # ==================== 生成训练总结报告 ====================
+    summary_path = os.path.join(OUTPUT_FOLDER, 'training_summary.txt')
+    with open(summary_path, 'w', encoding='utf-8') as f:
+        f.write("=" * 60 + "\n")
+        f.write("Y-FFC Net 训练总结报告\n")
+        f.write("=" * 60 + "\n\n")
+        f.write("训练配置:\n")
+        f.write(f"  - 训练轮数: {EPOCHS}\n")
+        f.write(f"  - 学习率: {LEARNING_RATE}\n")
+        f.write(f"  - 批次大小: {BATCH_SIZE}\n")
+        f.write(f"  - 梯度累积步数: {GRADIENT_ACCUMULATION_STEPS}\n")
+        f.write(f"  - 图像尺寸: {IMAGE_RESIZE}\n")
+        f.write(f"  - 优化器: {OPTIMIZER_TYPE}\n")
+        f.write(f"  - 学习率调度器: {SCHEDULER_TYPE}\n")
+        f.write(f"  - 混合精度训练: {'启用' if USE_AMP else '禁用'}\n\n")
+        f.write("训练结果:\n")
+        f.write(f"  - 最终训练损失: {train_losses[-1]:.6f}\n")
+        f.write(f"  - 最终验证损失: {val_losses[-1]:.6f}\n")
+        f.write(f"  - 最佳验证损失: {min(val_losses):.6f}\n")
+        f.write(f"  - 最终训练精度: {train_accuracies[-1]:.4f}\n")
+        f.write(f"  - 最终验证精度: {val_accuracies[-1]:.4f}\n")
+        f.write(f"  - 最佳验证精度: {max(val_accuracies):.4f}\n\n")
+        f.write("输出文件:\n")
+        f.write(f"  - 最佳模型: {MODEL_SAVE_PATH}\n")
+        f.write(f"  - 训练历史: {history_path}\n")
+        f.write(f"  - 可视化结果: {os.path.join(OUTPUT_FOLDER, 'visualizations')}\n")
+        if SAVE_EVERY_N_EPOCHS > 0:
+            f.write(f"  - 检查点: {CHECKPOINT_DIR}\n")
+        f.write("\n" + "=" * 60 + "\n")
+    
+    print(f"\n训练总结报告已保存: {summary_path}")
     
     print("\n" + "=" * 60)
-    print("所有流程完成！")
+    print("✅ 所有流程完成！")
+    print("=" * 60)
+    print(f"\n📁 所有结果已保存到: {os.path.abspath(OUTPUT_FOLDER)}")
+    print("\n文件结构:")
+    print(f"  {OUTPUT_FOLDER}/")
+    print(f"  ├── best_model.pth          (最佳模型)")
+    print(f"  ├── training_history.png    (训练曲线)")
+    print(f"  ├── training_summary.txt    (训练总结)")
+    print(f"  ├── visualizations/         (可视化结果)")
+    print(f"  │   ├── results_sample_1.png")
+    print(f"  │   ├── results_sample_2.png")
+    print(f"  │   └── results_sample_3.png")
+    if SAVE_EVERY_N_EPOCHS > 0:
+        print(f"  └── checkpoints/            (训练检查点)")
     print("=" * 60)
 
 if __name__ == '__main__':  # 脚本入口
