@@ -421,6 +421,7 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
                 'val_acc': avg_val_acc
             }, checkpoint_path)
             print(f'检查点已保存: {checkpoint_path}')
+            print("=" * 80 + "\n")
         
         # ==================== 早停检查 ====================
         if use_early_stopping and early_stopping_counter >= early_stopping_patience:
@@ -531,6 +532,10 @@ def visualize_results(model, test_loader, device='cuda', num_samples=5, output_f
         os.makedirs(vis_folder, exist_ok=True)
     else:
         vis_folder = ''
+    
+    # 处理num_samples为None的情况：可视化所有测试样本
+    if num_samples is None:
+        num_samples = len(test_loader)
     
     print(f"开始可视化{num_samples}个测试样本...")
     
@@ -766,16 +771,16 @@ def main():
     
     # ========== 基础训练参数 ==========
     # 训练轮数
-    EPOCHS = 50  # 训练轮数，建议范围：50-200
+    EPOCHS = 100  # 训练轮数，建议范围：50-200
     
     # 学习率
-    LEARNING_RATE = 0.001  # 初始学习率，建议范围：0.0001-0.01
+    LEARNING_RATE = 0.0005  # 初始学习率，建议范围：0.0001-0.01
     
     # 批次大小
     BATCH_SIZE = 1  # 每批处理的样本数，显存不足时使用1，充足时可用2-4
     
     # 梯度累积步数（用于模拟更大的batch_size）
-    GRADIENT_ACCUMULATION_STEPS = 4  # 梯度累积步数，等效batch_size = BATCH_SIZE × GRADIENT_ACCUMULATION_STEPS
+    GRADIENT_ACCUMULATION_STEPS = 1  # 梯度累积步数，等效batch_size = BATCH_SIZE × GRADIENT_ACCUMULATION_STEPS
     
     # ========== 优化器参数 ==========
     # 优化器类型：'adam', 'sgd', 'adamw'
@@ -822,7 +827,7 @@ def main():
     # 选项2：矩形图像 - 设置为元组 (高度, 宽度)，例如：IMAGE_RESIZE = (768, 1024)
     # 选项3：使用原始尺寸 - 设置为 None
     # 注意：图像尺寸越大，显存占用越多。建议从512开始，根据显存情况逐步增大
-    IMAGE_RESIZE = (1024, 768)  # 推荐尺寸：512(4GB显存), 768(8GB显存), 1024(12GB+显存)
+    IMAGE_RESIZE = (2448, 2048)  # 推荐尺寸：512(4GB显存), 768(8GB显存), 1024(12GB+显存)
     
     # 数据集划分比例
     TRAIN_SPLIT_RATIO = 0.8  # 训练集比例，0.8表示80%训练，20%验证
@@ -844,29 +849,34 @@ def main():
     USE_EARLY_STOPPING = False  # 是否启用早停
     EARLY_STOPPING_PATIENCE = 20  # 验证损失不下降的最大容忍轮数
     
-    # ========== 模型保存和可视化 ==========
-    # 统一输出文件夹（所有训练结果都保存在这里）
-    OUTPUT_FOLDER = 'training_output'  # 主输出文件夹
+    # ==================== 模型保存和可视化 ==========
+    # 创建带时间戳的实验文件夹（与train_enhanced.py保持一致）
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    OUTPUT_FOLDER = f'experiments/original_yffc_{timestamp}'  # 主输出文件夹
+    
+    # 创建输出目录结构
+    os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+    os.makedirs(f"{OUTPUT_FOLDER}/models", exist_ok=True)
+    os.makedirs(f"{OUTPUT_FOLDER}/logs", exist_ok=True)
+    os.makedirs(f"{OUTPUT_FOLDER}/visualizations", exist_ok=True)
+    
+    print(f"\n 实验输出目录: {os.path.abspath(OUTPUT_FOLDER)}")
+    print("   所有训练结果将保存在此文件夹中\n")
     
     # 模型保存路径（相对于OUTPUT_FOLDER）
     MODEL_SAVE_PATH = 'best_model.pth'  # 最佳模型保存路径
     CHECKPOINT_DIR = 'checkpoints'  # 检查点保存目录
-    SAVE_EVERY_N_EPOCHS = 10  # 每隔N轮保存一次检查点（0表示不保存）
+    SAVE_EVERY_N_EPOCHS = 5  # 每隔N轮保存一次检查点（0表示不保存）
     
     # 可视化样本数量
-    VISUALIZATION_SAMPLES = 3  # 测试后可视化的样本数量
+    VISUALIZATION_SAMPLES = None  # 测试后可视化的样本数量
     
     # 虚拟数据生成数量（仅在数据目录不存在时使用）
     # DUMMY_DATA_SAMPLES = 200  # 生成的虚拟样本数量
     
-    # ==================== 创建输出文件夹 ====================
-    os.makedirs(OUTPUT_FOLDER, exist_ok=True)
-    print(f"\n 输出文件夹: {os.path.abspath(OUTPUT_FOLDER)}")
-    print("   所有训练结果将保存在此文件夹中\n")
-    
     # 更新路径为绝对路径
-    MODEL_SAVE_PATH = os.path.join(OUTPUT_FOLDER, MODEL_SAVE_PATH)
-    CHECKPOINT_DIR = os.path.join(OUTPUT_FOLDER, CHECKPOINT_DIR)
+    MODEL_SAVE_PATH = os.path.join(OUTPUT_FOLDER, 'models', MODEL_SAVE_PATH)
+    CHECKPOINT_DIR = os.path.join(OUTPUT_FOLDER, 'checkpoints')
     
     print("\n当前训练配置:")
     print(f"  - 训练轮数: {EPOCHS}")
@@ -890,7 +900,7 @@ def main():
     # 如果数据目录不存在，自动生成虚拟数据用于测试
     if not os.path.exists(input_dir) or not os.path.exists(target_dir):
         print("检测到数据目录不存在，正在生成虚拟数据集...")
-        create_dummy_data(input_dir, target_dir, num_samples=DUMMY_DATA_SAMPLES)
+        create_dummy_data(input_dir, target_dir, num_samples=500)
     
     # ==================== 数据集构建与划分 ====================
     print("构建数据集...")
@@ -1088,13 +1098,15 @@ def main():
     print(f"\n📁 所有结果已保存到: {os.path.abspath(OUTPUT_FOLDER)}")
     print("\n文件结构:")
     print(f"  {OUTPUT_FOLDER}/")
-    print(f"  ├── best_model.pth          (最佳模型)")
-    print(f"  ├── training_history.png    (训练曲线)")
-    print(f"  ├── training_summary.txt    (训练总结)")
+    print(f"  ├── models/                 (模型文件)")
+    print(f"  │   └── best_model.pth      (最佳模型)")
+    print(f"  ├── logs/                   (日志文件)")
     print(f"  ├── visualizations/         (可视化结果)")
     print(f"  │   ├── results_sample_1.png")
     print(f"  │   ├── results_sample_2.png")
     print(f"  │   └── results_sample_3.png")
+    print(f"  ├── training_history.png    (训练曲线)")
+    print(f"  └── training_summary.txt    (训练总结)")
     if SAVE_EVERY_N_EPOCHS > 0:
         print(f"  └── checkpoints/            (训练检查点)")
     print("=" * 60)
