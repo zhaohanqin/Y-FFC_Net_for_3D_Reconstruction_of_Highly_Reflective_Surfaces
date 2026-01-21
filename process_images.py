@@ -146,7 +146,8 @@ def visualize_results(input_img, output_dict, save_path):
     plt.close()
 
 
-def process_single_image(model, image_path, output_dir, device, show_visualization=True):
+def process_single_image(model, image_path, output_dir, device, show_visualization=True, 
+                         collect_diffuse_dir=None):
     """
     处理单张图像
     
@@ -181,12 +182,18 @@ def process_single_image(model, image_path, output_dir, device, show_visualizati
         base_name = os.path.splitext(os.path.basename(image_path))[0]
         
         # 保存结果（输出尺寸与输入一致）
-        save_result(diffuse_output, 
-                    os.path.join(output_dir, f'{base_name}_diffuse.png'))
+        diffuse_filename = f'{base_name}_diffuse.png'
+        save_result(diffuse_output, os.path.join(output_dir, diffuse_filename))
         save_result(specular_output, 
                     os.path.join(output_dir, f'{base_name}_specular.png'))
         save_result(gradient_output, 
                     os.path.join(output_dir, f'{base_name}_gradient.png'))
+        
+        # 可选：额外保存一份漫反射结果到集中目录，方便统一处理
+        if collect_diffuse_dir:
+            os.makedirs(collect_diffuse_dir, exist_ok=True)
+            original_filename = os.path.basename(image_path)
+            save_result(diffuse_output, os.path.join(collect_diffuse_dir, original_filename))
         
         # 可视化结果
         if show_visualization:
@@ -200,7 +207,7 @@ def process_single_image(model, image_path, output_dir, device, show_visualizati
 
 
 def process_folder(model, input_folder, output_folder, device, show_visualization=True, 
-                   supported_formats=None):
+                   supported_formats=None, collect_diffuse_dir=None):
     """
     批量处理文件夹中的所有图像
     
@@ -226,7 +233,7 @@ def process_folder(model, input_folder, output_folder, device, show_visualizatio
         print(f"支持的格式: {', '.join(supported_formats)}")
         return
     
-    print(f"\n找到 {len(image_files)} 张图像，开始批量处理...")
+    print(f"\n找到 {len(image_files)/2} 对图像，开始批量处理...")
     print("=" * 70)
     
     # 处理每张图像
@@ -238,7 +245,8 @@ def process_folder(model, input_folder, output_folder, device, show_visualizatio
         image_name = Path(image_path).stem
         image_output_dir = os.path.join(output_folder, image_name)
         
-        if process_single_image(model, image_path, image_output_dir, device, show_visualization):
+        if process_single_image(model, image_path, image_output_dir, device, show_visualization,
+                                collect_diffuse_dir):
             success_count += 1
         else:
             fail_count += 1
@@ -261,13 +269,14 @@ def main():
     # ==================== ⭐ 配置区 - 在这里修改参数 ⭐ ====================
     
     # 1. 输入配置（修改为你的图像路径或文件夹路径）
-    INPUT_PATH = 'h1.bmp'  # 可以是单张图像路径或文件夹路径
+    INPUT_PATH = r'E:\images\place2\11_luminance300_81'  # 可以是单张图像路径或文件夹路径
     
     # 2. 模型配置
-    MODEL_PATH = 'best_model.pth'  # 训练好的模型路径
+    MODEL_PATH = r'experiments\original_yffc_20251231_233041\models\best_model.pth'  # 训练好的模型路径
     
     # 3. 输出配置
     OUTPUT_DIR = 'processed_results'  # 输出目录
+    DIFFUSE_COLLECTION_DIR = os.path.join(OUTPUT_DIR, 'all_diffuse')  # 统一存放漫反射
     
     # 4. 设备配置
     DEVICE = 'cuda'  # 'cuda' 使用GPU，'cpu' 使用CPU
@@ -328,7 +337,8 @@ def main():
         image_output_dir = os.path.join(OUTPUT_DIR, image_name)
         
         print(f"开始处理...")
-        if process_single_image(model, INPUT_PATH, image_output_dir, device, SHOW_VISUALIZATION):
+        if process_single_image(model, INPUT_PATH, image_output_dir, device, SHOW_VISUALIZATION,
+                                DIFFUSE_COLLECTION_DIR):
             print(f"✓ 处理完成!")
             print(f"\n输出文件位置:")
             print(f"  - {image_output_dir}/{image_name}_diffuse.png       (⭐ 去除高反光后的结果)")
@@ -343,7 +353,8 @@ def main():
         print(f"支持的图像格式: {', '.join(SUPPORTED_FORMATS)}")
         print("-" * 70)
         
-        process_folder(model, INPUT_PATH, OUTPUT_DIR, device, SHOW_VISUALIZATION, SUPPORTED_FORMATS)
+        process_folder(model, INPUT_PATH, OUTPUT_DIR, device, SHOW_VISUALIZATION, SUPPORTED_FORMATS,
+                       DIFFUSE_COLLECTION_DIR)
         
         print(f"\n所有结果已保存到: {OUTPUT_DIR}")
         print(f"\n输出文件说明:")
@@ -352,6 +363,7 @@ def main():
         print(f"  - *_gradient.png      : 梯度图像")
         if SHOW_VISUALIZATION:
             print(f"  - *_visualization.png : 完整可视化对比图")
+        print(f"\n所有漫反射结果的副本（保持原始文件名）已集中存放于: {DIFFUSE_COLLECTION_DIR}")
     else:
         print(f"❌ 错误: 无效的输入路径: {INPUT_PATH}")
         return

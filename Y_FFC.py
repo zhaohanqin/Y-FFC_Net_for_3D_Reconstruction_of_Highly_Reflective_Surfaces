@@ -12,22 +12,22 @@ Y-FFC网络采用Y形结构，专门设计用于从高反射条纹图像中分�
         ↓
     [编码器] ← 基于VGG16-BN，提取多尺度特征
         ↓
-    ┌───────┴───────┐
-    ↓               ↓
-[梯度解码器]    [主解码器]
-    ↓               ↓
-梯度图(g)    镜面反射(b)
-                    ↓
-            漫反射(r) = I - b
+    ┌───────┴───────┬──────────────┐
+    ↓               ↓              ↓
+[梯度解码器]    [梯度判别器]    [主解码器]
+    ↓               ↓              ↓
+梯度图(g)    结构梯度(g_s)   镜面反射(b)
+            反射梯度(g_r)         ↓
+                            漫反射(r) = I - b
 
 核心组件：
     1. Encoder (编码器)
        - 基于VGG16-BN预训练模型
        - 提取5个尺度的特征：1/2, 1/4, 1/8, 1/16, 1/32
-       - 输出多尺度特征供两个解码器使用
+       - 输出多尺度特征供多个解码器使用
     
     2. GradientDecoder (梯度解码器)
-       - 生成梯度图作为辅助监督信号
+       - 生成混合梯度图作为辅助监督信号
        - 逐步上采样，输出与输入同分辨率的梯度图
        - 产生4个中间特征用于增强主解码器
     
@@ -35,9 +35,17 @@ Y-FFC网络采用Y形结构，专门设计用于从高反射条纹图像中分�
        - 对梯度解码器的中间特征进行增强
        - 使用7x7大感受野卷积提取更丰富的特征
     
-    4. MainDecoder (主解码器)
+    4. GradientDiscriminator (梯度判别器) [新增]
+       - 从编码器特征中显式区分结构梯度和反射梯度
+       - 结构梯度分支：使用大感受野和低频特征提取结构信息
+       - 反射梯度分支：使用高频特征和注意力机制提取反射信息
+       - 输出两个独立的梯度图，分别用于结构保护和反射抑制
+    
+    5. MainDecoder (主解码器) [增强]
        - 使用FFC模块在频域处理特征
-       - 融合编码器特征、增强特征和梯度图
+       - 融合编码器特征、增强特征和双梯度指导信号
+       - 结构梯度调制：保护真实物体结构不被破坏
+       - 反射梯度调制：精确抑制高反光区域
        - 使用注意力机制自适应融合多尺度特征
        - 输出镜面反射分量
 
@@ -55,10 +63,17 @@ Y-FFC网络采用Y形结构，专门设计用于从高反射条纹图像中分�
        - 跳跃连接保留细节信息
        - 多个并行卷积分支捕获不同尺度的特征
     
-    4. Y形双分支设计
-       - 梯度分支提供辅助监督和特征增强
-       - 主分支专注于镜面反射预测
-       - 两分支协同工作，提升整体性能
+    4. Y形多分支设计
+       - 梯度解码分支：提供混合梯度辅助监督和特征增强
+       - 梯度判别分支：区分结构梯度和反射梯度，提供精确指导
+       - 主解码分支：融合多源信息，预测镜面反射分量
+       - 多分支协同工作，在去除高反光的同时最大程度保留真实物体结构
+    
+    5. 梯度判别与调制机制 [新增]
+       - 显式区分结构梯度和反射梯度
+       - 结构保护约束：通过结构梯度调制保护真实物体结构
+       - 反射抑制调制：通过反射梯度调制精确去除反射
+       - 双重指导机制确保在去除高反光的同时保留结构细节
 
 损失函数：
     - L1损失：像素级重建误差
@@ -190,6 +205,9 @@ class SSIM(nn.Module):
         
         # 计算SSIM映射
         ssim_map = ((2*mu12 + C1) * (2*sigma12 + C2)) / ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
+        # 数值稳定性修正：理论上SSIM∈[-1,1]，但由于浮点误差，可能略微超过1或低于-1，
+        # 在本项目中我们将其视为“精度”指标，显式裁剪到[0,1]区间，避免出现>1的“精度”。
+        ssim_map = torch.clamp(ssim_map, 0.0, 1.0)
         return ssim_map.mean()  # 返回平均SSIM值
 
 def statistical_loss(pred, gt):
@@ -672,12 +690,16 @@ class MainDecoder(nn.Module):
         - 两个 FFC 模块对瓶颈特征进行频域增强并残差连接
         - 多尺度卷积后进入五层级联上采样模块
         - 四个注意力门控桥接，与编码器各层特征对齐并融合
-        - 与梯度分支的四级增强特征逐层级联，末端再与梯度图 x_g 融合输出
+        - 与梯度分支的四级增强特征逐层级联
+        - 集成结构梯度和反射梯度的双重指导机制：
+          * 结构梯度：作为结构保护约束，确保真实物体结构不被破坏
+          * 反射梯度：作为反射抑制调制信号，指导网络更精确地去除反射
 
     前向输入：
         c_features: (x_bb_1, x_bb_2, x_bb_3, x_bb_4, x_c)
         enhanced_features: (x_enhanced_1..4)
-        x_g: 梯度图 [B, 1, H, W]
+        g_structure: 结构梯度图 [B, 1, H, W] - 用于结构保护
+        g_reflection: 反射梯度图 [B, 1, H, W] - 用于反射抑制
 
     前向输出：
         est_b: 镜面反射分量 [B, 1, H, W]
@@ -706,16 +728,33 @@ class MainDecoder(nn.Module):
         self.att3 = Attention_block(192, 128, 160)
         self.att4 = Attention_block(96, 64, 80)
         
-        # 输出层
-        self.output_conv1 = Conv2D_BN_activa(16 * 3 + 1, 16, 3, 1, 1)
+        # 梯度调制模块：将梯度信息转换为特征调制信号
+        # 结构梯度调制：保护结构区域
+        # 输出通道数需要与transposed_block_5的输出匹配（16*3=48）
+        self.structure_modulation = nn.Sequential(
+            Conv2D_BN_activa(1, 16, 3, 1, 1),
+            Conv2D_BN_activa(16, 48, 3, 1, 1)  # 输出48通道以匹配特征图
+        )
+        # 反射梯度调制：抑制反射区域
+        # 输出通道数需要与transposed_block_5的输出匹配（16*3=48）
+        self.reflection_modulation = nn.Sequential(
+            Conv2D_BN_activa(1, 16, 3, 1, 1),
+            Conv2D_BN_activa(16, 48, 3, 1, 1)  # 输出48通道以匹配特征图
+        )
+        
+        # 输出层：处理调制后的特征
+        # 输入：16*3 (特征，已通过梯度调制)
+        self.output_conv1 = Conv2D_BN_activa(16 * 3, 16, 3, 1, 1)
         self.output_conv2 = Conv2D_BN_activa(16, 1, 3, 1, 1)
 
-    def forward(self, c_features, enhanced_features, x_g):
+    def forward(self, c_features, enhanced_features, g_structure, g_reflection, constraint_weight=0.3):
         """
         参数:
             c_features: (x_bb_1, x_bb_2, x_bb_3, x_bb_4, x_c)
             enhanced_features: (x_enhanced_1, x_enhanced_2, x_enhanced_3, x_enhanced_4)
-            x_g: 梯度图 [B, 1, H, W]
+            g_structure: 结构梯度图 [B, 1, H, W] - 用于结构保护约束
+            g_reflection: 反射梯度图 [B, 1, H, W] - 用于反射抑制调制
+            constraint_weight: 梯度约束权重（弱约束），范围[0,1]，默认0.3
 
         返回:
             est_b: 镜面反射分量 [B, 1, H, W]
@@ -769,11 +808,30 @@ class MainDecoder(nn.Module):
         x = torch.cat([x, bridge, x_enhanced_4], dim=1)
         
         x = self.transposed_block_5(x)
-        if x_g.shape[-2:] != x.shape[-2:]:
-            x_g = F.interpolate(x_g, size=x.shape[-2:], mode='bilinear', align_corners=False)
-        x = torch.cat([x, x_g], dim=1)
         
-        # 输出
+        # ==================== 梯度调制机制（弱约束形式） ====================
+        # 对齐梯度图分辨率
+        if g_structure.shape[-2:] != x.shape[-2:]:
+            g_structure = F.interpolate(g_structure, size=x.shape[-2:], mode='bilinear', align_corners=False)
+        if g_reflection.shape[-2:] != x.shape[-2:]:
+            g_reflection = F.interpolate(g_reflection, size=x.shape[-2:], mode='bilinear', align_corners=False)
+        
+        # 结构梯度调制：保护结构区域（弱约束形式）
+        # 结构梯度高的区域应该保留更多信息，使用加法调制增强特征
+        # 通过constraint_weight控制约束强度，降低决策敏感度
+        structure_mod = self.structure_modulation(g_structure)
+        x = x + constraint_weight * structure_mod  # 弱约束：降低结构保护强度
+        
+        # 反射梯度调制：抑制反射区域（弱约束形式）
+        # 反射梯度高的区域应该被抑制，使用乘法调制降低特征响应
+        # 通过constraint_weight控制约束强度，降低决策敏感度
+        reflection_mod = self.reflection_modulation(g_reflection)
+        # 使用软编码形式：x = x * (1 - constraint_weight * reflection_mod)
+        # 这样反射抑制的强度由constraint_weight控制，降低过拟合风险
+        x = x * (1.0 - constraint_weight * reflection_mod)  # 弱约束：降低反射抑制强度
+        
+        # 输出：直接使用调制后的特征，不再拼接梯度调制信号（已在x中融合）
+        # 如果需要保留梯度信息，可以在这里添加
         x = self.output_conv1(x)
         est_b = self.output_conv2(x)
         
@@ -809,28 +867,261 @@ class EnhancementLayers(nn.Module):
         x_enhanced_4 = self.enhancement_layers_4(to_be_enhanced_features[3])
         return x_enhanced_1, x_enhanced_2, x_enhanced_3, x_enhanced_4
 
+class GradientDiscriminator(nn.Module):
+    """
+    梯度判别器：将混合梯度显式区分为结构梯度和反射梯度
+    
+    设计理念：
+        - 结构梯度：来自真实物体表面的几何结构变化，需要保留
+        - 反射梯度：来自高反光区域的镜面反射，需要抑制
+        - 通过双分支架构分别提取两种梯度，为后续处理提供精确指导
+    
+    架构：
+        - 共享特征提取：从编码器特征中提取混合梯度特征
+        - 结构梯度分支：使用大感受野和低频特征提取结构信息
+        - 反射梯度分支：使用高频特征和注意力机制提取反射信息
+        - 输出两个独立的梯度图
+    
+    输入/输出：
+        输入: 编码器特征 (x_bb_1, x_bb_2, x_bb_3, x_bb_4, x_c)
+        输出: 结构梯度图 g_structure [B, 1, H, W] 和反射梯度图 g_reflection [B, 1, H, W]
+    """
+    def __init__(self):
+        super(GradientDiscriminator, self).__init__()
+        
+        # ==================== 共享特征提取 ====================
+        # 从瓶颈特征开始，提取混合梯度特征
+        self.shared_conv1 = Conv2D_BN_activa(256, 512, 7, 1, 3)  # 大感受野提取全局特征
+        self.shared_conv2 = Conv2D_BN_activa(512, 256, 3, 1, 1)  # 特征精炼
+        
+        # ==================== 结构梯度分支 ====================
+        # 结构梯度通常具有低频、平滑的特性，使用大感受野和池化操作
+        self.structure_branch = nn.Sequential(
+            Conv2D_BN_activa(256, 128, 7, 1, 3),      # 大感受野捕获结构
+            nn.AvgPool2d(3, stride=1, padding=1),      # 平滑操作，保留结构信息
+            Conv2D_BN_activa(128, 64, 5, 1, 2),        # 进一步提取结构特征
+            Conv2D_BN_activa(64, 32, 3, 1, 1),         # 特征压缩
+        )
+        
+        # ==================== 反射梯度分支 ====================
+        # 反射梯度通常具有高频、尖锐的特性，使用高频滤波和注意力机制
+        self.reflection_branch = nn.Sequential(
+            Conv2D_BN_activa(256, 128, 3, 1, 1),      # 标准卷积捕获细节
+            Conv2D_BN_activa(128, 64, 3, 1, 1),        # 提取高频特征
+            Conv2D_BN_activa(64, 32, 3, 1, 1),         # 特征压缩
+        )
+        
+        # 反射梯度分支的注意力模块：增强反射区域的响应
+        self.reflection_attention = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Conv2d(32, 32 // 4, 1, 1, 0),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(32 // 4, 32, 1, 1, 0),
+            nn.Sigmoid()
+        )
+        
+        # ==================== 多尺度特征融合 ====================
+        # 融合编码器的多尺度特征，增强梯度判别能力
+        self.fusion_conv1 = Conv2D_BN_activa(256 + 512, 256, 3, 1, 1)  # 融合x_c和x_bb_4
+        self.fusion_conv2 = Conv2D_BN_activa(256 + 256, 128, 3, 1, 1)  # 融合x_bb_3
+        self.fusion_conv3 = Conv2D_BN_activa(128 + 128, 64, 3, 1, 1)    # 融合x_bb_2
+        self.fusion_conv4 = Conv2D_BN_activa(64 + 64, 32, 3, 1, 1)     # 融合x_bb_1
+        
+        # ==================== 上采样层 ====================
+        # 逐步上采样到原始分辨率
+        # 注意：通道数需要与融合层的输出匹配
+        self.upsample1 = Conv2D_BN_activa(256, 256, 4, 2, 1, transpose=True)  # 2x上采样 (fusion_conv1输出256)
+        self.upsample2 = Conv2D_BN_activa(128, 128, 4, 2, 1, transpose=True)  # 2x上采样 (fusion_conv2输出128)
+        self.upsample3 = Conv2D_BN_activa(64, 64, 4, 2, 1, transpose=True)    # 2x上采样 (fusion_conv3输出64)
+        self.upsample4 = Conv2D_BN_activa(32, 32, 4, 2, 1, transpose=True)    # 2x上采样 (fusion_conv4输出32)
+        
+        # ==================== 输出层 ====================
+        # 结构梯度输出
+        self.structure_output = nn.Sequential(
+            Conv2D_BN_activa(32, 16, 3, 1, 1),
+            Conv2D_BN_activa(16, 1, 1, 1, 0, activation=None, if_bn=False),
+            nn.Sigmoid()  # 限制在[0,1]范围
+        )
+        
+        # 反射梯度输出
+        self.reflection_output = nn.Sequential(
+            Conv2D_BN_activa(32, 16, 3, 1, 1),
+            Conv2D_BN_activa(16, 1, 1, 1, 0, activation=None, if_bn=False),
+            nn.Sigmoid()  # 限制在[0,1]范围
+        )
+        
+        # ==================== 空间平滑模块 ====================
+        # 使用高斯平滑降低梯度图的敏感性，减少过拟合风险
+        # 创建可学习的高斯平滑核（5x5）
+        self.smooth_kernel_size = 5
+        self.smooth_sigma = 1.0
+        # 使用固定的高斯核进行平滑（不参与训练，保持稳定性）
+        self.register_buffer('gaussian_kernel', self._create_gaussian_kernel(self.smooth_kernel_size, self.smooth_sigma))
+        
+    def _create_gaussian_kernel(self, kernel_size, sigma):
+        """
+        创建高斯平滑核
+        
+        参数:
+            kernel_size: 核大小
+            sigma: 高斯标准差
+        
+        返回:
+            高斯核张量 [1, 1, kernel_size, kernel_size]
+        """
+        coords = torch.arange(kernel_size, dtype=torch.float32)
+        coords -= kernel_size // 2
+        g = torch.exp(-(coords ** 2) / (2 * sigma ** 2))
+        g /= g.sum()
+        kernel = g.unsqueeze(0) * g.unsqueeze(1)
+        return kernel.unsqueeze(0).unsqueeze(0)
+    
+    def _spatial_smooth(self, x):
+        """
+        对梯度图进行空间平滑
+        
+        参数:
+            x: 输入梯度图 [B, 1, H, W]
+        
+        返回:
+            平滑后的梯度图 [B, 1, H, W]
+        """
+        # 使用高斯卷积进行平滑
+        # 需要将kernel扩展到batch和通道维度
+        B, C, H, W = x.shape
+        kernel = self.gaussian_kernel.repeat(C, 1, 1, 1)  # [C, 1, k, k]
+        padding = self.smooth_kernel_size // 2
+        smoothed = F.conv2d(x, kernel, padding=padding, groups=C)
+        return smoothed
+    
+    def forward(self, c_features):
+        """
+        前向传播：区分结构梯度和反射梯度
+        
+        参数:
+            c_features: 编码器特征元组 (x_bb_1, x_bb_2, x_bb_3, x_bb_4, x_c)
+                - x_bb_1: [B, 64, H/2, W/2]
+                - x_bb_2: [B, 128, H/4, W/4]
+                - x_bb_3: [B, 256, H/8, W/8]
+                - x_bb_4: [B, 512, H/16, W/16]
+                - x_c: [B, 256, H/16, W/16]
+        
+        返回:
+            g_structure: 结构梯度图 [B, 1, H, W] (已平滑)
+            g_reflection: 反射梯度图 [B, 1, H, W] (已平滑)
+        """
+        x_bb_1, x_bb_2, x_bb_3, x_bb_4, x_c = c_features
+        
+        # ==================== 共享特征提取 ====================
+        shared_feat = self.shared_conv1(x_c)
+        shared_feat = self.shared_conv2(shared_feat)
+        
+        # ==================== 双分支梯度提取 ====================
+        # 结构梯度分支：提取低频结构信息
+        structure_feat = self.structure_branch(shared_feat)
+        
+        # 反射梯度分支：提取高频反射信息
+        reflection_feat = self.reflection_branch(shared_feat)
+        # 应用注意力机制增强反射区域
+        attention = self.reflection_attention(reflection_feat)
+        reflection_feat = reflection_feat * attention
+        
+        # ==================== 多尺度特征融合 ====================
+        # 融合x_c和x_bb_4
+        if shared_feat.shape[-2:] != x_bb_4.shape[-2:]:
+            shared_feat = F.interpolate(shared_feat, size=x_bb_4.shape[-2:], mode='bilinear', align_corners=False)
+        fused = torch.cat([shared_feat, x_bb_4], dim=1)
+        fused = self.fusion_conv1(fused)
+        
+        # 融合x_bb_3
+        fused = self.upsample1(fused)
+        if fused.shape[-2:] != x_bb_3.shape[-2:]:
+            fused = F.interpolate(fused, size=x_bb_3.shape[-2:], mode='bilinear', align_corners=False)
+        fused = torch.cat([fused, x_bb_3], dim=1)
+        fused = self.fusion_conv2(fused)
+        
+        # 融合x_bb_2
+        fused = self.upsample2(fused)
+        if fused.shape[-2:] != x_bb_2.shape[-2:]:
+            fused = F.interpolate(fused, size=x_bb_2.shape[-2:], mode='bilinear', align_corners=False)
+        fused = torch.cat([fused, x_bb_2], dim=1)
+        fused = self.fusion_conv3(fused)
+        
+        # 融合x_bb_1
+        fused = self.upsample3(fused)
+        if fused.shape[-2:] != x_bb_1.shape[-2:]:
+            fused = F.interpolate(fused, size=x_bb_1.shape[-2:], mode='bilinear', align_corners=False)
+        fused = torch.cat([fused, x_bb_1], dim=1)
+        fused = self.fusion_conv4(fused)
+        
+        # ==================== 上采样到原始分辨率 ====================
+        fused = self.upsample4(fused)
+        
+        # ==================== 生成双梯度图 ====================
+        # fused已经是32通道（来自fusion_conv4的输出）
+        # 结构梯度：融合结构分支特征和融合特征
+        if structure_feat.shape[-2:] != fused.shape[-2:]:
+            structure_feat = F.interpolate(structure_feat, size=fused.shape[-2:], mode='bilinear', align_corners=False)
+        structure_input = fused + structure_feat  # 残差连接
+        g_structure = self.structure_output(structure_input)
+        
+        # 反射梯度：融合反射分支特征和融合特征
+        if reflection_feat.shape[-2:] != fused.shape[-2:]:
+            reflection_feat = F.interpolate(reflection_feat, size=fused.shape[-2:], mode='bilinear', align_corners=False)
+        reflection_input = fused + reflection_feat  # 残差连接
+        g_reflection = self.reflection_output(reflection_input)
+        
+        # ==================== 空间平滑处理 ====================
+        # 对梯度图进行空间平滑，降低敏感性，减少过拟合风险
+        g_structure = self._spatial_smooth(g_structure)
+        g_reflection = self._spatial_smooth(g_reflection)
+        
+        return g_structure, g_reflection
+
 class YFFC(nn.Module):
     """
-    Y-FFC网络：Y形快速傅立叶卷积网络
+    Y-FFC网络：Y形快速傅立叶卷积网络（增强版）
     
     主要功能：从高反射条纹图像中分离漫反射和镜面反射分量
-    网络架构：Y形设计，共享编码器，双解码器分支
+    网络架构：Y形设计，共享编码器，多分支解码器
+    
+    新增功能：
+        - 梯度判别分支：显式区分结构梯度和反射梯度
+        - 结构保护机制：通过结构梯度约束保护真实物体结构
+        - 反射抑制机制：通过反射梯度调制精确去除反射
+        - 延后启用机制：可在训练后期启用梯度判别模块，提高训练稳定性
     
     输出:
         - r: 漫反射分量（输入 - 镜面反射）
-        - g: 梯度分量（辅助信息）
+        - g: 混合梯度分量（辅助信息）
+        - g_structure: 结构梯度分量（结构保护约束）
+        - g_reflection: 反射梯度分量（反射抑制调制）
         - b: 镜面反射分量
     """
-    def __init__(self):
+    def __init__(self, enable_gradient_discriminator=True, gradient_constraint_weight=0.3):
+        """
+        初始化Y-FFC网络
+        
+        参数:
+            enable_gradient_discriminator: 是否启用梯度判别模块，默认True
+            gradient_constraint_weight: 梯度约束权重（弱约束），默认0.3，范围[0,1]
+        """
         super(YFFC, self).__init__()
         # 编码器：提取多尺度特征
         self.encoder = Encoder()
-        # 梯度解码器：生成梯度信息分支
+        # 梯度解码器：生成混合梯度信息分支
         self.gradient_decoder = GradientDecoder()
         # 增强层：对梯度分支特征进行增强
         self.enhancement_layers = EnhancementLayers()
-        # 主解码器：生成镜面反射分量
+        # 梯度判别器：区分结构梯度和反射梯度（新增）
+        self.gradient_discriminator = GradientDiscriminator()
+        # 主解码器：生成镜面反射分量（已集成梯度指导机制）
         self.main_decoder = MainDecoder(in_channels=256)
+        
+        # 梯度判别模块启用控制
+        self.enable_gradient_discriminator = enable_gradient_discriminator
+        # 梯度约束权重（用于弱约束，降低决策敏感度）
+        self.gradient_constraint_weight = gradient_constraint_weight
 
     def forward(self, x):
         """
@@ -840,31 +1131,50 @@ class YFFC(nn.Module):
             x: 输入图像，形状 [B, 1, H, W]
         
         返回:
-            estimations: 包含三个分量的字典
+            estimations: 包含多个分量的字典
                 - 'r': 漫反射分量
-                - 'g': 梯度分量  
+                - 'g': 混合梯度分量（原始梯度解码器输出）
+                - 'g_structure': 结构梯度分量（用于结构保护）
+                - 'g_reflection': 反射梯度分量（用于反射抑制）
                 - 'b': 镜面反射分量
         """
         # 编码器输出：x_bb_1..x_bb_4（多尺度特征）, x_c（瓶颈特征）
         c_features = self.encoder(x)
         
         # 梯度解码器输入：x_bb_1..x_bb_4（不包括瓶颈特征）
+        # 输出：中间增强特征 + 混合梯度图
         g_features = self.gradient_decoder(c_features[:-1])
         
         # 增强层输入：去掉最终梯度图，只处理中间特征
         enhanced_features = self.enhancement_layers(g_features[:-1])
         
-        # 主解码器：融合所有特征，输出镜面反射分量
-        est_b = self.main_decoder(c_features, enhanced_features, g_features[-1])
+        # ==================== 梯度判别分支（新增，可控制启用） ====================
+        # 从编码器特征中区分结构梯度和反射梯度
+        if self.enable_gradient_discriminator:
+            g_structure, g_reflection = self.gradient_discriminator(c_features)
+        else:
+            # 如果未启用，生成零梯度图（不参与决策）
+            B, _, H, W = x.shape
+            g_structure = torch.zeros(B, 1, H, W, device=x.device, dtype=x.dtype)
+            g_reflection = torch.zeros(B, 1, H, W, device=x.device, dtype=x.dtype)
+        
+        # 主解码器：融合所有特征和梯度指导信号，输出镜面反射分量
+        # 使用结构梯度和反射梯度进行双重指导（弱约束形式）
+        est_b = self.main_decoder(c_features, enhanced_features, g_structure, g_reflection, 
+                                  constraint_weight=self.gradient_constraint_weight)
         
         # 构建输出字典：
-        #   r = x - b  表示漫反射分量；
-        #   g          表示梯度分量（辅助监督/先验）；
-        #   b          表示镜面反射分量。
+        #   r = x - b          表示漫反射分量；
+        #   g                  表示混合梯度分量（原始梯度解码器输出，用于向后兼容）；
+        #   g_structure        表示结构梯度分量（结构保护约束）；
+        #   g_reflection       表示反射梯度分量（反射抑制调制）；
+        #   b                  表示镜面反射分量。
         estimations = {
-            'r': x - est_b,        # 漫反射 = 输入 - 镜面反射
-            'g': g_features[-1],   # 梯度分量
-            'b': est_b             # 镜面反射分量
+            'r': x - est_b,              # 漫反射 = 输入 - 镜面反射
+            'g': g_features[-1],         # 混合梯度分量（原始）
+            'g_structure': g_structure,   # 结构梯度分量（新增）
+            'g_reflection': g_reflection, # 反射梯度分量（新增）
+            'b': est_b                    # 镜面反射分量
         }
         return estimations
 
@@ -1155,12 +1465,16 @@ def main():
             print("=" * 30)
             print(f"输入形状: {test_input.shape}")
             print(f"漫反射输出形状: {output['r'].shape}")
-            print(f"梯度输出形状: {output['g'].shape}")
+            print(f"混合梯度输出形状: {output['g'].shape}")
+            print(f"结构梯度输出形状: {output['g_structure'].shape}")
+            print(f"反射梯度输出形状: {output['g_reflection'].shape}")
             print(f"镜面反射输出形状: {output['b'].shape}")
             
             # 验证输出形状
             assert output['r'].shape == test_input.shape, "漫反射输出形状不匹配"
-            assert output['g'].shape == test_input.shape, "梯度输出形状不匹配"
+            assert output['g'].shape == test_input.shape, "混合梯度输出形状不匹配"
+            assert output['g_structure'].shape == test_input.shape, "结构梯度输出形状不匹配"
+            assert output['g_reflection'].shape == test_input.shape, "反射梯度输出形状不匹配"
             assert output['b'].shape == test_input.shape, "镜面反射输出形状不匹配"
             print("✓ 所有输出形状验证通过")
     except Exception as e:
