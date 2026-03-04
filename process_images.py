@@ -269,10 +269,10 @@ def main():
     # ==================== ⭐ 配置区 - 在这里修改参数 ⭐ ====================
     
     # 1. 输入配置（修改为你的图像路径或文件夹路径）
-    INPUT_PATH = r'E:\images\place2\11_luminance300_81'  # 可以是单张图像路径或文件夹路径
+    INPUT_PATH = r'E:\images\PSM_FSM\O1'  # 可以是单张图像路径或文件夹路径
     
     # 2. 模型配置
-    MODEL_PATH = r'experiments\original_yffc_20251231_233041\models\best_model.pth'  # 训练好的模型路径
+    MODEL_PATH = r'experiments\original_yffc_20260224_110909\models\best_model.pth'  # 训练好的模型路径
     
     # 3. 输出配置
     OUTPUT_DIR = 'processed_results'  # 输出目录

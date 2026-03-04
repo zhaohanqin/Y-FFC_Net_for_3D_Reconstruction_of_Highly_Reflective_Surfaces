@@ -45,14 +45,10 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
         loss_config = {'ssim_window_size': 11, 'ssim_sigma': 1.5, 
                       'weight_diffuse': 1.0, 'weight_specular': 1.0, 'weight_gradient': 1.0}
     if training_config is None:
-        # 默认梯度判别模块启用epoch = 总训练轮数的40%
-        default_enable_gd_epoch = int(epochs * 0.4)
         training_config = {'use_grad_clip': False, 'grad_clip_value': 1.0, 
                           'use_early_stopping': False, 'early_stopping_patience': 20,
                           'model_save_path': 'best_model.pth', 'checkpoint_dir': 'checkpoints',
-                          'save_every_n_epochs': 0,
-                          'enable_gradient_discriminator_epoch': default_enable_gd_epoch,  # 从第几个epoch开始启用梯度判别模块，默认值为总训练轮数的40%
-                          'gradient_constraint_weight': 0.3}  # 梯度约束权重（弱约束），范围[0,1]
+                          'save_every_n_epochs': 0}
     # 清理CUDA缓存
     if device.type == 'cuda':
         torch.cuda.empty_cache()
@@ -145,8 +141,8 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
     # 记录训练/验证历史损失，用于绘制学习曲线
     train_losses = []  # 每轮训练平均损失
     val_losses = []    # 每轮验证平均损失
-    train_accuracies = []  # 每轮训练平均SSIM值
-    val_accuracies = []    # 每轮验证平均SSIM值
+    train_accuracies = []  # 每轮训练平均精度（基于SSIM）
+    val_accuracies = []    # 每轮验证平均精度（基于SSIM）
     epoch_times = []   # 每轮训练时间
     
     best_val_loss = float('inf')  # 最佳验证损失（越小越好），用于模型保存
@@ -181,37 +177,13 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
     print(f"\n 训练开始时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 80)
     
-    # ==================== 梯度判别模块延后启用配置 ====================
-    enable_gd_epoch = training_config.get('enable_gradient_discriminator_epoch', 0)
-    gradient_constraint_weight = training_config.get('gradient_constraint_weight', 0.3)
-    
-    # 初始化梯度判别模块状态
-    if hasattr(model, 'enable_gradient_discriminator'):
-        model.enable_gradient_discriminator = (enable_gd_epoch == 0)
-        model.gradient_constraint_weight = gradient_constraint_weight
-        if enable_gd_epoch > 0:
-            print(f"\n梯度判别模块将在第 {enable_gd_epoch} 个epoch启用")
-            print(f"梯度约束权重: {gradient_constraint_weight} (弱约束)")
-    
     for epoch in range(epochs):  # 逐轮训练
         epoch_start_time = time.time()  # 记录本轮开始时间
         
-        # ==================== 动态启用梯度判别模块 ====================
-        if hasattr(model, 'enable_gradient_discriminator'):
-            # 根据epoch数决定是否启用梯度判别模块
-            should_enable = (epoch >= enable_gd_epoch)
-            if model.enable_gradient_discriminator != should_enable:
-                model.enable_gradient_discriminator = should_enable
-                if should_enable:
-                    print(f"\n[Epoch {epoch+1}] 梯度判别模块已启用，约束权重: {gradient_constraint_weight}")
-                else:
-                    print(f"\n[Epoch {epoch+1}] 梯度判别模块已禁用（将在第 {enable_gd_epoch} 个epoch启用）")
-        
         # ==================== 训练阶段 ====================
         model.train()  # 切换到训练模式（启用BN/Dropout等正则化）
-        train_loss_sum = 0.0  # 本轮训练损失（按样本加权）累计
-        train_ssim_sum = 0.0  # 本轮训练SSIM（按样本加权）累计
-        train_num_samples = 0  # 本轮训练样本数累计
+        train_loss = 0  # 本轮训练损失累计
+        train_ssim_total = 0  # 本轮训练SSIM累计（用于计算精度）
         
         # 使用 tqdm 展示训练批次进度
         optimizer.zero_grad()  # 在循环开始前清空梯度
@@ -219,7 +191,6 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
         for batch_idx, batch in enumerate(tqdm(train_loader, total=len(train_loader), desc=f'Train {epoch+1}/{epochs}', leave=False)):
             # 将数据移到指定设备
             inputs, gt_diffuse, gt_specular, gt_gradient = [x.to(device) for x in batch]
-            batch_size = inputs.size(0)
             
             # ==================== 前向传播（使用混合精度） ====================
             if use_amp and scaler is not None:
@@ -249,8 +220,8 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
                     loss = weight_diffuse * ld + weight_specular * ls + weight_gradient * lg
                     loss = loss / gradient_accumulation_steps  # 梯度累积时缩放损失
                     
-                    # 计算SSIM值（用于训练统计，按样本加权）
-                    train_ssim_sum += ssim_loss(pred_diffuse, gt_diffuse).item() * batch_size
+                    # 计算SSIM精度（用于训练精度统计）
+                    train_ssim_total += ssim_loss(pred_diffuse, gt_diffuse).item()
             else:
                 estimations = model(inputs)  # 模型输出字典：{'r': 漫反射, 'g': 梯度, 'b': 镜面反射}
                 pred_diffuse = estimations['r']    # 预测漫反射分量
@@ -277,8 +248,8 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
                 loss = weight_diffuse * ld + weight_specular * ls + weight_gradient * lg
                 loss = loss / gradient_accumulation_steps  # 梯度累积时缩放损失
                 
-                # 计算SSIM值（用于训练统计，按样本加权）
-                train_ssim_sum += ssim_loss(pred_diffuse, gt_diffuse).item() * batch_size
+                # 计算SSIM精度（用于训练精度统计）
+                train_ssim_total += ssim_loss(pred_diffuse, gt_diffuse).item()
             
             # ==================== 反向传播与参数更新 ====================
             if use_amp and scaler is not None:
@@ -301,9 +272,7 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
                     optimizer.step()  # 按梯度更新权重
                 optimizer.zero_grad()  # 清空梯度
             
-            # 累计训练损失（恢复原始尺度；按样本加权，避免最后一个小batch造成统计抖动）
-            train_loss_sum += (loss.item() * gradient_accumulation_steps) * batch_size
-            train_num_samples += batch_size
+            train_loss += loss.item() * gradient_accumulation_steps  # 累计训练损失（恢复原始尺度）
             
             # 在进度条上显示当前损失
             if (batch_idx + 1) % 10 == 0:
@@ -320,15 +289,13 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
         
         # ==================== 验证阶段 ====================
         model.eval()  # 切换到评估模式（禁用BN/Dropout等）
-        val_loss_sum = 0.0  # 本轮验证损失（按样本加权）累计
-        val_ssim_sum = 0.0  # 本轮验证SSIM（按样本加权）累计
-        val_num_samples = 0  # 本轮验证样本数累计
+        val_loss = 0  # 本轮验证损失累计
+        val_ssim_total = 0  # 本轮验证SSIM累计（用于计算精度）
         
         with torch.no_grad():  # 关闭梯度计算以节省显存与加速
             # 使用 tqdm 展示验证批次进度
             for batch in tqdm(val_loader, total=len(val_loader), desc=f'Val {epoch+1}/{epochs}', leave=False):
                 inputs, gt_diffuse, gt_specular, gt_gradient = [x.to(device) for x in batch]
-                batch_size = inputs.size(0)
                 
                 # 前向传播（不计算梯度，使用混合精度）
                 if use_amp and scaler is not None:
@@ -353,8 +320,8 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
                         
                         loss = weight_diffuse * ld + weight_specular * ls + weight_gradient * lg
                         
-                        # 计算SSIM值（用于验证统计，按样本加权）
-                        val_ssim_sum += ssim_loss(pred_diffuse, gt_diffuse).item() * batch_size
+                        # 计算SSIM精度（用于验证精度统计）
+                        val_ssim_total += ssim_loss(pred_diffuse, gt_diffuse).item()
                 else:
                     estimations = model(inputs)
                     pred_diffuse = estimations['r']
@@ -376,22 +343,19 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
                     
                     loss = weight_diffuse * ld + weight_specular * ls + weight_gradient * lg
                     
-                    # 计算SSIM值（用于验证统计，按样本加权）
-                    val_ssim_sum += ssim_loss(pred_diffuse, gt_diffuse).item() * batch_size
+                    # 计算SSIM精度（用于验证精度统计）
+                    val_ssim_total += ssim_loss(pred_diffuse, gt_diffuse).item()
                 
-                # 按样本加权累计，避免最后一个小batch（如batch_size=1）被“等权重”放大影响
-                val_loss_sum += loss.item() * batch_size
-                val_num_samples += batch_size
+                val_loss += loss.item()
         
         # ==================== 统计与记录 ====================
-        # 计算本轮的平均训练/验证损失和SSIM值
-        # 用“按样本数加权”的平均，验证曲线会显著更稳（尤其是验证集不能整除batch_size时）
-        avg_train_loss = train_loss_sum / max(train_num_samples, 1)
-        avg_val_loss = val_loss_sum / max(val_num_samples, 1)
-        avg_train_acc = train_ssim_sum / max(train_num_samples, 1)  # 平均SSIM值
-        avg_val_acc = val_ssim_sum / max(val_num_samples, 1)
+        # 计算本轮的平均训练/验证损失和精度
+        avg_train_loss = train_loss / len(train_loader)
+        avg_val_loss = val_loss / len(val_loader)
+        avg_train_acc = train_ssim_total / len(train_loader)  # SSIM作为精度指标
+        avg_val_acc = val_ssim_total / len(val_loader)
         
-        # 记录损失和SSIM历史
+        # 记录损失和精度历史
         train_losses.append(avg_train_loss)
         val_losses.append(avg_val_loss)
         train_accuracies.append(avg_train_acc)
@@ -414,7 +378,7 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
         print("=" * 80)
         print(f"本轮耗时: {epoch_time:.2f}秒 | 平均耗时: {avg_epoch_time:.2f}秒/轮 | 预计剩余: {eta}")
         print(f"损失值:   训练损失 = {avg_train_loss:.6f} | 验证损失 = {avg_val_loss:.6f}")
-        print(f"SSIM值:   训练SSIM = {avg_train_acc:.4f} | 验证SSIM = {avg_val_acc:.4f}")
+        print(f"精度值:   训练精度 = {avg_train_acc:.4f} | 验证精度 = {avg_val_acc:.4f} (SSIM)")
         print(f"超参数:   学习率 = {current_lr:.6f} | 批大小 = {train_loader.batch_size} | 累积步数 = {gradient_accumulation_steps}")
         if device.type == 'cuda':
             print(f"显存使用: {torch.cuda.memory_allocated(device)/1024**3:.2f} GB / {torch.cuda.max_memory_allocated(device)/1024**3:.2f} GB (当前/峰值)")
@@ -424,7 +388,7 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
             best_val_loss = avg_val_loss
             early_stopping_counter = 0  # 重置早停计数器
             torch.save(model.state_dict(), model_save_path)
-            print(f'最佳模型已保存: {model_save_path}, 验证损失: {best_val_loss:.6f}, 验证SSIM: {avg_val_acc:.4f}')
+            print(f'最佳模型已保存: {model_save_path}, 验证损失: {best_val_loss:.6f}, 验证精度: {avg_val_acc:.4f}')
         else:
             early_stopping_counter += 1
             if use_early_stopping:
@@ -479,10 +443,10 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
     print("=" * 80)
     print(f"总训练时间: {total_time_str}")
     print(f"最佳验证损失: {best_val_loss:.6f}")
-    print(f"最终训练SSIM: {train_accuracies[-1]:.4f} | 最终验证SSIM: {val_accuracies[-1]:.4f}")
+    print(f"最终训练精度: {train_accuracies[-1]:.4f} | 最终验证精度: {val_accuracies[-1]:.4f}")
     print("=" * 80)
     
-    return train_losses, val_losses, train_accuracies, val_accuracies  # 返回训练过程中的损失和SSIM曲线
+    return train_losses, val_losses, train_accuracies, val_accuracies  # 返回训练过程中的损失和精度曲线
 
 def test_model(model, test_loader, device='cuda'):
     """
@@ -627,7 +591,7 @@ def visualize_results(model, test_loader, device='cuda', num_samples=5, output_f
             axes[1, 1].set_title('Predicted (Gradient)')
             axes[1, 1].axis('off')
             
-            # 显示与真实漫反射的差异（用于评估预测质量）
+            # 显示与真实漫反射的差异（用于评估预测精度）
             diff = np.abs(pred_diffuse_img - gt_diffuse_img)
             axes[1, 2].imshow(diff, cmap='hot')  # 热力图显示差异
             # 英文标题释义：Difference (|Pred - GT|) = “预测与真实的绝对差异”
@@ -649,13 +613,13 @@ def visualize_results(model, test_loader, device='cuda', num_samples=5, output_f
 
 def plot_training_curves(train_losses, val_losses, train_accs, val_accs, output_folder, current_epoch):
     """
-    实时绘制训练曲线（损失和SSIM）
+    实时绘制训练曲线（损失和精度）
     
     参数:
         train_losses: 训练损失列表
         val_losses: 验证损失列表
-        train_accs: 训练SSIM列表
-        val_accs: 验证SSIM列表
+        train_accs: 训练精度列表
+        val_accs: 验证精度列表
         output_folder: 输出文件夹
         current_epoch: 当前epoch数
     """
@@ -671,12 +635,12 @@ def plot_training_curves(train_losses, val_losses, train_accs, val_accs, output_
     ax1.legend(fontsize=10)
     ax1.grid(True, alpha=0.3)
     
-    # 绘制SSIM曲线
-    ax2.plot(epochs, train_accs, 'b-o', label='训练SSIM', linewidth=2, markersize=4)
-    ax2.plot(epochs, val_accs, 'r-s', label='验证SSIM', linewidth=2, markersize=4)
+    # 绘制精度曲线
+    ax2.plot(epochs, train_accs, 'b-o', label='训练精度 (SSIM)', linewidth=2, markersize=4)
+    ax2.plot(epochs, val_accs, 'r-s', label='验证精度 (SSIM)', linewidth=2, markersize=4)
     ax2.set_xlabel('Epoch', fontsize=12)
-    ax2.set_ylabel('SSIM值', fontsize=12)
-    ax2.set_title(f'训练和验证SSIM (Epoch {current_epoch})', fontsize=14, fontweight='bold')
+    ax2.set_ylabel('精度 (Accuracy)', fontsize=12)
+    ax2.set_title(f'训练和验证精度 (Epoch {current_epoch})', fontsize=14, fontweight='bold')
     ax2.legend(fontsize=10)
     ax2.grid(True, alpha=0.3)
     ax2.set_ylim([0, 1])  # SSIM范围为0-1
@@ -810,10 +774,10 @@ def main():
     EPOCHS = 200  # 训练轮数，建议范围：50-200
     
     # 学习率
-    LEARNING_RATE = 0.0001  # 初始学习率，建议范围：0.0001-0.01
+    LEARNING_RATE = 0.0005  # 初始学习率，建议范围：0.0001-0.01
     
     # 批次大小
-    BATCH_SIZE = 20  # 每批处理的样本数，显存不足时使用1，充足时可用2-4
+    BATCH_SIZE = 30  # 每批处理的样本数，显存不足时使用1，充足时可用2-4
     
     # 梯度累积步数（用于模拟更大的batch_size）
     GRADIENT_ACCUMULATION_STEPS = 3  # 梯度累积步数，等效batch_size = BATCH_SIZE × GRADIENT_ACCUMULATION_STEPS
@@ -825,10 +789,10 @@ def main():
     # Adam优化器参数
     ADAM_BETAS = (0.9, 0.999)  # Adam的beta参数，控制动量和二阶矩估计
     ADAM_EPS = 1e-8  # Adam的epsilon，防止除零
-    ADAM_WEIGHT_DECAY = 0.01  # L2正则化系数，0表示不使用，建议范围：0-0.01
+    ADAM_WEIGHT_DECAY = 0.0  # L2正则化系数，0表示不使用，建议范围：0-0.01
     
     # SGD优化器参数（仅当OPTIMIZER_TYPE='sgd'时使用）
-    SGD_MOMENTUM = 0.94  # SGD动量，建议范围：0.9-0.99
+    SGD_MOMENTUM = 0.9  # SGD动量，建议范围：0.9-0.99
     SGD_WEIGHT_DECAY = 0.0001  # SGD权重衰减
     
     # ========== 学习率调度器参数 ==========
@@ -866,7 +830,7 @@ def main():
     IMAGE_RESIZE = (160,128)  # 推荐尺寸：512(4GB显存), 768(8GB显存), 1024(12GB+显存)
     
     # 数据集划分比例
-    TRAIN_SPLIT_RATIO = 0.9  # 训练集比例，0.8表示80%训练，20%验证
+    TRAIN_SPLIT_RATIO = 0.8  # 训练集比例，0.8表示80%训练，20%验证
     
     # 数据加载器参数
     NUM_WORKERS = 0  # 数据加载工作进程数，Windows下建议使用0，Linux可以设置为2-4
@@ -875,7 +839,7 @@ def main():
     
     # ========== 训练策略参数 ==========
     # 混合精度训练（节省显存）
-    USE_AMP = False  # True=启用混合精度训练，False=使用全精度
+    USE_AMP = True  # True=启用混合精度训练，False=使用全精度
     
     # 梯度裁剪（防止梯度爆炸）
     USE_GRAD_CLIP = False  # 是否启用梯度裁剪
@@ -884,13 +848,6 @@ def main():
     # 早停策略
     USE_EARLY_STOPPING = False  # 是否启用早停
     EARLY_STOPPING_PATIENCE = 20  # 验证损失不下降的最大容忍轮数
-    
-    # ========== 梯度判别模块参数 ==========
-    # 延后启用梯度判别模块（缓解过拟合）
-    # 默认值为总训练轮数的40%，如果设置为0表示从一开始就启用
-    ENABLE_GRADIENT_DISCRIMINATOR_EPOCH = None  # None表示使用默认值（总训练轮数的40%），也可以手动指定具体数值
-    GRADIENT_CONSTRAINT_WEIGHT = 0.3  # 梯度约束权重（弱约束），范围[0,1]，默认0.3
-    # 较小的权重可以降低模型的决策敏感度，缓解验证集损失波动问题
     
     # ==================== 模型保存和可视化 ==========
     # 创建带时间戳的实验文件夹（与train_enhanced.py保持一致）
@@ -973,26 +930,11 @@ def main():
         print('获取样本批次失败:', e)
         return
     
-    # ==================== 计算梯度判别模块启用epoch ====================
-    # 如果未指定梯度判别模块启用epoch，则使用默认值（总训练轮数的40%）
-    if ENABLE_GRADIENT_DISCRIMINATOR_EPOCH is None:
-        enable_gd_epoch = int(EPOCHS * 0.4)
-    else:
-        enable_gd_epoch = ENABLE_GRADIENT_DISCRIMINATOR_EPOCH
-    
     # ==================== 模型创建 ====================
     print("创建Y-FFC网络模型...")
-    # 初始化时根据配置决定是否启用梯度判别模块
-    initial_enable_gd = (enable_gd_epoch == 0)
-    model = YFFC(enable_gradient_discriminator=initial_enable_gd, 
-                gradient_constraint_weight=GRADIENT_CONSTRAINT_WEIGHT)
+    model = YFFC()
     total_params = sum(p.numel() for p in model.parameters())
     print(f"模型参数总数: {total_params:,}")
-    if enable_gd_epoch > 0:
-        print(f"梯度判别模块将在第 {enable_gd_epoch} 个epoch启用（默认值：总训练轮数的40%）")
-    else:
-        print("梯度判别模块已启用")
-    print(f"梯度约束权重: {GRADIENT_CONSTRAINT_WEIGHT} (弱约束)")
     
     # ==================== 准备配置字典 ====================
     optimizer_config = {
@@ -1028,9 +970,7 @@ def main():
         'early_stopping_patience': EARLY_STOPPING_PATIENCE,
         'model_save_path': MODEL_SAVE_PATH,
         'checkpoint_dir': CHECKPOINT_DIR,
-        'save_every_n_epochs': SAVE_EVERY_N_EPOCHS,
-        'enable_gradient_discriminator_epoch': enable_gd_epoch,
-        'gradient_constraint_weight': GRADIENT_CONSTRAINT_WEIGHT
+        'save_every_n_epochs': SAVE_EVERY_N_EPOCHS
     }
     
     # ==================== 模型训练 ====================
@@ -1067,7 +1007,7 @@ def main():
     # ==================== 训练历史可视化 ====================
     print("保存最终训练历史曲线...")
     
-    # 创建2x2子图：损失和SSIM
+    # 创建2x2子图：损失和精度
     fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 12))
     epochs_range = range(1, len(train_losses) + 1)
     
@@ -1080,12 +1020,12 @@ def main():
     ax1.legend(fontsize=10)
     ax1.grid(True, alpha=0.3)
     
-    # 右上：训练和验证SSIM
-    ax2.plot(epochs_range, train_accuracies, 'b-o', label='训练SSIM', linewidth=2, markersize=3)
-    ax2.plot(epochs_range, val_accuracies, 'r-s', label='验证SSIM', linewidth=2, markersize=3)
+    # 右上：训练和验证精度
+    ax2.plot(epochs_range, train_accuracies, 'b-o', label='训练精度 (SSIM)', linewidth=2, markersize=3)
+    ax2.plot(epochs_range, val_accuracies, 'r-s', label='验证精度 (SSIM)', linewidth=2, markersize=3)
     ax2.set_xlabel('Epoch', fontsize=12)
-    ax2.set_ylabel('SSIM值', fontsize=12)
-    ax2.set_title('训练和验证SSIM', fontsize=14, fontweight='bold')
+    ax2.set_ylabel('精度 (Accuracy)', fontsize=12)
+    ax2.set_title('训练和验证精度', fontsize=14, fontweight='bold')
     ax2.legend(fontsize=10)
     ax2.grid(True, alpha=0.3)
     ax2.set_ylim([0, 1])
@@ -1100,13 +1040,13 @@ def main():
     ax3.legend(fontsize=10)
     ax3.grid(True, alpha=0.3)
     
-    # 右下：SSIM对比
-    ax4.plot(epochs_range, train_accuracies, 'b-', label='训练SSIM', linewidth=2, alpha=0.7)
-    ax4.plot(epochs_range, val_accuracies, 'r-', label='验证SSIM', linewidth=2, alpha=0.7)
+    # 右下：精度对比
+    ax4.plot(epochs_range, train_accuracies, 'b-', label='训练精度', linewidth=2, alpha=0.7)
+    ax4.plot(epochs_range, val_accuracies, 'r-', label='验证精度', linewidth=2, alpha=0.7)
     ax4.fill_between(epochs_range, train_accuracies, val_accuracies, alpha=0.2)
     ax4.set_xlabel('Epoch', fontsize=12)
-    ax4.set_ylabel('SSIM值', fontsize=12)
-    ax4.set_title('SSIM对比（填充区域）', fontsize=14, fontweight='bold')
+    ax4.set_ylabel('精度 (Accuracy)', fontsize=12)
+    ax4.set_title('精度对比（填充区域）', fontsize=14, fontweight='bold')
     ax4.legend(fontsize=10)
     ax4.grid(True, alpha=0.3)
     ax4.set_ylim([0, 1])
@@ -1139,9 +1079,9 @@ def main():
         f.write(f"  - 最终训练损失: {train_losses[-1]:.6f}\n")
         f.write(f"  - 最终验证损失: {val_losses[-1]:.6f}\n")
         f.write(f"  - 最佳验证损失: {min(val_losses):.6f}\n")
-        f.write(f"  - 最终训练SSIM: {train_accuracies[-1]:.4f}\n")
-        f.write(f"  - 最终验证SSIM: {val_accuracies[-1]:.4f}\n")
-        f.write(f"  - 最佳验证SSIM: {max(val_accuracies):.4f}\n\n")
+        f.write(f"  - 最终训练精度: {train_accuracies[-1]:.4f}\n")
+        f.write(f"  - 最终验证精度: {val_accuracies[-1]:.4f}\n")
+        f.write(f"  - 最佳验证精度: {max(val_accuracies):.4f}\n\n")
         f.write("输出文件:\n")
         f.write(f"  - 最佳模型: {MODEL_SAVE_PATH}\n")
         f.write(f"  - 训练历史: {history_path}\n")
