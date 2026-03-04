@@ -345,11 +345,8 @@ class Encoder(nn.Module):
 
         self.vit_branch = ViTEncoderBranch(vit_image_size=vit_image_size)
 
-        # 作用：ResNet bottleneck 特征与 ViT 全局特征拼接后，用 1×1 Conv 把通道压回 512，
-        # 从而保证后续瓶颈层输入 shape 与原模型一致（解码器不需要改）
         self.vit_resnet_fuse_1x1 = Conv2D_BN_activa(512 + self.vit_branch.embed_dim, 512, 1, 1, 0)
 
-        # 原模型瓶颈：输入 512 -> 输出 256（保持不变）
         self.cba_after_backbone = Conv2D_BN_activa(512, 256, 3, 1, 1)
 
     def forward(self, x):
@@ -371,7 +368,7 @@ class Encoder(nn.Module):
 
         x_l3_512 = self.reduce_l3(x_l3)  # /16, 512
         x_l4_512 = self.reduce_l4(x_l4)  # /16, 512
-        x_bb_4 = self.fuse_l34(torch.cat([x_l3_512, x_l4_512], dim=1))  # /16, 512 (仅 ResNet，用于 skip)
+        x_bb_4 = self.fuse_l34(torch.cat([x_l3_512, x_l4_512], dim=1))  # /16, 512
 
         vit_feat = self.vit_branch(x_in)  # [B, Cv, Gh, Gw]
         if vit_feat.shape[-2:] != x_bb_4.shape[-2:]:
@@ -512,19 +509,98 @@ class MainDecoder(nn.Module):
         return est_b
 
 
+# ==================== 梯度分解单元（仅用于 EnhancementLayers 内部） ====================
+
+class _SpectralDecompositionUnit(nn.Module):
+    """
+    内部使用的梯度分解单元，不对外暴露。
+
+    设计思路：
+      - projection_branch：大感受野（7×7）卷积，捕获投影条纹的低频周期性梯度。
+        该分支仅在内部产生门控信号，不作为最终输出传递给解码器。
+      - specular_branch：小感受野（3×3）卷积，捕获镜面反射的高频局部梯度。
+        该分支的输出经过投影分支门控调制后，作为最终镜面反射梯度输出。
+
+    门控调制逻辑：
+      gate = Sigmoid( 1×1 Conv( projection ) )
+      specular_refined = specular * gate + specular   （残差保留原始镜面信息）
+
+    输出 specular_refined 的 shape 与原 EnhancementLayers 输出完全一致：
+      channel = out_c，spatial = 输入 spatial（无上/下采样）。
+    """
+
+    def __init__(self, in_c: int, out_c: int):
+        super(_SpectralDecompositionUnit, self).__init__()
+
+        # 投影条纹分支：大核感受野，侧重于周期性条纹结构（仅内部使用）
+        self.projection_branch = Conv2D_BN_activa(in_c, out_c, 7, 1, 3)
+
+        # 镜面反射分支：小核感受野，侧重于高频局部高光特征
+        self.specular_branch = Conv2D_BN_activa(in_c, out_c, 3, 1, 1)
+
+        # 门控卷积：将投影特征压缩为 [0,1] 权重，用于调制镜面特征
+        # 使用 1×1 卷积保证 spatial 不变，Sigmoid 保证门控范围
+        self.gate_conv = nn.Sequential(
+            nn.Conv2d(out_c, out_c, kernel_size=1, stride=1, padding=0, bias=True),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # 投影条纹梯度（仅内部使用，不输出）
+        projection = self.projection_branch(x)
+
+        # 镜面反射梯度（原始）
+        specular = self.specular_branch(x)
+
+        # 利用投影特征生成门控信号，从投影梯度中分离出与镜面无关的部分
+        # gate 接近 0 → 该位置以投影条纹为主，压制镜面分量
+        # gate 接近 1 → 该位置以镜面反射为主，保留镜面分量
+        gate = self.gate_conv(projection)
+
+        # 残差门控调制：保留原始镜面信息，再叠加门控筛选后的增强量
+        specular_refined = specular + specular * gate
+
+        return specular_refined
+
+
 class EnhancementLayers(nn.Module):
+    """
+    梯度特征增强层（改造版）。
+
+    接口与原版完全一致：
+      输入：to_be_enhanced_features —— GradientDecoder 输出的 4 个中间特征（tuple）
+            [0]: [B, 256, H/16, W/16]
+            [1]: [B, 128, H/8,  W/8 ]
+            [2]: [B,  64, H/4,  W/4 ]
+            [3]: [B,  32, H/2,  W/2 ]
+      输出：(x1, x2, x3, x4) —— 与原版输出 shape 完全相同
+            x1: [B, 128, H/16, W/16]
+            x2: [B,  64, H/8,  W/8 ]
+            x3: [B,  32, H/4,  W/4 ]
+            x4: [B,  16, H/2,  W/2 ]
+
+    内部改造：
+      每个尺度上由 _SpectralDecompositionUnit 完成梯度分离。
+      - projection 分支（内部）：提取投影条纹梯度，生成门控信号后丢弃。
+      - specular 分支（输出）：提取镜面反射梯度，经门控调制后作为最终输出。
+      最终输出的仅为镜面反射梯度，通道数与 spatial 尺寸与原版完全一致。
+    """
+
     def __init__(self):
         super(EnhancementLayers, self).__init__()
-        self.enhancement_layers_1 = Conv2D_BN_activa(256, 128, 7, 1, 3)
-        self.enhancement_layers_2 = Conv2D_BN_activa(128, 64, 7, 1, 3)
-        self.enhancement_layers_3 = Conv2D_BN_activa(64, 32, 7, 1, 3)
-        self.enhancement_layers_4 = Conv2D_BN_activa(32, 16, 7, 1, 3)
+        # 4 个尺度的梯度分解单元
+        # 输入/输出通道与原 enhancement_layers_1~4 完全对应
+        self.decomp_unit_1 = _SpectralDecompositionUnit(in_c=256, out_c=128)
+        self.decomp_unit_2 = _SpectralDecompositionUnit(in_c=128, out_c=64)
+        self.decomp_unit_3 = _SpectralDecompositionUnit(in_c=64,  out_c=32)
+        self.decomp_unit_4 = _SpectralDecompositionUnit(in_c=32,  out_c=16)
 
     def forward(self, to_be_enhanced_features):
-        x1 = self.enhancement_layers_1(to_be_enhanced_features[0])
-        x2 = self.enhancement_layers_2(to_be_enhanced_features[1])
-        x3 = self.enhancement_layers_3(to_be_enhanced_features[2])
-        x4 = self.enhancement_layers_4(to_be_enhanced_features[3])
+        # 每个单元内部进行梯度分离，只输出镜面反射梯度
+        x1 = self.decomp_unit_1(to_be_enhanced_features[0])  # [B, 128, H/16, W/16]
+        x2 = self.decomp_unit_2(to_be_enhanced_features[1])  # [B,  64, H/8,  W/8 ]
+        x3 = self.decomp_unit_3(to_be_enhanced_features[2])  # [B,  32, H/4,  W/4 ]
+        x4 = self.decomp_unit_4(to_be_enhanced_features[3])  # [B,  16, H/2,  W/2 ]
         return x1, x2, x3, x4
 
 
@@ -761,4 +837,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()
