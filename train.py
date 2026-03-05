@@ -108,6 +108,8 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
     返回:
         train_losses: 训练损失历史记录
         val_losses: 验证损失历史记录
+        train_accuracies: 训练精度历史记录（SSIM）
+        val_accuracies: 验证精度历史记录（SSIM）
     """
     # [修复 P1] 统一 device 类型：函数签名允许传字符串或 torch.device，
     # 内部统一转为 torch.device 后使用 .type 属性，避免 AttributeError 崩溃。
@@ -219,15 +221,28 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
     print(f"损失权重: 漫反射={weight_diffuse}, 镜面反射={weight_specular}, 梯度={weight_gradient}")
     
     # 记录训练/验证历史损失，用于绘制学习曲线
-    train_losses = []  # 每轮训练平均损失
-    val_losses = []    # 每轮验证平均损失
-    train_accuracies = []  # 每轮训练平均精度（基于SSIM）
-    val_accuracies = []    # 每轮验证平均精度（基于SSIM）
-    epoch_times = []   # 每轮训练时间
-    
-    best_val_loss = float('inf')  # 最佳验证损失（越小越好），用于模型保存
-    
-    # ==================== 训练策略配置 ====================
+    train_losses = []       # 每轮训练平均损失
+    val_losses = []         # 每轮验证平均损失
+    train_accuracies = []   # 每轮训练平均精度（基于SSIM）
+    val_accuracies = []     # 每轮验证平均精度（基于SSIM）
+    epoch_times = []        # 每轮训练时间
+
+    # ==================== 最佳模型多指标跟踪初始化 ====================
+    # 策略说明：
+    #   综合评分 = α × SSIM + (1-α) × 1/(1+loss)
+    #   SSIM 占主导（α=0.7），体现主任务（漫反射分离）的感知质量优先；
+    #   loss 归一化后作为辅助约束，防止感知质量相近时选出训练不稳定的模型。
+    #
+    #   同时独立跟踪 SSIM 最优和 Loss 最优，三类模型各保存一份互为备份：
+    #     - best_composite.pth : 综合评分最高（推荐用于最终测试）
+    #     - best_ssim.pth      : 漫反射 SSIM 最高（视觉质量最优）
+    #     - best_loss.pth      : 验证 loss 最低（兜底备份）
+    COMPOSITE_ALPHA = 0.7   # SSIM 在综合评分中的权重，(1-α) 分配给归一化 loss
+    best_val_loss      = float('inf')   # 验证 loss 历史最低（越小越好）
+    best_val_ssim      = 0.0            # 验证 SSIM 历史最高（越大越好）
+    best_composite     = 0.0            # 综合评分历史最高（越大越好）
+
+    # 训练策略配置
     use_grad_clip = training_config.get('use_grad_clip', False)
     grad_clip_value = training_config.get('grad_clip_value', 1.0)
     use_early_stopping = training_config.get('use_early_stopping', False)
@@ -236,7 +251,21 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
     model_save_path = training_config.get('model_save_path', 'best_model.pth')
     checkpoint_dir = training_config.get('checkpoint_dir', 'checkpoints')
     save_every_n_epochs = training_config.get('save_every_n_epochs', 0)
-    
+
+    # 从 model_save_path 派生出三个模型文件路径，存放在同一目录下
+    _model_dir  = os.path.dirname(os.path.abspath(model_save_path))
+    _model_stem = os.path.splitext(os.path.basename(model_save_path))[0]
+    os.makedirs(_model_dir, exist_ok=True)
+    best_composite_save_path = model_save_path                                          # 综合最优（=原 model_save_path，保持向后兼容）
+    best_ssim_save_path      = os.path.join(_model_dir, f'{_model_stem}_best_ssim.pth')  # SSIM 最优
+    best_loss_save_path      = os.path.join(_model_dir, f'{_model_stem}_best_loss.pth')  # Loss 最优
+
+    print(f"\n模型保存路径:")
+    print(f"  综合最优 → {best_composite_save_path}")
+    print(f"  SSIM最优 → {best_ssim_save_path}")
+    print(f"  Loss最优 → {best_loss_save_path}")
+    print(f"  综合评分权重: SSIM×{COMPOSITE_ALPHA} + Loss归一化×{1-COMPOSITE_ALPHA}")
+
     # 创建检查点目录
     if save_every_n_epochs > 0:
         os.makedirs(checkpoint_dir, exist_ok=True)
@@ -244,7 +273,7 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
     if use_grad_clip:
         print(f"启用梯度裁剪: max_norm={grad_clip_value}")
     if use_early_stopping:
-        print(f"启用早停策略: patience={early_stopping_patience}")
+        print(f"启用早停策略: patience={early_stopping_patience}（由综合评分驱动）")
     
     print(f"开始训练，共{epochs}轮，学习率{lr}")
     if use_amp and device.type == 'cuda':
@@ -385,9 +414,9 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
         # ==================== 统计与记录 ====================
         # 计算本轮的平均训练/验证损失和精度
         avg_train_loss = train_loss / len(train_loader)
-        avg_val_loss = val_loss / len(val_loader)
-        avg_train_acc = train_ssim_total / len(train_loader)  # SSIM作为精度指标
-        avg_val_acc = val_ssim_total / len(val_loader)
+        avg_val_loss   = val_loss   / len(val_loader)
+        avg_train_acc  = train_ssim_total / len(train_loader)  # SSIM 作为精度指标
+        avg_val_acc    = val_ssim_total   / len(val_loader)
         
         # 记录损失和精度历史
         train_losses.append(avg_train_loss)
@@ -416,18 +445,57 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
         print(f"超参数:   学习率 = {current_lr:.6f} | 批大小 = {train_loader.batch_size} | 累积步数 = {gradient_accumulation_steps}")
         if device.type == 'cuda':
             print(f"显存使用: {torch.cuda.memory_allocated(device)/1024**3:.2f} GB / {torch.cuda.max_memory_allocated(device)/1024**3:.2f} GB (当前/峰值)")
-        
-        # ==================== 保存最佳模型 ====================
-        if avg_val_loss < best_val_loss:
-            best_val_loss = avg_val_loss
-            early_stopping_counter = 0  # 重置早停计数器
-            torch.save(model.state_dict(), model_save_path)
-            print(f'最佳模型已保存: {model_save_path}, 验证损失: {best_val_loss:.6f}, 验证精度: {avg_val_acc:.4f}')
+
+        # ==================== 最佳模型保存（多指标策略） ====================
+        # 综合评分公式：
+        #   composite = α × SSIM + (1-α) × 1/(1+loss)
+        # 其中 1/(1+loss) 将 loss ∈ [0, +∞) 映射到 (0, 1]，与 SSIM 量纲对齐。
+        # α=0.7 使得 SSIM（直接衡量漫反射视觉质量）占主导地位。
+        composite_score = (COMPOSITE_ALPHA * avg_val_acc
+                           + (1.0 - COMPOSITE_ALPHA) * (1.0 / (1.0 + avg_val_loss)))
+
+        improved_flags = []  # 记录本轮改善了哪些指标，打印时展示
+
+        # --- 策略 A：综合评分最佳 → 保存为主模型（覆盖 model_save_path）---
+        # 同时驱动早停计数器：综合评分改善时重置，否则累加。
+        # 这比单纯用 loss 驱动早停更合理，因为它同时考虑了感知质量。
+        if composite_score > best_composite:
+            best_composite = composite_score
+            early_stopping_counter = 0   # 综合评分改善 → 重置早停
+            torch.save(model.state_dict(), best_composite_save_path)
+            improved_flags.append(f'综合↑{composite_score:.4f}')
         else:
             early_stopping_counter += 1
+
+        # --- 策略 B：漫反射 SSIM 单独最佳 → 额外保存，独立于早停 ---
+        # 即使综合评分未改善，只要漫反射 SSIM 创历史新高就保存。
+        # 此模型代表主任务（高反光表面漫反射分离）的视觉质量峰值。
+        if avg_val_acc > best_val_ssim:
+            best_val_ssim = avg_val_acc
+            torch.save(model.state_dict(), best_ssim_save_path)
+            improved_flags.append(f'SSIM↑{avg_val_acc:.4f}')
+
+        # --- 策略 C：验证 loss 单独最佳 → 额外保存，兜底备份 ---
+        # 即使综合评分和 SSIM 未改善，只要 loss 创历史新低就保存。
+        # 为极端情况（如 SSIM 计算异常）提供保底模型。
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            torch.save(model.state_dict(), best_loss_save_path)
+            improved_flags.append(f'Loss↓{avg_val_loss:.6f}')
+
+        # 打印本轮模型保存情况
+        if improved_flags:
+            print(f'✅ 模型已更新 → {" | ".join(improved_flags)}')
+            print(f'   综合最优: {best_composite_save_path}')
+            print(f'   SSIM最优: {best_ssim_save_path}')
+            print(f'   Loss最优: {best_loss_save_path}')
+        else:
             if use_early_stopping:
-                print(f'⚠️ 验证损失未改善 ({early_stopping_counter}/{early_stopping_patience})')
-        
+                print(f'⚠️  指标未改善 ({early_stopping_counter}/{early_stopping_patience})'
+                      f'  综合={composite_score:.4f} SSIM={avg_val_acc:.4f} Loss={avg_val_loss:.6f}')
+            else:
+                print(f'   本轮无改善  综合={composite_score:.4f} SSIM={avg_val_acc:.4f} Loss={avg_val_loss:.6f}')
+
         # ==================== 实时绘制训练曲线 ====================
         # [修复 P10] 原代码用 os.path.dirname(model_save_path) 推导输出目录，
         # 若路径不含目录分隔符则返回空串，曲线会保存到错误位置。
@@ -449,15 +517,19 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
             # [修复 P9] 补充 scheduler_state_dict 和 scaler_state_dict：
             # 原代码缺失这两项，断点续训时 scheduler 从初始 LR 重新开始，
             # AMP scaler 的历史缩放因子也会重置，导致续训行为与完整训练不一致。
+            # 同时记录三个最佳指标值，便于续训时正确初始化跟踪变量。
             checkpoint = {
                 'epoch': epoch + 1,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'train_loss': avg_train_loss,
                 'val_loss': avg_val_loss,
-                'best_val_loss': best_val_loss,
                 'train_acc': avg_train_acc,
                 'val_acc': avg_val_acc,
+                # 多指标跟踪状态（断点续训时可恢复）
+                'best_val_loss': best_val_loss,
+                'best_val_ssim': best_val_ssim,
+                'best_composite': best_composite,
             }
             if scheduler is not None:
                 checkpoint['scheduler_state_dict'] = scheduler.state_dict()
@@ -468,8 +540,9 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
             print("=" * 80 + "\n")
         
         # ==================== 早停检查 ====================
+        # 早停由综合评分驱动（而非单纯 loss），与主任务目标一致
         if use_early_stopping and early_stopping_counter >= early_stopping_patience:
-            print(f'\n⛔早停触发！验证损失在 {early_stopping_patience} 轮内未改善，停止训练。')
+            print(f'\n⛔ 早停触发！综合评分在 {early_stopping_patience} 轮内未改善，停止训练。')
             break
         
         # ==================== 学习率调度 ====================
@@ -479,18 +552,21 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
             else:
                 scheduler.step()  # 其他调度器按epoch步进
     
-    # 打印训练总结
+    # ==================== 训练总结 ====================
     total_time = time.time() - start_time_total
     total_time_str = str(timedelta(seconds=int(total_time)))
     print("\n" + "=" * 80)
     print("训练完成！")
     print("=" * 80)
-    print(f"总训练时间: {total_time_str}")
-    print(f"最佳验证损失: {best_val_loss:.6f}")
+    print(f"总训练时间:   {total_time_str}")
+    print(f"最佳综合评分: {best_composite:.4f}  → {best_composite_save_path}")
+    print(f"最佳验证SSIM: {best_val_ssim:.4f}   → {best_ssim_save_path}")
+    print(f"最佳验证Loss: {best_val_loss:.6f} → {best_loss_save_path}")
     print(f"最终训练精度: {train_accuracies[-1]:.4f} | 最终验证精度: {val_accuracies[-1]:.4f}")
     print("=" * 80)
     
     return train_losses, val_losses, train_accuracies, val_accuracies  # 返回训练过程中的损失和精度曲线
+
 
 def test_model(model, test_loader, device='cuda'):
     """
@@ -610,35 +686,35 @@ def visualize_results(model, test_loader, device='cuda', num_samples=5, output_f
             
             # 第一行：输入、真实漫反射、预测漫反射
             axes[0, 0].imshow(input_img, cmap='gray')
-            # 英文标题释义：Input (Highly Reflective) = “输入图像（高反射表面）”
+            # 英文标题释义：Input (Highly Reflective) = "输入图像（高反射表面）"
             axes[0, 0].set_title('Input (Highly Reflective)')
             axes[0, 0].axis('off')
             
             axes[0, 1].imshow(gt_diffuse_img, cmap='gray')
-            # 英文标题释义：Ground Truth (Diffuse) = “真实标签（漫反射分量）”
+            # 英文标题释义：Ground Truth (Diffuse) = "真实标签（漫反射分量）"
             axes[0, 1].set_title('Ground Truth (Diffuse)')
             axes[0, 1].axis('off')
             
             axes[0, 2].imshow(pred_diffuse_img, cmap='gray')
-            # 英文标题释义：Predicted (Diffuse) = “网络预测（漫反射分量）”
+            # 英文标题释义：Predicted (Diffuse) = "网络预测（漫反射分量）"
             axes[0, 2].set_title('Predicted (Diffuse)')
             axes[0, 2].axis('off')
             
             # 第二行：预测镜面反射、预测梯度、差异图
             axes[1, 0].imshow(pred_specular_img, cmap='gray')
-            # 英文标题释义：Predicted (Specular) = “网络预测（镜面反射分量）”
+            # 英文标题释义：Predicted (Specular) = "网络预测（镜面反射分量）"
             axes[1, 0].set_title('Predicted (Specular)')
             axes[1, 0].axis('off')
             
             axes[1, 1].imshow(pred_gradient_img, cmap='gray')
-            # 英文标题释义：Predicted (Gradient) = “网络预测（梯度场）”
+            # 英文标题释义：Predicted (Gradient) = "网络预测（梯度场）"
             axes[1, 1].set_title('Predicted (Gradient)')
             axes[1, 1].axis('off')
             
             # 显示与真实漫反射的差异（用于评估预测精度）
             diff = np.abs(pred_diffuse_img - gt_diffuse_img)
             axes[1, 2].imshow(diff, cmap='hot')  # 热力图显示差异
-            # 英文标题释义：Difference (|Pred - GT|) = “预测与真实的绝对差异”
+            # 英文标题释义：Difference (|Pred - GT|) = "预测与真实的绝对差异"
             axes[1, 2].set_title('Difference (|Pred - GT|)')
             axes[1, 2].axis('off')
             
@@ -895,7 +971,7 @@ def main():
     
     # 早停策略
     USE_EARLY_STOPPING = False  # 是否启用早停
-    EARLY_STOPPING_PATIENCE = 20  # 验证损失不下降的最大容忍轮数
+    EARLY_STOPPING_PATIENCE = 20  # 综合评分不改善的最大容忍轮数
     
     # ==================== 模型保存和可视化 ==========
     # 创建带时间戳的实验文件夹（与train_enhanced.py保持一致）
@@ -912,9 +988,10 @@ def main():
     print("   所有训练结果将保存在此文件夹中\n")
     
     # 模型保存路径（相对于OUTPUT_FOLDER）
-    MODEL_SAVE_PATH = 'best_model.pth'  # 最佳模型保存路径
-    CHECKPOINT_DIR = 'checkpoints'  # 检查点保存目录
-    SAVE_EVERY_N_EPOCHS = 5  # 每隔N轮保存一次检查点（0表示不保存）
+    # train_model 会在同目录下自动派生 best_ssim.pth 和 best_loss.pth
+    MODEL_SAVE_PATH = 'best_model.pth'  # 综合最优模型保存路径（主路径）
+    CHECKPOINT_DIR = 'checkpoints'      # 检查点保存目录
+    SAVE_EVERY_N_EPOCHS = 5             # 每隔N轮保存一次检查点（0表示不保存）
     
     # 可视化样本数量
     VISUALIZATION_SAMPLES = None  # 测试后可视化的样本数量
@@ -925,6 +1002,12 @@ def main():
     # 更新路径为绝对路径
     MODEL_SAVE_PATH = os.path.join(OUTPUT_FOLDER, 'models', MODEL_SAVE_PATH)
     CHECKPOINT_DIR = os.path.join(OUTPUT_FOLDER, 'checkpoints')
+
+    # 派生出三个最终模型路径（与 train_model 内部逻辑保持一致，供报告写入使用）
+    _model_dir  = os.path.dirname(os.path.abspath(MODEL_SAVE_PATH))
+    _model_stem = os.path.splitext(os.path.basename(MODEL_SAVE_PATH))[0]
+    MODEL_SAVE_PATH_SSIM = os.path.join(_model_dir, f'{_model_stem}_best_ssim.pth')
+    MODEL_SAVE_PATH_LOSS = os.path.join(_model_dir, f'{_model_stem}_best_loss.pth')
     
     print("\n当前训练配置:")
     print(f"  - 训练轮数: {EPOCHS}")
@@ -1042,8 +1125,10 @@ def main():
     print("\n" + "=" * 40)
     print("开始模型测试...")
     print("=" * 40)
-    # 加载训练过程中保存的最佳模型权重
-    model.load_state_dict(torch.load(MODEL_SAVE_PATH))
+    # 优先加载 SSIM 最优模型（视觉质量最佳）；若不存在则回退到综合最优模型
+    test_load_path = MODEL_SAVE_PATH_SSIM if os.path.exists(MODEL_SAVE_PATH_SSIM) else MODEL_SAVE_PATH
+    print(f"加载测试模型（SSIM最优）: {test_load_path}")
+    model.load_state_dict(torch.load(test_load_path, map_location=device))
     test_model(model, test_loader, device=device)
     
     # ==================== 结果可视化 ====================
@@ -1129,9 +1214,12 @@ def main():
         f.write(f"  - 最佳验证损失: {min(val_losses):.6f}\n")
         f.write(f"  - 最终训练精度: {train_accuracies[-1]:.4f}\n")
         f.write(f"  - 最终验证精度: {val_accuracies[-1]:.4f}\n")
-        f.write(f"  - 最佳验证精度: {max(val_accuracies):.4f}\n\n")
+        f.write(f"  - 最佳验证精度(SSIM): {max(val_accuracies):.4f}\n\n")
+        f.write("模型保存策略（多指标）:\n")
+        f.write(f"  - 综合最优模型 (SSIM×0.7 + Loss归一化×0.3): {MODEL_SAVE_PATH}\n")
+        f.write(f"  - SSIM最优模型 (漫反射视觉质量最佳):        {MODEL_SAVE_PATH_SSIM}\n")
+        f.write(f"  - Loss最优模型 (验证损失最低，兜底备份):    {MODEL_SAVE_PATH_LOSS}\n\n")
         f.write("输出文件:\n")
-        f.write(f"  - 最佳模型: {MODEL_SAVE_PATH}\n")
         f.write(f"  - 训练历史: {history_path}\n")
         f.write(f"  - 可视化结果: {os.path.join(OUTPUT_FOLDER, 'visualizations')}\n")
         if SAVE_EVERY_N_EPOCHS > 0:
@@ -1146,17 +1234,19 @@ def main():
     print(f"\n📁 所有结果已保存到: {os.path.abspath(OUTPUT_FOLDER)}")
     print("\n文件结构:")
     print(f"  {OUTPUT_FOLDER}/")
-    print(f"  ├── models/                 (模型文件)")
-    print(f"  │   └── best_model.pth      (最佳模型)")
-    print(f"  ├── logs/                   (日志文件)")
-    print(f"  ├── visualizations/         (可视化结果)")
+    print(f"  ├── models/                        (模型文件)")
+    print(f"  │   ├── best_model.pth             (综合评分最优模型)")
+    print(f"  │   ├── best_model_best_ssim.pth   (SSIM最优模型)")
+    print(f"  │   └── best_model_best_loss.pth   (Loss最优模型)")
+    print(f"  ├── logs/                          (日志文件)")
+    print(f"  ├── visualizations/                (可视化结果)")
     print(f"  │   ├── results_sample_1.png")
     print(f"  │   ├── results_sample_2.png")
     print(f"  │   └── results_sample_3.png")
-    print(f"  ├── training_history.png    (训练曲线)")
-    print(f"  └── training_summary.txt    (训练总结)")
+    print(f"  ├── training_history.png           (训练曲线)")
+    print(f"  └── training_summary.txt           (训练总结)")
     if SAVE_EVERY_N_EPOCHS > 0:
-        print(f"  └── checkpoints/            (训练检查点)")
+        print(f"  └── checkpoints/                  (训练检查点)")
     print("=" * 60)
 
 if __name__ == '__main__':  # 脚本入口

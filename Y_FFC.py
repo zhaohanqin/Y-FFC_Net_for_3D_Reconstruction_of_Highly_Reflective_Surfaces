@@ -65,8 +65,23 @@ class SSIM(nn.Module):
 
 
 def statistical_loss(pred, gt):
-    mean_loss = torch.abs(pred.mean() - gt.mean())
-    std_loss = torch.abs(pred.std() - gt.std())
+    # ╔══════════════════════════════════════════════════════════════════╗
+    # ║  [修复 BUG-4]  statistical_loss 改为逐样本计算                    ║
+    # ║  原代码：pred.mean() / pred.std() 在整个 batch 上统计，            ║
+    # ║  批内多张图像的统计量互相抵消，掩盖了单样本的预测误差，             ║
+    # ║  导致模型可以"让批内均值/方差一致"来最小化这个 loss，              ║
+    # ║  而无需真正预测准确每张图。                                        ║
+    # ║  修改后：对 batch 中每张图单独计算 mean/std 差异，再取均值。        ║
+    # ╚══════════════════════════════════════════════════════════════════╝
+    B = pred.shape[0]
+    pred_flat = pred.view(B, -1)   # [B, H*W*C]
+    gt_flat   = gt.view(B, -1)     # [B, H*W*C]
+    # 逐样本均值差异
+    mean_loss = torch.abs(pred_flat.mean(dim=1) - gt_flat.mean(dim=1)).mean()
+    # 逐样本标准差差异（unbiased=False 与原 .std() 行为保持一致，避免小 batch 时 NaN）
+    pred_std = pred_flat.std(dim=1, unbiased=False)
+    gt_std   = gt_flat.std(dim=1, unbiased=False)
+    std_loss = torch.abs(pred_std - gt_std).mean()
     return mean_loss + std_loss
 
 
@@ -426,9 +441,39 @@ class GradientDecoder(nn.Module):
         self.block_1_conv_1 = Conv2D_BN_activa(512, 1024, 7, 1, 3)
         self.block_1_conv_2 = Conv2D_BN_activa(1024, 512, 1, 1, 0)
         self.block_1_conv_3 = Conv2D_BN_activa(512, 256, 3, 1, 1)
+
+        # ── 新增 FFC：GradientDecoder H/16 频域增强 ──────────────────────────
+        # 位置：block_1_conv_3 输出后（256ch, H/16），block_1_conv_transpose 前。
+        # 此处是 GradientDecoder 最深层表示（也是 x_to_be_enhanced_1 的生成前一步），
+        # 完全由局部卷积（7×7+1×1+3×3）生成，感受野仅覆盖局部区域，
+        # 对跨越整图的周期性条纹结构缺乏全局感知。
+        #
+        # ratio=0.25：256ch 中 192ch 保留空间局部路径，64ch 走频域全局路径。
+        # 以残差方式叠加（不改变通道数），x_to_be_enhanced_1 生成过程及后续
+        # 所有 cat 路径完全不变，EnhancementLayers 接口零影响。
+        #
+        # 物理收益：x_to_be_enhanced_1 进入 EnhancementLayers 后用于投影条纹
+        # vs 镜面分离，加入全局条纹相位感知后，分离依据从纯局部跳变到全图周期约束。
+        self.ffc_grad_h16 = FFC_BN_ACT(256, 256, 3, ratio_gin=0.25, ratio_gout=0.25, padding=1)
+        # ────────────────────────────────────────────────────────────────────
+
         self.block_1_conv_transpose = Conv2D_BN_activa(256, 256, 5, 1, 2, transpose=False)
 
         self.block_2_conv = Conv2D_BN_activa(256 + 512, 128, 3, 1, 1)
+
+        # ── 新增 FFC：GradientDecoder H/8 频域增强 ───────────────────────────
+        # 位置：block_2_conv 输出后（128ch, H/8），block_2_conv_transpose 前。
+        # H/8 分辨率是条纹边缘空间频率响应最清晰的尺度（条纹周期在此可完整表达），
+        # 也是 x_to_be_enhanced_2 的生成前一步，同样全程无 FFC 覆盖。
+        #
+        # ratio=0.25：128ch 中 96ch 保留空间局部路径，32ch 走频域全局路径。
+        # 以残差方式叠加，通道数不变，后续 cat 及 skip connection 零影响。
+        #
+        # 物理收益：x_to_be_enhanced_2 在 H/8 尺度感知到条纹频率峰值，
+        # EnhancementLayers 第二尺度分解的依据从局部纹理升级到频率特征。
+        self.ffc_grad_h8 = FFC_BN_ACT(128, 128, 3, ratio_gin=0.25, ratio_gout=0.25, padding=1)
+        # ────────────────────────────────────────────────────────────────────
+
         self.block_2_conv_transpose = Conv2D_BN_activa(128, 128, 4, 2, 1, transpose=True)
 
         self.block_3_conv = Conv2D_BN_activa(128 + 256, 64, 3, 1, 1)
@@ -453,11 +498,29 @@ class GradientDecoder(nn.Module):
 
         x = self.block_1_conv_1(x_bb_4_fused)
         x = self.block_1_conv_2(x)
-        x = self.block_1_conv_3(x)
+        x = self.block_1_conv_3(x)   # [B, 256, H/16, W/16]
+
+        # ── 新增 FFC：H/16 梯度频域增强（残差）───────────────────────────────
+        # 将 256ch 按 ratio=0.25 拆分：局部路径 192ch + 全局路径 64ch，
+        # FFC 后 cat 还原 256ch，残差叠加不改变 shape，后续流程不受影响。
+        _nl_h16 = 256 - int(256 * 0.25)   # 192（局部路径通道数）
+        _ffc_h16_out = self.ffc_grad_h16((x[:, :_nl_h16], x[:, _nl_h16:]))
+        x = torch.cat([_ffc_h16_out[0], _ffc_h16_out[1]], dim=1) + x  # 256ch 残差
+        # ────────────────────────────────────────────────────────────────────
+
         x_to_be_enhanced_1 = self.block_1_conv_transpose(x)
         x = torch.cat([x_to_be_enhanced_1, x_bb_4], dim=1)
 
-        x = self.block_2_conv(x)
+        x = self.block_2_conv(x)   # [B, 128, H/8, W/8]
+
+        # ── 新增 FFC：H/8 梯度频域增强（残差）───────────────────────────────
+        # 将 128ch 按 ratio=0.25 拆分：局部路径 96ch + 全局路径 32ch，
+        # FFC 后 cat 还原 128ch，残差叠加不改变 shape，后续流程不受影响。
+        _nl_h8 = 128 - int(128 * 0.25)    # 96（局部路径通道数）
+        _ffc_h8_out = self.ffc_grad_h8((x[:, :_nl_h8], x[:, _nl_h8:]))
+        x = torch.cat([_ffc_h8_out[0], _ffc_h8_out[1]], dim=1) + x  # 128ch 残差
+        # ────────────────────────────────────────────────────────────────────
+
         x_to_be_enhanced_2 = self.block_2_conv_transpose(x)
         x = torch.cat([x_to_be_enhanced_2, x_bb_3], dim=1)
 
@@ -510,7 +573,17 @@ class MainDecoder(nn.Module):
         self.ffc_h8 = FFC_BN_ACT(384, 384, 3, ratio_gin=0.25, ratio_gout=0.25, padding=1)
 
         self.output_conv1 = Conv2D_BN_activa(16 * 3 + 1, 16, 3, 1, 1)
-        self.output_conv2 = Conv2D_BN_activa(16, 1, 3, 1, 1)
+        # ╔══════════════════════════════════════════════════════════════════╗
+        # ║  [修复 BUG-1]  output_conv2 输出层改为裸卷积 + 独立 Sigmoid      ║
+        # ║  原代码使用默认参数 (activation="relu", if_bn=True)，             ║
+        # ║  导致 est_b = ReLU(BN(conv(x))) ∈ [0, +∞)，完全无上界。         ║
+        # ║  与 GradientDecoder 的设计对齐：                                  ║
+        # ║    block_5_conv_2: activation=None, if_bn=False                  ║
+        # ║    sigmoid_layer : nn.Sigmoid()                                   ║
+        # ║  修改后 est_b ∈ (0, 1)，物理含义正确（镜面反射分量不超过原图）。  ║
+        # ╚══════════════════════════════════════════════════════════════════╝
+        self.output_conv2 = Conv2D_BN_activa(16, 1, 3, 1, 1, activation=None, if_bn=False)
+        self.output_sigmoid = nn.Sigmoid()  # 与 GradientDecoder.sigmoid_layer 对称
 
     def forward(self, c_features, enhanced_features, x_g):
         x_bb_1, x_bb_2, x_bb_3, x_bb_4, x_c = c_features
@@ -569,7 +642,11 @@ class MainDecoder(nn.Module):
         x = torch.cat([x, x_g], dim=1)
 
         x = self.output_conv1(x)
-        est_b = self.output_conv2(x)
+        # ╔══════════════════════════════════════════════════════════════════╗
+        # ║  [修复 BUG-1 续]  对 output_conv2 输出应用 Sigmoid               ║
+        # ║  确保 est_b ∈ (0, 1)，与 __init__ 中的修改配套。                 ║
+        # ╚══════════════════════════════════════════════════════════════════╝
+        est_b = self.output_sigmoid(self.output_conv2(x))  # est_b ∈ (0, 1)
         return est_b
 
 
@@ -687,7 +764,16 @@ class YFFC(nn.Module):
         g_features = self.gradient_decoder(c_features[:-1], c_features[-1])
         enhanced_features = self.enhancement_layers(g_features[:-1])
         est_b = self.main_decoder(c_features, enhanced_features, g_features[-1])
-        return {"r": x - est_b, "g": g_features[-1], "b": est_b}
+        # ╔══════════════════════════════════════════════════════════════════╗
+        # ║  [修复 BUG-2]  pred_diffuse = x - est_b 需要 clamp 到 [0, 1]    ║
+        # ║  原代码直接返回 x - est_b，当 est_b > x 时（即镜面反射超过        ║
+        # ║  原图像素），差值为负，超出 SSIM 的工作量纲 [0, 1]，              ║
+        # ║  导致 SSIM 计算完全失效（输出接近 0）。                           ║
+        # ║  修复后 BUG-1 已保证 est_b ∈ (0,1)，clamp 进一步作为物理兜底：   ║
+        # ║  漫反射分量在物理上不能为负、也不能超过原图亮度。                  ║
+        # ╚══════════════════════════════════════════════════════════════════╝
+        pred_diffuse = torch.clamp(x - est_b, 0.0, 1.0)
+        return {"r": pred_diffuse, "g": g_features[-1], "b": est_b}
 
 
 class FringeDataset(Dataset):
@@ -766,7 +852,20 @@ class FringeDataset(Dataset):
         gt_specular = input_img - target_img
 
         gx, gy = torch.gradient(target_img, dim=(1, 2))
-        gt_gradient = (gx + gy) / 2.0
+        # ╔══════════════════════════════════════════════════════════════════╗
+        # ║  [修复 BUG-3]  gt_gradient 归一化到 [0, 1] 以匹配 pred 量纲      ║
+        # ║  原代码：gt_gradient = (gx + gy) / 2.0 ∈ 约 [-0.5, 0.5]，       ║
+        # ║  含负值；而 GradientDecoder 输出经过 Sigmoid，                    ║
+        # ║  pred_gradient ∈ (0, 1)，全为正值。                              ║
+        # ║  量纲不匹配导致：                                                  ║
+        # ║    ① SSIM(pred, gt) 无效（两者数值区间不同）                       ║
+        # ║    ② 当两者均接近 0 时 SSIM 虚假为 1，lg_ssim ≈ 0，              ║
+        # ║       梯度分支对训练完全失去监督作用。                              ║
+        # ║  修复：将梯度图 +0.5 平移后 clamp 到 [0,1]，                      ║
+        # ║  与 Sigmoid 输出 (0,1) 对齐，保留梯度方向信息的相对大小。          ║
+        # ╚══════════════════════════════════════════════════════════════════╝
+        gt_gradient_raw = (gx + gy) / 2.0                       # ∈ 约 [-0.5, 0.5]
+        gt_gradient = (gt_gradient_raw + 0.5).clamp(0.0, 1.0)  # 平移到 [0, 1]
 
         return input_img, target_img, gt_specular, gt_gradient
 
