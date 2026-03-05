@@ -131,6 +131,21 @@ class Conv2D_BN_activa(nn.Module):
 
 
 class Attention_block(nn.Module):
+    """
+    改进点 E：注意力块的两项修改。
+
+    修改 1 — channel-wise 注意力掩码：
+      原设计 psi 输出 1ch 空间掩码，F_l 个通道共享同一权重，无法对镜面高光区域
+      的不同语义通道（边缘/纹理/高光）进行差异化处理。
+      改为 psi 输出 F_l ch（每通道独立注意力权重），BatchNorm(1) → BatchNorm(F_l)，
+      使各通道根据自身语义独立决定融入比例，输出 shape 与原版完全一致（x * psi）。
+
+    修改 2 — F_int 大幅缩小：
+      原设计 F_int 接近 F_g（如 att1: F_int=640 vs F_g=768），中间层仅略有压缩，
+      绝大部分信息在最后的 F_int→1 卷积中被丢弃，参数利用率极低。
+      F_int 缩小后（调用时指定），W_g、W_x 先强制压缩到低维，让网络学习更紧凑的
+      注意力表达，同时大幅降低参数量、减少高反光少样本场景的过拟合风险。
+    """
     def __init__(self, F_g, F_l, F_int):
         super(Attention_block, self).__init__()
         self.W_g = nn.Sequential(
@@ -141,9 +156,10 @@ class Attention_block(nn.Module):
             nn.Conv2d(F_l, F_int, kernel_size=1, stride=1, padding=0, bias=True),
             nn.BatchNorm2d(F_int),
         )
+        # 改进点 E：psi 输出 F_l 通道（channel-wise），每通道独立空间注意力权重
         self.psi = nn.Sequential(
-            nn.Conv2d(F_int, 1, kernel_size=1, stride=1, padding=0, bias=True),
-            nn.BatchNorm2d(1),
+            nn.Conv2d(F_int, F_l, kernel_size=1, stride=1, padding=0, bias=True),
+            nn.BatchNorm2d(F_l),
             nn.Sigmoid(),
         )
         self.relu = nn.ReLU(inplace=True)
@@ -152,8 +168,8 @@ class Attention_block(nn.Module):
         g1 = self.W_g(g)
         x1 = self.W_x(x)
         psi = self.relu(g1 + x1)
-        psi = self.psi(psi)
-        return x * psi
+        psi = self.psi(psi)   # [B, F_l, H, W]，channel-wise 注意力权重
+        return x * psi        # 每通道独立加权，shape 与原版一致
 
 
 class MultiscaleConvBlock(nn.Module):
@@ -207,16 +223,32 @@ class FeatureExtrationLayersB(nn.Module):
 
 
 class TransposedConvBlock(nn.Module):
+    """
+    改进点 C：三路转置卷积改为差异化 kernel size，消除原设计三路完全相同导致的
+    结构性冗余，使各路真正具备不同感受野的多尺度上采样能力。
+
+    输出尺寸一致性验证（stride=2, input=H）：
+      output = (H-1)*2 - 2*padding + kernel_size = 2H（需满足 kernel - 2*padding = 2）
+      branch_1: k=2, p=0  → 2-0=2 ✓  最小感受野，保留精细边缘细节
+      branch_2: k=4, p=1  → 4-2=2 ✓  中等感受野（原始设计），平衡纹理
+      branch_3: k=6, p=2  → 6-4=2 ✓  大感受野，捕获低频结构与周期条纹
+    三路输出均为 [B, out_channels_branch, 2H, 2W]，cat 后 3*out_channels_branch。
+    """
     def __init__(self, in_channels, out_channels_branch=256):
         super(TransposedConvBlock, self).__init__()
-        self.branch_1 = Conv2D_BN_activa(in_channels, out_channels_branch, 4, 2, 1, transpose=True)
+        self.branch_1 = Conv2D_BN_activa(in_channels, out_channels_branch, 2, 2, 0, transpose=True)
         self.branch_2 = Conv2D_BN_activa(in_channels, out_channels_branch, 4, 2, 1, transpose=True)
-        self.branch_3 = Conv2D_BN_activa(in_channels, out_channels_branch, 4, 2, 1, transpose=True)
+        self.branch_3 = Conv2D_BN_activa(in_channels, out_channels_branch, 6, 2, 2, transpose=True)
 
     def forward(self, x):
         x1 = self.branch_1(x)
         x2 = self.branch_2(x)
         x3 = self.branch_3(x)
+        # 若极端输入尺寸下三路有 1 像素偏差，对齐到 branch_2 的尺寸
+        if x1.shape[-2:] != x2.shape[-2:]:
+            x1 = F.interpolate(x1, size=x2.shape[-2:], mode="bilinear", align_corners=False)
+        if x3.shape[-2:] != x2.shape[-2:]:
+            x3 = F.interpolate(x3, size=x2.shape[-2:], mode="bilinear", align_corners=False)
         return torch.cat([x1, x2, x3], dim=1)
 
 
@@ -384,6 +416,13 @@ class Encoder(nn.Module):
 class GradientDecoder(nn.Module):
     def __init__(self):
         super(GradientDecoder, self).__init__()
+        # 改进点 A：在 GradientDecoder 入口融合 ViT 全局上下文特征 x_c。
+        # x_bb_4: [B, 512, H/16, W/16]  —— ResNet 局部特征
+        # x_c:    [B, 256, H/16, W/16]  —— ResNet+ViT 融合的全局瓶颈特征
+        # cat 后 768ch，用 1×1 Conv 压回 512ch，保持 block_1_conv_1 输入通道不变，
+        # 后续所有层无需任何修改。
+        self.fuse_global_context = Conv2D_BN_activa(512 + 256, 512, 1, 1, 0)
+
         self.block_1_conv_1 = Conv2D_BN_activa(512, 1024, 7, 1, 3)
         self.block_1_conv_2 = Conv2D_BN_activa(1024, 512, 1, 1, 0)
         self.block_1_conv_3 = Conv2D_BN_activa(512, 256, 3, 1, 1)
@@ -402,10 +441,17 @@ class GradientDecoder(nn.Module):
         self.block_5_conv_2 = Conv2D_BN_activa(64, 1, 5, 1, 2, activation=None, if_bn=False)
         self.sigmoid_layer = nn.Sigmoid()
 
-    def forward(self, backbone_features):
+    def forward(self, backbone_features, x_c):
         x_bb_1, x_bb_2, x_bb_3, x_bb_4 = backbone_features
 
-        x = self.block_1_conv_1(x_bb_4)
+        # 改进点 A：将 ViT 全局信息 x_c 与 ResNet 深层特征 x_bb_4 在空间上拼接，
+        # 再用 fuse_global_context（1×1 Conv）压回 512ch，使梯度解码全程携带
+        # 全图条纹相位感知，x_c 的 spatial 尺寸与 x_bb_4 相同（均为 H/16）。
+        if x_c.shape[-2:] != x_bb_4.shape[-2:]:
+            x_c = F.interpolate(x_c, size=x_bb_4.shape[-2:], mode="bilinear", align_corners=False)
+        x_bb_4_fused = self.fuse_global_context(torch.cat([x_bb_4, x_c], dim=1))  # [B, 512, H/16, W/16]
+
+        x = self.block_1_conv_1(x_bb_4_fused)
         x = self.block_1_conv_2(x)
         x = self.block_1_conv_3(x)
         x_to_be_enhanced_1 = self.block_1_conv_transpose(x)
@@ -446,10 +492,22 @@ class MainDecoder(nn.Module):
         self.transposed_block_4 = TransposedConvBlock(64 * 3 + 32 + 128, 32)
         self.transposed_block_5 = TransposedConvBlock(32 * 3 + 16 + 64, 16)
 
-        self.att1 = Attention_block(768, 512, 640)
-        self.att2 = Attention_block(384, 256, 320)
-        self.att3 = Attention_block(192, 128, 160)
-        self.att4 = Attention_block(96, 64, 80)
+        # 改进点 E：F_int 大幅缩小，消除原设计中近满维中间层的参数浪费；
+        # psi 已改为输出 F_l 通道（channel-wise），此处 F_int 仅控制压缩程度。
+        # att1: F_g=768, F_l=512, F_int=64   (原 640)
+        # att2: F_g=384, F_l=256, F_int=64   (原 320)
+        # att3: F_g=192, F_l=128, F_int=32   (原 160)
+        # att4: F_g=96,  F_l=64,  F_int=16   (原 80)
+        self.att1 = Attention_block(768, 512, 64)
+        self.att2 = Attention_block(384, 256, 64)
+        self.att3 = Attention_block(192, 128, 32)
+        self.att4 = Attention_block(96,  64,  16)
+
+        # 改进点 D：在 H/8 分辨率插入轻量 FFC，对 transposed_block_2 的 384ch 输出
+        # 进行频域感知。条纹边缘在此尺度响应最清晰，当前解码路径全程为局部卷积，
+        # 缺少中频段的频域约束。ratio=0.25 保留 3/4 局部路径，避免过度频域化。
+        # 以残差方式叠加，不改变通道数（384ch），对后续 cat 路径零影响。
+        self.ffc_h8 = FFC_BN_ACT(384, 384, 3, ratio_gin=0.25, ratio_gout=0.25, padding=1)
 
         self.output_conv1 = Conv2D_BN_activa(16 * 3 + 1, 16, 3, 1, 1)
         self.output_conv2 = Conv2D_BN_activa(16, 1, 3, 1, 1)
@@ -475,6 +533,12 @@ class MainDecoder(nn.Module):
         x = torch.cat([x, bridge, x_enhanced_1], dim=1)
 
         x = self.transposed_block_2(x)
+        # 改进点 D：在 H/8 分辨率对 384ch 特征做一次轻量 FFC，捕获条纹边缘的中频响应。
+        # 按 ratio=0.25 将 384ch 分为 local(288ch) + global(96ch)，FFC 后 cat 还原 384ch，
+        # 残差叠加保留原始局部信息，不改变 spatial 尺寸，不影响后续 cat 通道计算。
+        _n_l = 384 - int(384 * 0.25)   # 288
+        _ffc_out = self.ffc_h8((x[:, :_n_l], x[:, _n_l:]))
+        x = torch.cat([_ffc_out[0], _ffc_out[1]], dim=1) + x   # 384ch 残差
         if x_bb_3.shape[-2:] != x.shape[-2:]:
             x_bb_3 = F.interpolate(x_bb_3, size=x.shape[-2:], mode="bilinear", align_corners=False)
         if x_enhanced_2.shape[-2:] != x.shape[-2:]:
@@ -538,10 +602,12 @@ class _SpectralDecompositionUnit(nn.Module):
         # 镜面反射分支：小核感受野，侧重于高频局部高光特征
         self.specular_branch = Conv2D_BN_activa(in_c, out_c, 3, 1, 1)
 
-        # 门控卷积：将投影特征压缩为 [0,1] 权重，用于调制镜面特征
-        # 使用 1×1 卷积保证 spatial 不变，Sigmoid 保证门控范围
+        # 改进点 B：gate_conv 的输入从原来的 out_c（仅 projection）改为 2*out_c
+        # （projection 与 specular 拼接），使门控信号能对比两路特征的差异进行
+        # 条件分离：specular 相对 projection 的独特激活越强，gate 越高，从而真正
+        # 实现"有镜面的地方放行、有条纹的地方抑制"的语义分离，而非单纯幅度放大。
         self.gate_conv = nn.Sequential(
-            nn.Conv2d(out_c, out_c, kernel_size=1, stride=1, padding=0, bias=True),
+            nn.Conv2d(out_c * 2, out_c, kernel_size=1, stride=1, padding=0, bias=True),
             nn.Sigmoid(),
         )
 
@@ -552,10 +618,11 @@ class _SpectralDecompositionUnit(nn.Module):
         # 镜面反射梯度（原始）
         specular = self.specular_branch(x)
 
-        # 利用投影特征生成门控信号，从投影梯度中分离出与镜面无关的部分
-        # gate 接近 0 → 该位置以投影条纹为主，压制镜面分量
-        # gate 接近 1 → 该位置以镜面反射为主，保留镜面分量
-        gate = self.gate_conv(projection)
+        # 改进点 B：将 projection 与 specular 拼接后送入 gate_conv，
+        # gate 通过比对两路激活决定各位置以哪种成分为主：
+        #   gate 接近 0 → 投影条纹主导，压制镜面分量
+        #   gate 接近 1 → 镜面高光主导，增强镜面分量
+        gate = self.gate_conv(torch.cat([projection, specular], dim=1))
 
         # 残差门控调制：保留原始镜面信息，再叠加门控筛选后的增强量
         specular_refined = specular + specular * gate
@@ -614,7 +681,10 @@ class YFFC(nn.Module):
 
     def forward(self, x):
         c_features = self.encoder(x)
-        g_features = self.gradient_decoder(c_features[:-1])
+        # 改进点 A：将编码器瓶颈特征 x_c（c_features[-1]，含 ViT 全局信息）
+        # 同时传入 GradientDecoder，使梯度解码分支获得全图条纹相位感知。
+        # c_features[:-1] 仍为 (x_bb_1, x_bb_2, x_bb_3, x_bb_4)，skip connection 不变。
+        g_features = self.gradient_decoder(c_features[:-1], c_features[-1])
         enhanced_features = self.enhancement_layers(g_features[:-1])
         est_b = self.main_decoder(c_features, enhanced_features, g_features[-1])
         return {"r": x - est_b, "g": g_features[-1], "b": est_b}

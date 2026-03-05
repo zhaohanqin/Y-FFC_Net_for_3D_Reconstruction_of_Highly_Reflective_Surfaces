@@ -12,40 +12,120 @@ import time  # 时间跟踪
 from datetime import datetime, timedelta  # 日期时间处理
 from Y_FFC import YFFC, FringeDataset, SSIM, statistical_loss  # 导入模型、数据集与损失
 
-def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='cuda', 
-                use_amp=True, gradient_accumulation_steps=1, optimizer_config=None, 
+def _compute_loss(pred_diffuse, pred_specular, pred_gradient,
+                  gt_diffuse,  gt_specular,  gt_gradient,
+                  ssim_loss, mae_loss,
+                  weight_diffuse, weight_specular, weight_gradient):
+    """
+    [修复 P2/P3/P7/P8]
+    统一 loss 计算入口，消除原代码中训练/验证 × AMP/非AMP 共 4 份完全相同的复制代码。
+    所有分支统一走此函数，逻辑只需维护一处。
+
+    同时修复：
+      P3 - 用已计算的 ld_ssim 推导 SSIM 值（避免重复前向）
+      P7 - 镜面分支补充 MAE，与漫反射分支结构对称（SSIM + MAE + stat）
+      P8 - 分支项数对齐后，权重含义更清晰
+
+    返回:
+        total_loss: 加权总损失（已归一化，便于梯度累积）
+        ssim_val: 漫反射 SSIM 值（float，用于精度统计，不再触发额外前向）
+        loss_components: dict，记录各子损失方便诊断
+    """
+    # ---------- 漫反射分支：SSIM + MAE + 统计损失 ----------
+    ld_ssim = 1.0 - ssim_loss(pred_diffuse, gt_diffuse)
+    ld_mae  = mae_loss(pred_diffuse, gt_diffuse)
+    ld_sl   = statistical_loss(pred_diffuse, gt_diffuse)
+    ld      = ld_ssim + ld_mae + ld_sl
+
+    # ---------- 镜面反射分支：SSIM + MAE + 统计损失 ----------
+    # [修复 P7] 原设计缺 MAE，与漫反射分支不对称；
+    # 镜面高光区域像素级精度对 MAE 敏感，补充后物理逻辑更完整。
+    ls_ssim = 1.0 - ssim_loss(pred_specular, gt_specular)
+    ls_mae  = mae_loss(pred_specular, gt_specular)
+    ls_sl   = statistical_loss(pred_specular, gt_specular)
+    ls      = ls_ssim + ls_mae + ls_sl
+
+    # ---------- 梯度分支：SSIM ----------
+    lg_ssim = 1.0 - ssim_loss(pred_gradient, gt_gradient)
+    lg      = lg_ssim
+
+    total_loss = weight_diffuse * ld + weight_specular * ls + weight_gradient * lg
+
+    # [修复 P3] ssim_val 直接由 ld_ssim 推导，无需第二次前向：
+    #   ld_ssim = 1 - ssim(pred, gt)  =>  ssim = 1 - ld_ssim
+    ssim_val = float(1.0 - ld_ssim)
+
+    loss_components = {
+        'ld': float(ld), 'ld_ssim': float(ld_ssim),
+        'ld_mae': float(ld_mae), 'ld_sl': float(ld_sl),
+        'ls': float(ls), 'ls_ssim': float(ls_ssim),
+        'ls_mae': float(ls_mae), 'ls_sl': float(ls_sl),
+        'lg': float(lg),
+    }
+    return total_loss, ssim_val, loss_components
+
+
+def _optimizer_step(optimizer, scaler, use_amp, use_grad_clip, grad_clip_value, model):
+    """
+    [修复 P4]
+    将"梯度裁剪 + optimizer.step + scaler.update + zero_grad"封装为单函数，
+    确保正常累积批次与末尾不完整批次走完全相同的逻辑，消除原代码末尾批次
+    缺少梯度裁剪的 Bug。
+    """
+    if use_grad_clip:
+        if use_amp and scaler is not None:
+            scaler.unscale_(optimizer)   # 必须在 clip 前 unscale
+        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_value)
+
+    if use_amp and scaler is not None:
+        scaler.step(optimizer)
+        scaler.update()
+    else:
+        optimizer.step()
+    optimizer.zero_grad()
+
+
+def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='cuda',
+                use_amp=True, gradient_accumulation_steps=1, optimizer_config=None,
                 scheduler_config=None, loss_config=None, training_config=None):
     """
     训练模型：执行多轮（epoch）训练与验证，并保存最佳模型权重
-    
+
     参数:
         model: Y-FFC网络模型
         train_loader: 训练数据加载器
         val_loader: 验证数据加载器
         epochs: 训练轮数，默认100轮
         lr: 学习率，默认0.001
-        device: 计算设备，默认CUDA
+        device: 计算设备，可传字符串或 torch.device 对象
         use_amp: 是否使用混合精度训练，默认True（节省显存）
         gradient_accumulation_steps: 梯度累积步数，默认1（增大此值可模拟更大的batch_size）
         optimizer_config: 优化器配置字典
         scheduler_config: 学习率调度器配置字典
         loss_config: 损失函数配置字典
         training_config: 训练策略配置字典
-    
+
     返回:
         train_losses: 训练损失历史记录
         val_losses: 验证损失历史记录
     """
+    # [修复 P1] 统一 device 类型：函数签名允许传字符串或 torch.device，
+    # 内部统一转为 torch.device 后使用 .type 属性，避免 AttributeError 崩溃。
+    if isinstance(device, str):
+        device = torch.device(device)
     # 设置默认配置
     if optimizer_config is None:
         optimizer_config = {'type': 'adam', 'betas': (0.9, 0.999), 'eps': 1e-8, 'weight_decay': 0.0}
     if scheduler_config is None:
         scheduler_config = {'type': 'step', 'step_size': 30, 'gamma': 0.5}
     if loss_config is None:
-        loss_config = {'ssim_window_size': 11, 'ssim_sigma': 1.5, 
+        loss_config = {'ssim_window_size': 11, 'ssim_sigma': 1.5,
                       'weight_diffuse': 1.0, 'weight_specular': 1.0, 'weight_gradient': 1.0}
     if training_config is None:
-        training_config = {'use_grad_clip': False, 'grad_clip_value': 1.0, 
+        # [修复 P5] use_grad_clip 默认改为 True：
+        # Y-FFC 含 ViT+ResNet50+FFC 多分支结构，训练初期梯度分布不稳定，
+        # 高反光场景的 loss 变化剧烈，梯度爆炸风险高，应默认开启裁剪保护。
+        training_config = {'use_grad_clip': True, 'grad_clip_value': 1.0,
                           'use_early_stopping': False, 'early_stopping_patience': 20,
                           'model_save_path': 'best_model.pth', 'checkpoint_dir': 'checkpoints',
                           'save_every_n_epochs': 0}
@@ -191,101 +271,72 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
         for batch_idx, batch in enumerate(tqdm(train_loader, total=len(train_loader), desc=f'Train {epoch+1}/{epochs}', leave=False)):
             # 将数据移到指定设备
             inputs, gt_diffuse, gt_specular, gt_gradient = [x.to(device) for x in batch]
-            
+
             # ==================== 前向传播（使用混合精度） ====================
+            # [修复 P2] AMP/非AMP 路径合并：前向传播 + loss 计算统一走 _compute_loss()，
+            # 消除原代码中 4 份完全相同的 loss 计算逻辑，任何修改只需改一处。
             if use_amp and scaler is not None:
                 with torch.amp.autocast('cuda'):
-                    estimations = model(inputs)  # 模型输出字典：{'r': 漫反射, 'g': 梯度, 'b': 镜面反射}
-                    pred_diffuse = estimations['r']    # 预测漫反射分量
-                    pred_specular = estimations['b']   # 预测镜面反射分量
-                    pred_gradient = estimations['g']   # 预测梯度分量
-                    
-                    # ==================== 损失计算 ====================
-                    # 漫反射分支损失计算
-                    ld_ssim = 1 - ssim_loss(pred_diffuse, gt_diffuse)  # 结构相似性损失
-                    ld_mae = mae_loss(pred_diffuse, gt_diffuse)         # L1 损失
-                    ld_sl = statistical_loss(pred_diffuse, gt_diffuse)  # 统计损失（均值/方差一致性）
-                    ld = ld_ssim + ld_mae + ld_sl  # 漫反射总损失
-                    
-                    # 镜面反射分支损失计算
-                    ls_ssim = 1 - ssim_loss(pred_specular, gt_specular)  # 结构相似性损失
-                    ls_sl = statistical_loss(pred_specular, gt_specular)  # 统计损失
-                    ls = ls_ssim + ls_sl  # 镜面反射总损失
-                    
-                    # 梯度分支损失计算
-                    lg_ssim = 1 - ssim_loss(pred_gradient, gt_gradient)  # 结构相似性损失
-                    lg = lg_ssim  # 梯度损失（仅使用SSIM）
-                    
-                    # 总损失 = 漫反射损失 + 镜面反射损失 + 梯度损失（加权）
-                    loss = weight_diffuse * ld + weight_specular * ls + weight_gradient * lg
-                    loss = loss / gradient_accumulation_steps  # 梯度累积时缩放损失
-                    
-                    # 计算SSIM精度（用于训练精度统计）
-                    train_ssim_total += ssim_loss(pred_diffuse, gt_diffuse).item()
+                    estimations = model(inputs)
+                    pred_diffuse  = estimations['r']
+                    pred_specular = estimations['b']
+                    pred_gradient = estimations['g']
+                    loss_raw, ssim_val, loss_comps = _compute_loss(
+                        pred_diffuse, pred_specular, pred_gradient,
+                        gt_diffuse, gt_specular, gt_gradient,
+                        ssim_loss, mae_loss,
+                        weight_diffuse, weight_specular, weight_gradient,
+                    )
             else:
-                estimations = model(inputs)  # 模型输出字典：{'r': 漫反射, 'g': 梯度, 'b': 镜面反射}
-                pred_diffuse = estimations['r']    # 预测漫反射分量
-                pred_specular = estimations['b']   # 预测镜面反射分量
-                pred_gradient = estimations['g']   # 预测梯度分量
-                
-                # ==================== 损失计算 ====================
-                # 漫反射分支损失计算
-                ld_ssim = 1 - ssim_loss(pred_diffuse, gt_diffuse)  # 结构相似性损失
-                ld_mae = mae_loss(pred_diffuse, gt_diffuse)         # L1 损失
-                ld_sl = statistical_loss(pred_diffuse, gt_diffuse)  # 统计损失（均值/方差一致性）
-                ld = ld_ssim + ld_mae + ld_sl  # 漫反射总损失
-                
-                # 镜面反射分支损失计算
-                ls_ssim = 1 - ssim_loss(pred_specular, gt_specular)  # 结构相似性损失
-                ls_sl = statistical_loss(pred_specular, gt_specular)  # 统计损失
-                ls = ls_ssim + ls_sl  # 镜面反射总损失
-                
-                # 梯度分支损失计算
-                lg_ssim = 1 - ssim_loss(pred_gradient, gt_gradient)  # 结构相似性损失
-                lg = lg_ssim  # 梯度损失（仅使用SSIM）
-                
-                # 总损失 = 漫反射损失 + 镜面反射损失 + 梯度损失（加权）
-                loss = weight_diffuse * ld + weight_specular * ls + weight_gradient * lg
-                loss = loss / gradient_accumulation_steps  # 梯度累积时缩放损失
-                
-                # 计算SSIM精度（用于训练精度统计）
-                train_ssim_total += ssim_loss(pred_diffuse, gt_diffuse).item()
-            
+                estimations = model(inputs)
+                pred_diffuse  = estimations['r']
+                pred_specular = estimations['b']
+                pred_gradient = estimations['g']
+                loss_raw, ssim_val, loss_comps = _compute_loss(
+                    pred_diffuse, pred_specular, pred_gradient,
+                    gt_diffuse, gt_specular, gt_gradient,
+                    ssim_loss, mae_loss,
+                    weight_diffuse, weight_specular, weight_gradient,
+                )
+
+            # [修复 P6] NaN 保护：高反光过曝区域可能导致 statistical_loss std→0，
+            # 一旦产生 NaN 会悄悄污染所有后续梯度直至模型崩溃。
+            # 检测到 NaN 时跳过本 batch，打印警告，不执行反向传播。
+            if not torch.isfinite(loss_raw):
+                tqdm.write(f'[WARNING] Epoch {epoch+1} Batch {batch_idx+1}: '
+                           f'loss 出现 NaN/Inf（{loss_raw.item():.4g}），跳过本批次。'
+                           f' loss_comps={loss_comps}')
+                optimizer.zero_grad()
+                continue
+
+            loss = loss_raw / gradient_accumulation_steps  # 梯度累积时缩放损失
+
+            # [修复 P3] SSIM 精度统计直接使用 _compute_loss 返回的 ssim_val，
+            # 无需再次前向计算 ssim_loss(pred_diffuse, gt_diffuse)。
+            train_ssim_total += ssim_val
+
             # ==================== 反向传播与参数更新 ====================
             if use_amp and scaler is not None:
-                scaler.scale(loss).backward()  # 混合精度反向传播
+                scaler.scale(loss).backward()
             else:
-                loss.backward()  # 计算梯度
-            
-            # 梯度累积：每accumulation_steps步更新一次参数
+                loss.backward()
+
+            # 梯度累积：每 gradient_accumulation_steps 步更新一次参数
             if (batch_idx + 1) % gradient_accumulation_steps == 0:
-                # 梯度裁剪（防止梯度爆炸）
-                if use_grad_clip:
-                    if use_amp and scaler is not None:
-                        scaler.unscale_(optimizer)
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_value)
-                
-                if use_amp and scaler is not None:
-                    scaler.step(optimizer)  # 混合精度参数更新
-                    scaler.update()  # 更新scaler
-                else:
-                    optimizer.step()  # 按梯度更新权重
-                optimizer.zero_grad()  # 清空梯度
-            
-            train_loss += loss.item() * gradient_accumulation_steps  # 累计训练损失（恢复原始尺度）
-            
+                # [修复 P4] 统一走 _optimizer_step，确保裁剪/step/update/zero_grad 顺序一致
+                _optimizer_step(optimizer, scaler, use_amp, use_grad_clip, grad_clip_value, model)
+
+            train_loss += loss_raw.item()  # 累计原始量级损失（不除以累积步数）
+
             # 在进度条上显示当前损失
             if (batch_idx + 1) % 10 == 0:
-                tqdm.write(f'Epoch {epoch+1}, Batch {batch_idx+1}, Loss: {loss.item() * gradient_accumulation_steps:.6f}')
-        
-        # 处理最后一个不完整的累积批次
-        if (batch_idx + 1) % gradient_accumulation_steps != 0:
-            if use_amp and scaler is not None:
-                scaler.step(optimizer)
-                scaler.update()
-            else:
-                optimizer.step()
-            optimizer.zero_grad()
+                tqdm.write(f'Epoch {epoch+1}, Batch {batch_idx+1}, Loss: {loss_raw.item():.6f}'
+                           f'  [ld={loss_comps["ld"]:.4f} ls={loss_comps["ls"]:.4f} lg={loss_comps["lg"]:.4f}]')
+
+        # [修复 P4] 末尾不完整累积批次：走相同的 _optimizer_step，
+        # 确保梯度裁剪逻辑与正常路径完全一致（原代码此处缺少梯度裁剪）。
+        if len(train_loader) > 0 and (len(train_loader)) % gradient_accumulation_steps != 0:
+            _optimizer_step(optimizer, scaler, use_amp, use_grad_clip, grad_clip_value, model)
         
         # ==================== 验证阶段 ====================
         model.eval()  # 切换到评估模式（禁用BN/Dropout等）
@@ -296,57 +347,40 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
             # 使用 tqdm 展示验证批次进度
             for batch in tqdm(val_loader, total=len(val_loader), desc=f'Val {epoch+1}/{epochs}', leave=False):
                 inputs, gt_diffuse, gt_specular, gt_gradient = [x.to(device) for x in batch]
-                
-                # 前向传播（不计算梯度，使用混合精度）
+
+                # [修复 P2] 验证路径同样统一走 _compute_loss，AMP/非AMP 合并。
+                # 验证阶段 with torch.no_grad() 已禁用梯度，autocast 仅影响精度，
+                # 不影响正确性；非AMP 时直接调用同一函数。
                 if use_amp and scaler is not None:
                     with torch.amp.autocast('cuda'):
                         estimations = model(inputs)
-                        pred_diffuse = estimations['r']
+                        pred_diffuse  = estimations['r']
                         pred_specular = estimations['b']
                         pred_gradient = estimations['g']
-                        
-                        # 验证损失计算（与训练阶段相同）
-                        ld_ssim = 1 - ssim_loss(pred_diffuse, gt_diffuse)
-                        ld_mae = mae_loss(pred_diffuse, gt_diffuse)
-                        ld_sl = statistical_loss(pred_diffuse, gt_diffuse)
-                        ld = ld_ssim + ld_mae + ld_sl
-                        
-                        ls_ssim = 1 - ssim_loss(pred_specular, gt_specular)
-                        ls_sl = statistical_loss(pred_specular, gt_specular)
-                        ls = ls_ssim + ls_sl
-                        
-                        lg_ssim = 1 - ssim_loss(pred_gradient, gt_gradient)
-                        lg = lg_ssim
-                        
-                        loss = weight_diffuse * ld + weight_specular * ls + weight_gradient * lg
-                        
-                        # 计算SSIM精度（用于验证精度统计）
-                        val_ssim_total += ssim_loss(pred_diffuse, gt_diffuse).item()
+                        loss_raw, ssim_val, _ = _compute_loss(
+                            pred_diffuse, pred_specular, pred_gradient,
+                            gt_diffuse, gt_specular, gt_gradient,
+                            ssim_loss, mae_loss,
+                            weight_diffuse, weight_specular, weight_gradient,
+                        )
                 else:
                     estimations = model(inputs)
-                    pred_diffuse = estimations['r']
+                    pred_diffuse  = estimations['r']
                     pred_specular = estimations['b']
                     pred_gradient = estimations['g']
-                    
-                    # 验证损失计算（与训练阶段相同）
-                    ld_ssim = 1 - ssim_loss(pred_diffuse, gt_diffuse)
-                    ld_mae = mae_loss(pred_diffuse, gt_diffuse)
-                    ld_sl = statistical_loss(pred_diffuse, gt_diffuse)
-                    ld = ld_ssim + ld_mae + ld_sl
-                    
-                    ls_ssim = 1 - ssim_loss(pred_specular, gt_specular)
-                    ls_sl = statistical_loss(pred_specular, gt_specular)
-                    ls = ls_ssim + ls_sl
-                    
-                    lg_ssim = 1 - ssim_loss(pred_gradient, gt_gradient)
-                    lg = lg_ssim
-                    
-                    loss = weight_diffuse * ld + weight_specular * ls + weight_gradient * lg
-                    
-                    # 计算SSIM精度（用于验证精度统计）
-                    val_ssim_total += ssim_loss(pred_diffuse, gt_diffuse).item()
-                
-                val_loss += loss.item()
+                    loss_raw, ssim_val, _ = _compute_loss(
+                        pred_diffuse, pred_specular, pred_gradient,
+                        gt_diffuse, gt_specular, gt_gradient,
+                        ssim_loss, mae_loss,
+                        weight_diffuse, weight_specular, weight_gradient,
+                    )
+
+                # 验证阶段同样做 NaN 检测，异常 batch 不纳入统计
+                if not torch.isfinite(loss_raw):
+                    continue
+
+                val_ssim_total += ssim_val
+                val_loss += loss_raw.item()
         
         # ==================== 统计与记录 ====================
         # 计算本轮的平均训练/验证损失和精度
@@ -395,22 +429,27 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
                 print(f'⚠️ 验证损失未改善 ({early_stopping_counter}/{early_stopping_patience})')
         
         # ==================== 实时绘制训练曲线 ====================
+        # [修复 P10] 原代码用 os.path.dirname(model_save_path) 推导输出目录，
+        # 若路径不含目录分隔符则返回空串，曲线会保存到错误位置。
+        # 改为直接取 checkpoint_dir 的父目录（即 OUTPUT_FOLDER），更可靠。
+        curves_output_folder = os.path.dirname(os.path.abspath(model_save_path))
         if (epoch + 1) % 5 == 0 or epoch == 0:  # 每5轮或第一轮绘制一次
-            output_folder = os.path.dirname(model_save_path)
-            plot_training_curves(train_losses, val_losses, train_accuracies, val_accuracies, 
-                               output_folder, epoch + 1)
-            print(f'训练曲线已更新: {os.path.join(output_folder, "training_curves_realtime.png")}')
-        
+            plot_training_curves(train_losses, val_losses, train_accuracies, val_accuracies,
+                               curves_output_folder, epoch + 1)
+            print(f'训练曲线已更新: {os.path.join(curves_output_folder, "training_curves_realtime.png")}')
+
         # ==================== 定期可视化样本结果 ====================
         if (epoch + 1) % 10 == 0 or epoch == 0:  # 每10轮或第一轮可视化一次
-            output_folder = os.path.dirname(model_save_path)
-            visualize_sample_during_training(model, val_loader, device, output_folder, epoch + 1)
-            print(f'样本可视化已更新: {os.path.join(output_folder, f"sample_epoch_{epoch+1}.png")}')
+            visualize_sample_during_training(model, val_loader, device, curves_output_folder, epoch + 1)
+            print(f'样本可视化已更新: {os.path.join(curves_output_folder, f"sample_epoch_{epoch+1}.png")}')
         
         # ==================== 定期保存检查点 ====================
         if save_every_n_epochs > 0 and (epoch + 1) % save_every_n_epochs == 0:
             checkpoint_path = os.path.join(checkpoint_dir, f'checkpoint_epoch_{epoch+1}.pth')
-            torch.save({
+            # [修复 P9] 补充 scheduler_state_dict 和 scaler_state_dict：
+            # 原代码缺失这两项，断点续训时 scheduler 从初始 LR 重新开始，
+            # AMP scaler 的历史缩放因子也会重置，导致续训行为与完整训练不一致。
+            checkpoint = {
                 'epoch': epoch + 1,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
@@ -418,8 +457,13 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='c
                 'val_loss': avg_val_loss,
                 'best_val_loss': best_val_loss,
                 'train_acc': avg_train_acc,
-                'val_acc': avg_val_acc
-            }, checkpoint_path)
+                'val_acc': avg_val_acc,
+            }
+            if scheduler is not None:
+                checkpoint['scheduler_state_dict'] = scheduler.state_dict()
+            if scaler is not None:
+                checkpoint['scaler_state_dict'] = scaler.state_dict()
+            torch.save(checkpoint, checkpoint_path)
             print(f'检查点已保存: {checkpoint_path}')
             print("=" * 80 + "\n")
         
@@ -817,9 +861,12 @@ def main():
     SSIM_SIGMA = 1.5  # SSIM高斯标准差，建议范围：1.0-2.0
     
     # 损失权重配置
-    LOSS_WEIGHT_DIFFUSE = 1.0  # 漫反射损失权重
-    LOSS_WEIGHT_SPECULAR = 1.0  # 镜面反射损失权重
-    LOSS_WEIGHT_GRADIENT = 1.0  # 梯度损失权重
+    # [修复 P8] 三分支各项数对齐后（漫反射/镜面各 3 项，梯度 1 项），
+    # 可通过此处权重控制各任务的优先级：漫反射为主任务应权重最高，
+    # 梯度为辅助监督可适当降低。下方为推荐的起点配置，可根据实验调整。
+    LOSS_WEIGHT_DIFFUSE  = 1.0   # 漫反射损失权重（主任务）
+    LOSS_WEIGHT_SPECULAR = 0.8   # 镜面反射损失权重（分离任务，原 1.0）
+    LOSS_WEIGHT_GRADIENT = 0.5   # 梯度损失权重（辅助监督，原 1.0）
     
     # ========== 图像和数据参数 ==========
     # 图像尺寸设置
@@ -842,7 +889,8 @@ def main():
     USE_AMP = True  # True=启用混合精度训练，False=使用全精度
     
     # 梯度裁剪（防止梯度爆炸）
-    USE_GRAD_CLIP = False  # 是否启用梯度裁剪
+    # [修复 P5] ViT+ResNet50+FFC 多分支结构训练初期梯度分布不稳定，默认开启裁剪
+    USE_GRAD_CLIP = True   # 原为 False，改为 True
     GRAD_CLIP_VALUE = 1.0  # 梯度裁剪阈值
     
     # 早停策略
