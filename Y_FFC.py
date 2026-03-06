@@ -396,6 +396,22 @@ class Encoder(nn.Module):
 
         self.cba_after_backbone = Conv2D_BN_activa(512, 256, 3, 1, 1)
 
+        # ── 【新增 FFC-1】Encoder 瓶颈频域增强（H/16, 256ch） ────────────────
+        # 位置：cba_after_backbone 输出后（ResNet+ViT 融合完成后的 x_c，256ch，H/16）。
+        #
+        # 问题：当前 x_c 仅经过卷积生成，ResNet 提供局部空间特征、ViT 提供全局语义，
+        # 但两者均为空间域表示，缺乏频率维度的建模。镜面反射在频域中具有特定的
+        # 高频尖锐特征与全局频谱分布（如宽带白色谱峰），纯空间卷积无法有效编码。
+        #
+        # 收益：x_c 同时输入 GradientDecoder 和 MainDecoder，在此处引入 FFC 意味着
+        # 两条解码路径都能从"带频域感知的瓶颈特征"出发，对镜面高光区域的全局
+        # 频率特征有整体性的感知基础，效率最高（一处改动惠及两路解码）。
+        #
+        # ratio=0.5：瓶颈层特征已高度抽象，局部/全局各占一半，均衡分配最合理。
+        # 残差连接保留原有空间特征，FFC 贡献额外频域补充，不破坏已有信息。
+        self.ffc_bottleneck = FFC_BN_ACT(256, 256, 3, ratio_gin=0.5, ratio_gout=0.5, padding=1)
+        # ────────────────────────────────────────────────────────────────────
+
     def forward(self, x):
         x_in = x
 
@@ -424,6 +440,15 @@ class Encoder(nn.Module):
         fused = torch.cat([x_bb_4, vit_feat], dim=1)        # [B, 512+Cv, H/16, W/16]
         fused = self.vit_resnet_fuse_1x1(fused)             # [B, 512,     H/16, W/16]
         x_c = self.cba_after_backbone(fused)                # [B, 256,     H/16, W/16]
+
+        # ── 【新增 FFC-1】瓶颈频域增强（残差）──────────────────────────────
+        # 将 256ch 按 ratio=0.5 拆分：局部路径 128ch + 全局路径 128ch，
+        # FFC 后 cat 还原 256ch，残差叠加保留原有空间特征，不改变 x_c 的 shape。
+        # x_c 同时作为两路解码器入口，此处一次 FFC 使两路解码均获益。
+        _nl_btn = 256 - int(256 * 0.5)   # 128（局部路径通道数）
+        _ffc_btn_out = self.ffc_bottleneck((x_c[:, :_nl_btn], x_c[:, _nl_btn:]))
+        x_c = torch.cat([_ffc_btn_out[0], _ffc_btn_out[1]], dim=1) + x_c  # 256ch 残差
+        # ────────────────────────────────────────────────────────────────────
 
         return x_bb_1, x_bb_2, x_bb_3, x_bb_4, x_c
 
@@ -477,6 +502,24 @@ class GradientDecoder(nn.Module):
         self.block_2_conv_transpose = Conv2D_BN_activa(128, 128, 4, 2, 1, transpose=True)
 
         self.block_3_conv = Conv2D_BN_activa(128 + 256, 64, 3, 1, 1)
+
+        # ── 【新增 FFC-2】GradientDecoder H/4 频域增强 ───────────────────────
+        # 位置：block_3_conv 输出后（64ch, H/4），block_3_conv_transpose 前。
+        # 此处生成 x_to_be_enhanced_3，即 EnhancementLayers 第三尺度分解的输入。
+        #
+        # 问题：H/4 是镜面高光边缘细节最丰富的尺度之一，当前该层仅有
+        # 卷积处理（局部感受野），没有任何频域覆盖，对条纹与镜面反射高频
+        # 混叠区域的辨别能力极弱。
+        #
+        # 收益：EnhancementLayers 第三尺度的分解依据（projection vs specular）
+        # 在此之前就已获得频率特征支持，使 H/4 的镜面梯度分离更精准；
+        # 同时高光边缘处的频率转变（低→高）在此尺度最为显著，FFC 能有效捕获。
+        #
+        # ratio=0.25：H/4 特征图较大，频域路径保守占 1/4（16ch），
+        # 保留更多局部细节，避免大尺寸特征图的频域计算开销过大。
+        self.ffc_grad_h4 = FFC_BN_ACT(64, 64, 3, ratio_gin=0.25, ratio_gout=0.25, padding=1)
+        # ────────────────────────────────────────────────────────────────────
+
         self.block_3_conv_transpose = Conv2D_BN_activa(64, 64, 4, 2, 1, transpose=True)
 
         self.block_4_conv = Conv2D_BN_activa(64 + 128, 32, 3, 1, 1)
@@ -525,6 +568,15 @@ class GradientDecoder(nn.Module):
         x = torch.cat([x_to_be_enhanced_2, x_bb_3], dim=1)
 
         x = self.block_3_conv(x)
+
+        # ── 【新增 FFC-2】H/4 梯度频域增强（残差）───────────────────────────
+        # 将 64ch 按 ratio=0.25 拆分：局部路径 48ch + 全局路径 16ch，
+        # FFC 后 cat 还原 64ch，残差叠加不改变 shape，x_to_be_enhanced_3 携带频率信息。
+        _nl_h4 = 64 - int(64 * 0.25)    # 48（局部路径通道数）
+        _ffc_h4_out = self.ffc_grad_h4((x[:, :_nl_h4], x[:, _nl_h4:]))
+        x = torch.cat([_ffc_h4_out[0], _ffc_h4_out[1]], dim=1) + x  # 64ch 残差
+        # ────────────────────────────────────────────────────────────────────
+
         x_to_be_enhanced_3 = self.block_3_conv_transpose(x)
         x = torch.cat([x_to_be_enhanced_3, x_bb_2], dim=1)
 
@@ -571,6 +623,24 @@ class MainDecoder(nn.Module):
         # 缺少中频段的频域约束。ratio=0.25 保留 3/4 局部路径，避免过度频域化。
         # 以残差方式叠加，不改变通道数（384ch），对后续 cat 路径零影响。
         self.ffc_h8 = FFC_BN_ACT(384, 384, 3, ratio_gin=0.25, ratio_gout=0.25, padding=1)
+
+        # ── 【新增 FFC-4】MainDecoder H/4 频域增强 ───────────────────────────
+        # 位置：transposed_block_3 输出后（192ch, H/4），att3 注意力融合前。
+        #
+        # 问题：transposed_block_3 将 FeatureExtrationLayersB 的 640ch 输出上采样到
+        # H/4 分辨率（192ch），此处是主解码器从中分辨率过渡到高分辨率的关键节点。
+        # H/4 特征图携带了丰富的镜面边缘细节，但当前解码路径在 H/4 没有任何 FFC，
+        # 仅依赖 H/8 的 ffc_h8 提供频域支撑，无法感知 H/4 尺度特有的更高频率成分。
+        #
+        # 收益：在 att3 执行 skip connection 融合之前注入 H/4 频域特征，使注意力
+        # 权重的计算能够参考频域驱动的特征（而非纯卷积输出），att3 对高光区域的
+        # skip connection 通道权重分配将更精准。同时 H/4 是条纹结构最接近实际
+        # 条纹周期的尺度，频域约束在此处最能抑制条纹高频混叠入漫反射输出。
+        #
+        # ratio=0.25：H/4 特征图较大（192ch），保守分配频域路径，
+        # 避免上采样阶段过度频域化损失空间精细结构。残差连接保留所有原有特征。
+        self.ffc_h4 = FFC_BN_ACT(192, 192, 3, ratio_gin=0.25, ratio_gout=0.25, padding=1)
+        # ────────────────────────────────────────────────────────────────────
 
         self.output_conv1 = Conv2D_BN_activa(16 * 3 + 1, 16, 3, 1, 1)
         # ╔══════════════════════════════════════════════════════════════════╗
@@ -621,6 +691,16 @@ class MainDecoder(nn.Module):
 
         x = self.feature_extraction_B(x)
         x = self.transposed_block_3(x)
+
+        # ── 【新增 FFC-4】H/4 主解码频域增强（残差）─────────────────────────
+        # 将 192ch 按 ratio=0.25 拆分：局部路径 144ch + 全局路径 48ch，
+        # FFC 后 cat 还原 192ch，残差叠加不改变 shape，后续 att3 + cat 路径不受影响。
+        # 在注意力 skip connection（att3）执行前引入频域特征，提升高光区域的通道权重精度。
+        _n_l_h4 = 192 - int(192 * 0.25)   # 144（局部路径通道数）
+        _ffc_h4_out = self.ffc_h4((x[:, :_n_l_h4], x[:, _n_l_h4:]))
+        x = torch.cat([_ffc_h4_out[0], _ffc_h4_out[1]], dim=1) + x   # 192ch 残差
+        # ────────────────────────────────────────────────────────────────────
+
         if x_bb_2.shape[-2:] != x.shape[-2:]:
             x_bb_2 = F.interpolate(x_bb_2, size=x.shape[-2:], mode="bilinear", align_corners=False)
         if x_enhanced_3.shape[-2:] != x.shape[-2:]:
@@ -673,11 +753,32 @@ class _SpectralDecompositionUnit(nn.Module):
     def __init__(self, in_c: int, out_c: int):
         super(_SpectralDecompositionUnit, self).__init__()
 
+        # 保存 out_c 为实例属性，供 forward() 中拆分通道时使用
+        self.out_c = out_c
+
         # 投影条纹分支：大核感受野，侧重于周期性条纹结构（仅内部使用）
         self.projection_branch = Conv2D_BN_activa(in_c, out_c, 7, 1, 3)
 
         # 镜面反射分支：小核感受野，侧重于高频局部高光特征
         self.specular_branch = Conv2D_BN_activa(in_c, out_c, 3, 1, 1)
+
+        # ── 【新增 FFC-3】镜面反射分支频域增强 ──────────────────────────────
+        # 位置：specular_branch 卷积输出后，gate 融合前。
+        #
+        # 问题：specular_branch 仅是一个 3×3 卷积，感受野有限，无法捕获镜面反射
+        # 在频域中的全局特征——镜面高光区域通常在低频段呈现宽带增强（高亮大面积），
+        # 在高频段呈现锐利边缘（高光→阴影的快速转变），这两种特性在空间域很难同时
+        # 用单一小核卷积捕获，但在频域中可以通过全局 FFT 自然建模。
+        #
+        # 收益：FFC 作为残差叠加在 specular 上，不破坏 projection 分支和 gate 融合
+        # 的原有逻辑；新增的频域路径专门强化镜面反射的频率特征表达，使后续 gate
+        # （对比 projection 与 specular 的差异）能在更鲜明的特征对比下做出更准确
+        # 的"镜面 vs 条纹"判断。
+        #
+        # ratio=0.25：EnhancementLayers 输出通道较小（16~128ch），频域路径保守占 1/4，
+        # 避免小通道数时频域路径参数量过于饱和。残差连接保留原始空间特征。
+        self.ffc_specular = FFC_BN_ACT(out_c, out_c, 3, ratio_gin=0.25, ratio_gout=0.25, padding=1)
+        # ────────────────────────────────────────────────────────────────────
 
         # 改进点 B：gate_conv 的输入从原来的 out_c（仅 projection）改为 2*out_c
         # （projection 与 specular 拼接），使门控信号能对比两路特征的差异进行
@@ -694,6 +795,15 @@ class _SpectralDecompositionUnit(nn.Module):
 
         # 镜面反射梯度（原始）
         specular = self.specular_branch(x)
+
+        # ── 【新增 FFC-3】镜面分支频域增强（残差）──────────────────────────
+        # 将 out_c 通道按 ratio=0.25 拆分：局部路径 (out_c*0.75)ch + 全局路径 (out_c*0.25)ch，
+        # FFC 后 cat 还原 out_c，残差叠加到 specular 上，不改变通道数与 shape。
+        # 频域路径捕获镜面高光的全局宽带增强和边缘锐化响应，作为 specular 的频域补充。
+        _nl_spec = self.out_c - int(self.out_c * 0.25)   # 局部路径通道数（out_c * 0.75）
+        _ffc_spec_out = self.ffc_specular((specular[:, :_nl_spec], specular[:, _nl_spec:]))
+        specular = torch.cat([_ffc_spec_out[0], _ffc_spec_out[1]], dim=1) + specular  # 残差
+        # ────────────────────────────────────────────────────────────────────
 
         # 改进点 B：将 projection 与 specular 拼接后送入 gate_conv，
         # gate 通过比对两路激活决定各位置以哪种成分为主：
