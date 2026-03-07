@@ -1036,8 +1036,6 @@ def display_model_summary(model, input_size, device="cpu"):
             display_basic_model_info(model)
             return False
 
-
-
 def main():
     parser = argparse.ArgumentParser(description="Y-FFC 网络结构显示与前向测试")
     parser.add_argument("--input_channels", type=int, default=1)
