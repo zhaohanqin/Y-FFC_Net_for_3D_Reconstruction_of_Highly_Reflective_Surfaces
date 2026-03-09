@@ -1353,7 +1353,7 @@ def main():
     # 在这里修改训练参数，无需深入代码内部
     
     # ========== 基础训练参数 ==========
-    EPOCHS = 200
+    EPOCHS = 300
     LEARNING_RATE = 0.0005
     BATCH_SIZE = 30
     GRADIENT_ACCUMULATION_STEPS = 3
