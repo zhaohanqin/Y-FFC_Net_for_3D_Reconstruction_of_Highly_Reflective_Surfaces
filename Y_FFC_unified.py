@@ -1,13 +1,16 @@
 """
-Y_FFC_unified.py — Y-FFC 去高反光网络（统一单文件版）
+Y_FFC_unified.py — Y-FFC 去高反光网络
 =====================================================
 
-本文件将以下 4 个源文件的全部核心内容整合为一个独立可运行的 .py 文件：
+本文件包含 Y-FFC 网络的完整实现，包括以下核心组件：
 
-  ① ffc.py             — 快速傅里叶卷积（FFC）底层模块
-  ② specular_modules.py — 高反光检测专用模块（注意力/高频增强/损失/增强）
-  ③ Y_FFC.py            — 原始 Y-FFC 网络结构 + 训练工具
-  ④ Y_FFC_v2.py         — 改进版 V2 网络结构（EncoderV2 / MainDecoderV2 / YFFC_V2）
+  • FFC 核心模块（FourierUnit / SpectralTransform / FFC_BN_ACT / FFCResnetBlock）
+  • 网络基础构件（Conv2D_BN_activa / Attention_block / MultiscaleConvBlock 等）
+  • 高反光专用模块（SpecularAwareAttention / HighFrequencyEnhancement）
+  • 损失函数与评价指标（SSIM / PerceptualLoss / CompositeLoss / Specular 损失等）
+  • 数据集与数据增强（FringeDataset / PairedTransform / EnhancedPairedTransform 等）
+  • 模型结构（Encoder / GradientDecoder / MainDecoder / EnhancementLayers / YFFC）
+  • 训练工具（EMA / build_optimizer / build_scheduler / train_one_epoch 等）
 
 文件组织结构（自上而下）：
 ─────────────────────────────────────────────────
@@ -17,19 +20,10 @@ Y_FFC_unified.py — Y-FFC 去高反光网络（统一单文件版）
   第 3 层  损失函数与评价指标（SSIM / PerceptualLoss / CompositeLoss / Specular 损失 ...）
   第 4 层  高反光专用模块（SpecularAwareAttention / HighFrequencyEnhancement）
   第 5 层  数据集与数据增强（FringeDataset / PairedTransform / EnhancedPairedTransform / ...）
-  第 6 层  原始模型（Encoder / GradientDecoder / MainDecoder / EnhancementLayers / YFFC）
-  第 7 层  改进版模型（EncoderV2 / MainDecoderV2 / YFFC_V2）
-  第 8 层  训练工具（EMA / build_optimizer / build_scheduler / train_one_epoch / ...）
-  第 9 层  主入口（main）
+  第 6 层  模型结构（Encoder / GradientDecoder / MainDecoder / EnhancementLayers / YFFC）
+  第 7 层  训练工具（EMA / build_optimizer / build_scheduler / train_one_epoch / ...）
+  第 8 层  主入口（main）
 ─────────────────────────────────────────────────
-
-整合说明：
-  • truncated_normal_ 在 ffc.py 和 Y_FFC.py 中重复定义，合并后只保留一份。
-  • specular_modules.py 中 EnhancedCompositeLoss 原通过 `from Y_FFC import ...` 导入，
-    合并后直接引用同文件内已定义的 SSIM / PerceptualLoss 等，无需 import。
-  • Y_FFC_v2.py 原通过 `from Y_FFC import ...` 和 `from specular_modules import ...` 导入，
-    合并后同理直接引用。
-  • 所有类名、forward 签名、输入输出 shape 均保持不变。
 """
 
 # ╔════════════════════════════════════════════════════════════════════════════╗
@@ -55,7 +49,6 @@ def truncated_normal_(tensor, mean=0.0, std=1.0):
     """
     截断正态分布初始化函数。
     生成截断在 [-2σ, 2σ] 范围内的正态分布随机数，避免极端值。
-    （原 ffc.py 和 Y_FFC.py 中均有定义，合并后仅保留一份。）
     """
     size = tensor.shape
     tmp = tensor.new_empty(size + (4,)).normal_()
@@ -76,7 +69,7 @@ def gaussian_window(size, sigma):
 
 
 # ╔════════════════════════════════════════════════════════════════════════════╗
-# ║          第 1 层：FFC 核心模块（来源：ffc.py）                              ║
+# ║          第 1 层：FFC 核心模块                                              ║
 # ║                                                                          ║
 # ║  FFC（Fast Fourier Convolution）是整个网络的频域处理基础。                   ║
 # ║  核心思路：将空间特征经 FFT 转入频域，在频域做 1×1 卷积获得全局感受野，       ║
@@ -94,7 +87,7 @@ def gaussian_window(size, sigma):
 
 class FourierUnit(nn.Module):
     """
-    傅里叶单元 — FFC 的核心组件（优化版）。
+    傅里叶单元 — FFC 的核心组件。
 
     工作流程：
         空间特征 → [F6] Hann 窗 → FFT → 频域 [real, imag] 拼接 →
@@ -210,7 +203,7 @@ class FourierUnit(nn.Module):
 
 class SpectralTransform(nn.Module):
     """
-    谱变换模块（优化版）。
+    谱变换模块。
 
     流程：输入 → 1×1 Conv 降维 → 全局 FU + [F3] 独立 lfu_top/lfu_bot →
           [F4] 门控融合 → 1×1 Conv 升维 → 输出
@@ -284,7 +277,7 @@ class SpectralTransform(nn.Module):
 
 class FFC_BN_ACT(nn.Module):
     """
-    FFC 模块 — 快速傅里叶卷积（带 BN 和激活）（优化版）。
+    FFC 模块 — 快速傅里叶卷积（带 BN 和激活）。
 
     核心思想：将输入特征分为局部(L)/全局(G)两个分支，四路交互：
         L2L (空间 Conv) + G2L (SpectralTransform) → 局部输出
@@ -412,7 +405,7 @@ class FFC_BN_ACT(nn.Module):
 
 class FFCResnetBlock(nn.Module):
     """
-    FFC 残差块 — 用于堆叠多层 FFC（同原版，无改动）。
+    FFC 残差块 — 用于堆叠多层 FFC。
     结构：输入 → FFC1 → FFC2 → 残差连接 → 输出
     """
 
@@ -451,7 +444,7 @@ class FFCResnetBlock(nn.Module):
 
 
 # ╔════════════════════════════════════════════════════════════════════════════╗
-# ║          第 2 层：网络基础构件（来源：Y_FFC.py）                             ║
+# ║          第 2 层：网络基础构件                                              ║
 # ║                                                                          ║
 # ║  这些是构成 Encoder / Decoder 的基础 building block，                      ║
 # ║  包括卷积块、注意力块、多尺度卷积块、转置卷积块、ViT 编码器分支等。          ║
@@ -501,11 +494,11 @@ class Conv2D_BN_activa(nn.Module):
 
 class Attention_block(nn.Module):
     """
-    注意力门控块（改进版）。
+    注意力门控块。
     用于 Decoder skip connection 中对编码器特征进行注意力加权。
 
-    改进点：
-      - psi 输出 F_l 通道（每通道独立注意力权重），而非原版 1 通道。
+    特点：
+      - psi 输出 F_l 通道（每通道独立注意力权重），而非 1 通道。
       - F_int 缩小以降低参数量并减轻过拟合。
     """
 
@@ -670,12 +663,6 @@ class ViTEncoderBranch(nn.Module):
 
 # ╔════════════════════════════════════════════════════════════════════════════╗
 # ║          第 3 层：损失函数与评价指标                                         ║
-# ║                                                                          ║
-# ║  来源：Y_FFC.py（SSIM / PerceptualLoss / CompositeLoss 等）               ║
-# ║        specular_modules.py（SpecularFocalLoss / SpecularDiceLoss / ...）  ║
-# ║                                                                          ║
-# ║  注意：specular_modules.py 中 EnhancedCompositeLoss 原通过                ║
-# ║        `from Y_FFC import SSIM, ...` 导入，合并后直接引用同文件内的类。     ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
 
@@ -786,7 +773,7 @@ def compute_edge_weight_map(gt_specular, sigma=3.0, base_weight=1.0, edge_weight
     return weight_map
 
 
-# --- Specular 专用损失（来源：specular_modules.py）---
+# --- Specular 专用损失 ---
 
 class SpecularFocalLoss(nn.Module):
     """高光像素 Focal 加权损失：对难预测的高亮像素给予更大权重。"""
@@ -872,7 +859,7 @@ def specular_ohem_loss(pred, gt, base_fn, ratio=0.3):
 
 class CompositeLoss(nn.Module):
     """
-    原始版多目标复合损失（来源：Y_FFC.py）。
+    多目标复合损失。
     整合 SSIM / L1 / 频域 / 感知 / 镜面直接监督 / 统计 / 梯度 / 边缘加权。
     """
 
@@ -943,7 +930,7 @@ class CompositeLoss(nn.Module):
 
 class EnhancedCompositeLoss(nn.Module):
     """
-    增强版复合损失（来源：specular_modules.py）。
+    增强版复合损失。
     在 CompositeLoss 基础上增加 SpecularFocal / SpecularDice / GradientConsistency / OHEM。
     """
 
@@ -1035,9 +1022,10 @@ class EnhancedCompositeLoss(nn.Module):
 
 
 # ╔════════════════════════════════════════════════════════════════════════════╗
-# ║          第 4 层：高反光专用模块（来源：specular_modules.py）                ║
+# ║          第 4 层：高反光专用模块                                             ║
 # ║                                                                          ║
-# ║  这些模块是 V2 网络改进的核心，直接嵌入到 EncoderV2 和 MainDecoderV2 中。  ║
+# ║  这些模块直接嵌入到 Encoder 和 MainDecoder 中，                             ║
+# ║  为高反光检测提供专门的注意力机制和高频增强能力。                             ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
 
@@ -1050,7 +1038,7 @@ class SpecularAwareAttention(nn.Module):
     高亮区域特征被放大 → 网络天然对高光有更高响应灵敏度。
 
     在整个模型中的位置：
-        MainDecoderV2 每级 transposed_block 输出之后调用。
+        MainDecoder 每级 transposed_block 输出之后调用。
     """
 
     def __init__(self, in_channels, threshold=0.8, steepness=15.0):
@@ -1105,7 +1093,7 @@ class HighFrequencyEnhancement(nn.Module):
     使用固定 Laplacian 核 + 可学习多尺度分支 + SE 通道注意力。
 
     在整个模型中的位置：
-        EncoderV2 的 FFC bottleneck 之后，对编码特征 x_c 做高频增强。
+        Encoder 的 FFC bottleneck 之后，对编码特征 x_c 做高频增强。
     """
 
     def __init__(self, channels):
@@ -1153,15 +1141,12 @@ class HighFrequencyEnhancement(nn.Module):
 
 # ╔════════════════════════════════════════════════════════════════════════════╗
 # ║          第 5 层：数据集与数据增强                                          ║
-# ║                                                                          ║
-# ║  来源：Y_FFC.py（PairedTransform / FringeDataset）                        ║
-# ║        specular_modules.py（HighlightAugmentation / EnhancedPairedTransform）║
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
 
 class PairedTransform:
     """
-    配对数据增强（来源：Y_FFC.py）。
+    配对数据增强。
     对 input 和 target 施加完全相同的几何变换，光度变换仅施加在 input 上。
     """
 
@@ -1205,7 +1190,7 @@ class PairedTransform:
 
 class HighlightAugmentation:
     """
-    合成高反光数据增强（来源：specular_modules.py）。
+    合成高反光数据增强。
     在 input 上随机叠加合成高斯 blob 高反光，同步更新 gt_specular。
     """
 
@@ -1238,7 +1223,7 @@ class HighlightAugmentation:
 
 class EnhancedPairedTransform:
     """
-    增强版配对变换（来源：specular_modules.py）。
+    增强版配对变换。
     在 PairedTransform 基础上集成 HighlightAugmentation。
     返回 4 项：input, target, gt_specular, gt_gradient。
     """
@@ -1301,8 +1286,8 @@ class EnhancedPairedTransform:
 
 class FringeDataset(Dataset):
     """
-    条纹图数据集（来源：Y_FFC.py）。
-    支持 PairedTransform 数据增强，gt_gradient 使用梯度幅值（改进 4）。
+    条纹图数据集。
+    支持 PairedTransform 数据增强，gt_gradient 使用梯度幅值。
     """
 
     def __init__(self, input_dir, target_dir, transform=None, resize=None,
@@ -1376,7 +1361,7 @@ class FringeDataset(Dataset):
 
         gt_specular = input_img - target_img
 
-        # 梯度幅值作为 gt_gradient（改进 4）
+        # 梯度幅值作为 gt_gradient
         gx, gy = torch.gradient(target_img, dim=(1, 2))
         gt_gradient_mag = torch.sqrt(gx ** 2 + gy ** 2 + 1e-8)
         flat = gt_gradient_mag.flatten()
@@ -1387,51 +1372,52 @@ class FringeDataset(Dataset):
 
 
 # ╔════════════════════════════════════════════════════════════════════════════╗
-# ║          第 6 层：原始模型结构（来源：Y_FFC.py）                             ║
+# ║          第 6 层：模型结构                                                  ║
 # ║                                                                          ║
-# ║  网络总体架构（Y 形结构）：                                                 ║
-# ║    Encoder（ResNet50 + ViT + FFC bottleneck）                             ║
+# ║  网络总体架构（X 形结构）：                                                 ║
+# ║    Encoder（ResNet50 + ViT + FFC bottleneck + HighFrequencyEnhancement）  ║
 # ║      ↓ 编码特征（5 级：x_bb_1~4, x_c）                                    ║
 # ║      ├── GradientDecoder → 梯度图 x_g + 4 级增强特征                      ║
 # ║      │   ├── EnhancementLayers → 对增强特征做频域精炼                      ║
 # ║      │   └──┐                                                            ║
-# ║      └────── MainDecoder → 镜面分量 est_b                                ║
+# ║      └────── MainDecoder（含 SpecularAwareAttention）→ 镜面分量 est_b     ║
 # ║    最终输出 pred_diffuse = clamp(input - est_b, 0, 1)                    ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
 
 class Encoder(nn.Module):
     """
-    编码器：ResNet50（dilated）+ ViT-B/16 双分支，末尾接 FFC bottleneck。
+    编码器：ResNet50（dilated）+ ViT-B/16 双分支，末尾接 FFC bottleneck
+    和 HighFrequencyEnhancement。
     输出 5 级特征用于后续 Decoder 的 skip connection。
     """
 
     def __init__(self, vit_image_size=224):
-        super(Encoder, self).__init__()
+        super().__init__()
 
         try:
-            backbone_model = models.resnet50(
+            backbone = models.resnet50(
                 weights=models.ResNet50_Weights.IMAGENET1K_V1,
                 replace_stride_with_dilation=[False, False, True])
         except Exception:
-            backbone_model = models.resnet50(
+            backbone = models.resnet50(
                 weights=None,
                 replace_stride_with_dilation=[False, False, True])
 
-        old_conv1 = backbone_model.conv1
-        backbone_model.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        old_conv1 = backbone.conv1
+        backbone.conv1 = nn.Conv2d(1, 64, 7, 2, 3, bias=False)
         with torch.no_grad():
-            backbone_model.conv1.weight.copy_(old_conv1.weight.mean(dim=1, keepdim=True))
+            backbone.conv1.weight.copy_(old_conv1.weight.mean(1, keepdim=True))
 
-        self.stem_conv = backbone_model.conv1
-        self.stem_bn = backbone_model.bn1
-        self.stem_relu = backbone_model.relu
-        self.stem_pool = backbone_model.maxpool
+        self.stem_conv = backbone.conv1
+        self.stem_bn = backbone.bn1
+        self.stem_relu = backbone.relu
+        self.stem_pool = backbone.maxpool
 
-        self.layer1 = backbone_model.layer1
-        self.layer2 = backbone_model.layer2
-        self.layer3 = backbone_model.layer3
-        self.layer4 = backbone_model.layer4
+        self.layer1 = backbone.layer1
+        self.layer2 = backbone.layer2
+        self.layer3 = backbone.layer3
+        self.layer4 = backbone.layer4
 
         self.reduce_l1 = Conv2D_BN_activa(256, 128, 1, 1, 0)
         self.reduce_l2 = Conv2D_BN_activa(512, 256, 1, 1, 0)
@@ -1440,35 +1426,43 @@ class Encoder(nn.Module):
         self.fuse_l34 = Conv2D_BN_activa(1024, 512, 3, 1, 1)
 
         self.vit_branch = ViTEncoderBranch(vit_image_size=vit_image_size)
-        self.vit_resnet_fuse_1x1 = Conv2D_BN_activa(512 + self.vit_branch.embed_dim, 512, 1, 1, 0)
+        self.vit_resnet_fuse_1x1 = Conv2D_BN_activa(
+            512 + self.vit_branch.embed_dim, 512, 1, 1, 0)
         self.cba_after_backbone = Conv2D_BN_activa(512, 256, 3, 1, 1)
-        self.ffc_bottleneck = FFC_BN_ACT(256, 256, 3, ratio_gin=0.5, ratio_gout=0.5, padding=1)
+        self.ffc_bottleneck = FFC_BN_ACT(256, 256, 3, 0.5, 0.5, padding=1)
+
+        # 高频增强
+        self.hf_enhance = HighFrequencyEnhancement(channels=256)
 
     def forward(self, x):
         x_in = x
         x = self.stem_conv(x); x = self.stem_bn(x)
         x_bb_1 = self.stem_relu(x)
+
         x = self.stem_pool(x_bb_1)
         x_l1 = self.layer1(x); x_bb_2 = self.reduce_l1(x_l1)
         x_l2 = self.layer2(x_l1); x_bb_3 = self.reduce_l2(x_l2)
-        x_l3 = self.layer3(x_l2)
-        x_l4 = self.layer4(x_l3)
+        x_l3 = self.layer3(x_l2); x_l4 = self.layer4(x_l3)
+
         x_l3_512 = self.reduce_l3(x_l3)
         x_l4_512 = self.reduce_l4(x_l4)
-        x_bb_4 = self.fuse_l34(torch.cat([x_l3_512, x_l4_512], dim=1))
+        x_bb_4 = self.fuse_l34(torch.cat([x_l3_512, x_l4_512], 1))
 
         vit_feat = self.vit_branch(x_in)
         if vit_feat.shape[-2:] != x_bb_4.shape[-2:]:
             vit_feat = F.interpolate(vit_feat, size=x_bb_4.shape[-2:],
-                                     mode="bilinear", align_corners=False)
+                                     mode='bilinear', align_corners=False)
 
-        fused = torch.cat([x_bb_4, vit_feat], dim=1)
+        fused = torch.cat([x_bb_4, vit_feat], 1)
         fused = self.vit_resnet_fuse_1x1(fused)
         x_c = self.cba_after_backbone(fused)
 
-        _nl_btn = 256 - int(256 * 0.5)
-        _ffc_btn_out = self.ffc_bottleneck((x_c[:, :_nl_btn], x_c[:, _nl_btn:]))
-        x_c = torch.cat([_ffc_btn_out[0], _ffc_btn_out[1]], dim=1) + x_c
+        nl = 256 - int(256 * 0.5)
+        out = self.ffc_bottleneck((x_c[:, :nl], x_c[:, nl:]))
+        x_c = torch.cat([out[0], out[1]], 1) + x_c
+
+        # 高频增强
+        x_c = self.hf_enhance(x_c)
 
         return x_bb_1, x_bb_2, x_bb_3, x_bb_4, x_c
 
@@ -1554,15 +1548,17 @@ class MainDecoder(nn.Module):
     """
     主解码器：融合编码器 skip connection + 梯度分支增强特征 + 梯度图，
     逐级上采样并最终输出镜面分量 est_b。
+    每级 transposed_block 输出后使用 SpecularAwareAttention，
+    利用原始输入亮度作为先验增强高光区域响应。
     """
 
     def __init__(self, in_channels):
-        super(MainDecoder, self).__init__()
+        super().__init__()
+
         self.FFC1 = FFC_BN_ACT(256, 256, 3, 0.5, 0.5, padding=1)
         self.FFC2 = FFC_BN_ACT(256, 256, 3, 0.5, 0.5, padding=1)
 
         self.multiscale_conv = MultiscaleConvBlock(in_channels)
-
         self.transposed_block_1 = TransposedConvBlock_same(192 * 3, 256)
         self.transposed_block_2 = TransposedConvBlock(256 * 3 + 128 + 512, 128)
         self.feature_extraction_B = FeatureExtrationLayersB(128 * 3 + 64 + 256)
@@ -1582,67 +1578,77 @@ class MainDecoder(nn.Module):
         self.output_conv2 = Conv2D_BN_activa(16, 1, 3, 1, 1, activation=None, if_bn=False)
         self.output_sigmoid = nn.Sigmoid()
 
-    def forward(self, c_features, enhanced_features, x_g):
+        # SpecularAwareAttention（每级 transposed_block 输出通道数 = 3×branch）
+        self.sa1 = SpecularAwareAttention(256 * 3, threshold=0.8)
+        self.sa2 = SpecularAwareAttention(128 * 3, threshold=0.8)
+        self.sa3 = SpecularAwareAttention(64 * 3, threshold=0.8)
+        self.sa4 = SpecularAwareAttention(32 * 3, threshold=0.8)
+
+    def forward(self, c_features, enhanced_features, x_g, original_input):
         x_bb_1, x_bb_2, x_bb_3, x_bb_4, x_c = c_features
-        x_enhanced_1, x_enhanced_2, x_enhanced_3, x_enhanced_4 = enhanced_features
+        xe1, xe2, xe3, xe4 = enhanced_features
 
         x0, x1 = x_c.chunk(2, dim=1)
-        x = self.FFC1(tuple([x0, x1]))
-        x = self.FFC2(x)
-        x = torch.cat([x[0], x[1]], dim=1)
-        x = x + x_c
+        x = self.FFC1((x0, x1)); x = self.FFC2(x)
+        x = torch.cat([x[0], x[1]], 1) + x_c
 
         x = self.multiscale_conv(x)
+
+        # Level 1
         x = self.transposed_block_1(x)
-
+        x = self.sa1(x, original_input)
         if x_bb_4.shape[-2:] != x.shape[-2:]:
-            x_bb_4 = F.interpolate(x_bb_4, size=x.shape[-2:], mode="bilinear", align_corners=False)
-        if x_enhanced_1.shape[-2:] != x.shape[-2:]:
-            x_enhanced_1 = F.interpolate(x_enhanced_1, size=x.shape[-2:], mode="bilinear", align_corners=False)
+            x_bb_4 = F.interpolate(x_bb_4, x.shape[-2:], mode='bilinear', align_corners=False)
+        if xe1.shape[-2:] != x.shape[-2:]:
+            xe1 = F.interpolate(xe1, x.shape[-2:], mode='bilinear', align_corners=False)
         bridge = self.att1(x, x_bb_4)
-        x = torch.cat([x, bridge, x_enhanced_1], dim=1)
+        x = torch.cat([x, bridge, xe1], 1)
 
+        # Level 2
         x = self.transposed_block_2(x)
-        _n_l = 384 - int(384 * 0.25)
-        _ffc_out = self.ffc_h8((x[:, :_n_l], x[:, _n_l:]))
-        x = torch.cat([_ffc_out[0], _ffc_out[1]], dim=1) + x
+        nl = 384 - int(384 * 0.25)
+        fo = self.ffc_h8((x[:, :nl], x[:, nl:]))
+        x = torch.cat([fo[0], fo[1]], 1) + x
+        x = self.sa2(x, original_input)
         if x_bb_3.shape[-2:] != x.shape[-2:]:
-            x_bb_3 = F.interpolate(x_bb_3, size=x.shape[-2:], mode="bilinear", align_corners=False)
-        if x_enhanced_2.shape[-2:] != x.shape[-2:]:
-            x_enhanced_2 = F.interpolate(x_enhanced_2, size=x.shape[-2:], mode="bilinear", align_corners=False)
+            x_bb_3 = F.interpolate(x_bb_3, x.shape[-2:], mode='bilinear', align_corners=False)
+        if xe2.shape[-2:] != x.shape[-2:]:
+            xe2 = F.interpolate(xe2, x.shape[-2:], mode='bilinear', align_corners=False)
         bridge = self.att2(x, x_bb_3)
-        x = torch.cat([x, bridge, x_enhanced_2], dim=1)
+        x = torch.cat([x, bridge, xe2], 1)
 
+        # Level 3
         x = self.feature_extraction_B(x)
         x = self.transposed_block_3(x)
-
-        _n_l_h4 = 192 - int(192 * 0.25)
-        _ffc_h4_out = self.ffc_h4((x[:, :_n_l_h4], x[:, _n_l_h4:]))
-        x = torch.cat([_ffc_h4_out[0], _ffc_h4_out[1]], dim=1) + x
-
+        nl4 = 192 - int(192 * 0.25)
+        fo4 = self.ffc_h4((x[:, :nl4], x[:, nl4:]))
+        x = torch.cat([fo4[0], fo4[1]], 1) + x
+        x = self.sa3(x, original_input)
         if x_bb_2.shape[-2:] != x.shape[-2:]:
-            x_bb_2 = F.interpolate(x_bb_2, size=x.shape[-2:], mode="bilinear", align_corners=False)
-        if x_enhanced_3.shape[-2:] != x.shape[-2:]:
-            x_enhanced_3 = F.interpolate(x_enhanced_3, size=x.shape[-2:], mode="bilinear", align_corners=False)
+            x_bb_2 = F.interpolate(x_bb_2, x.shape[-2:], mode='bilinear', align_corners=False)
+        if xe3.shape[-2:] != x.shape[-2:]:
+            xe3 = F.interpolate(xe3, x.shape[-2:], mode='bilinear', align_corners=False)
         bridge = self.att3(x, x_bb_2)
-        x = torch.cat([x, bridge, x_enhanced_3], dim=1)
+        x = torch.cat([x, bridge, xe3], 1)
 
+        # Level 4
         x = self.transposed_block_4(x)
+        x = self.sa4(x, original_input)
         if x_bb_1.shape[-2:] != x.shape[-2:]:
-            x_bb_1 = F.interpolate(x_bb_1, size=x.shape[-2:], mode="bilinear", align_corners=False)
-        if x_enhanced_4.shape[-2:] != x.shape[-2:]:
-            x_enhanced_4 = F.interpolate(x_enhanced_4, size=x.shape[-2:], mode="bilinear", align_corners=False)
+            x_bb_1 = F.interpolate(x_bb_1, x.shape[-2:], mode='bilinear', align_corners=False)
+        if xe4.shape[-2:] != x.shape[-2:]:
+            xe4 = F.interpolate(xe4, x.shape[-2:], mode='bilinear', align_corners=False)
         bridge = self.att4(x, x_bb_1)
-        x = torch.cat([x, bridge, x_enhanced_4], dim=1)
+        x = torch.cat([x, bridge, xe4], 1)
 
+        # Output
         x = self.transposed_block_5(x)
         if x_g.shape[-2:] != x.shape[-2:]:
-            x_g = F.interpolate(x_g, size=x.shape[-2:], mode="bilinear", align_corners=False)
-        x = torch.cat([x, x_g], dim=1)
+            x_g = F.interpolate(x_g, x.shape[-2:], mode='bilinear', align_corners=False)
+        x = torch.cat([x, x_g], 1)
 
         x = self.output_conv1(x)
-        est_b = self.output_sigmoid(self.output_conv2(x))
-        return est_b
+        return self.output_sigmoid(self.output_conv2(x))
 
 
 class _SpectralDecompositionUnit(nn.Module):
@@ -1692,235 +1698,24 @@ class EnhancementLayers(nn.Module):
 
 class YFFC(nn.Module):
     """
-    Y-FFC 原始版主网络。
+    Y-FFC 主网络。
+
+    网络采用 Y 形结构：
+      - Encoder（含 HighFrequencyEnhancement）提取多尺度特征
+      - GradientDecoder 输出梯度图和待增强特征
+      - EnhancementLayers 对待增强特征做频域精炼
+      - MainDecoder（含 SpecularAwareAttention）输出镜面反射分量 est_b
+      - 最终输出 pred_diffuse = clamp(input - est_b, 0, 1)
+
     输出字典：{'r': pred_diffuse, 'g': gradient_map, 'b': est_specular}
     """
 
     def __init__(self):
-        super(YFFC, self).__init__()
+        super().__init__()
         self.encoder = Encoder()
         self.gradient_decoder = GradientDecoder()
         self.enhancement_layers = EnhancementLayers()
         self.main_decoder = MainDecoder(in_channels=256)
-
-    def forward(self, x):
-        c_features = self.encoder(x)
-        g_features = self.gradient_decoder(c_features[:-1], c_features[-1])
-        enhanced_features = self.enhancement_layers(g_features[:-1])
-        est_b = self.main_decoder(c_features, enhanced_features, g_features[-1])
-        pred_diffuse = torch.clamp(x - est_b, 0.0, 1.0)
-        return {"r": pred_diffuse, "g": g_features[-1], "b": est_b}
-
-
-# ╔════════════════════════════════════════════════════════════════════════════╗
-# ║          第 7 层：改进版 V2 模型结构（来源：Y_FFC_v2.py）                    ║
-# ║                                                                          ║
-# ║  改进点：                                                                 ║
-# ║    • EncoderV2：FFC bottleneck 后增加 HighFrequencyEnhancement            ║
-# ║    • MainDecoderV2：每级 transposed_block 后增加 SpecularAwareAttention    ║
-# ║    • YFFC_V2：组装改进版 Encoder/Decoder，forward 传入原始输入              ║
-# ╚════════════════════════════════════════════════════════════════════════════╝
-
-
-class EncoderV2(nn.Module):
-    """
-    改进版编码器：在原版 Encoder 的 FFC bottleneck 后增加 HighFrequencyEnhancement。
-    其余结构与原版逐行一致。
-    """
-
-    def __init__(self, vit_image_size=224):
-        super().__init__()
-
-        try:
-            backbone = models.resnet50(
-                weights=models.ResNet50_Weights.IMAGENET1K_V1,
-                replace_stride_with_dilation=[False, False, True])
-        except Exception:
-            backbone = models.resnet50(
-                weights=None,
-                replace_stride_with_dilation=[False, False, True])
-
-        old_conv1 = backbone.conv1
-        backbone.conv1 = nn.Conv2d(1, 64, 7, 2, 3, bias=False)
-        with torch.no_grad():
-            backbone.conv1.weight.copy_(old_conv1.weight.mean(1, keepdim=True))
-
-        self.stem_conv = backbone.conv1
-        self.stem_bn = backbone.bn1
-        self.stem_relu = backbone.relu
-        self.stem_pool = backbone.maxpool
-
-        self.layer1 = backbone.layer1
-        self.layer2 = backbone.layer2
-        self.layer3 = backbone.layer3
-        self.layer4 = backbone.layer4
-
-        self.reduce_l1 = Conv2D_BN_activa(256, 128, 1, 1, 0)
-        self.reduce_l2 = Conv2D_BN_activa(512, 256, 1, 1, 0)
-        self.reduce_l3 = Conv2D_BN_activa(1024, 512, 1, 1, 0)
-        self.reduce_l4 = Conv2D_BN_activa(2048, 512, 1, 1, 0)
-        self.fuse_l34 = Conv2D_BN_activa(1024, 512, 3, 1, 1)
-
-        self.vit_branch = ViTEncoderBranch(vit_image_size=vit_image_size)
-        self.vit_resnet_fuse_1x1 = Conv2D_BN_activa(
-            512 + self.vit_branch.embed_dim, 512, 1, 1, 0)
-        self.cba_after_backbone = Conv2D_BN_activa(512, 256, 3, 1, 1)
-        self.ffc_bottleneck = FFC_BN_ACT(256, 256, 3, 0.5, 0.5, padding=1)
-
-        # V2 新增：高频增强
-        self.hf_enhance = HighFrequencyEnhancement(channels=256)
-
-    def forward(self, x):
-        x_in = x
-        x = self.stem_conv(x); x = self.stem_bn(x)
-        x_bb_1 = self.stem_relu(x)
-
-        x = self.stem_pool(x_bb_1)
-        x_l1 = self.layer1(x); x_bb_2 = self.reduce_l1(x_l1)
-        x_l2 = self.layer2(x_l1); x_bb_3 = self.reduce_l2(x_l2)
-        x_l3 = self.layer3(x_l2); x_l4 = self.layer4(x_l3)
-
-        x_l3_512 = self.reduce_l3(x_l3)
-        x_l4_512 = self.reduce_l4(x_l4)
-        x_bb_4 = self.fuse_l34(torch.cat([x_l3_512, x_l4_512], 1))
-
-        vit_feat = self.vit_branch(x_in)
-        if vit_feat.shape[-2:] != x_bb_4.shape[-2:]:
-            vit_feat = F.interpolate(vit_feat, size=x_bb_4.shape[-2:],
-                                     mode='bilinear', align_corners=False)
-
-        fused = torch.cat([x_bb_4, vit_feat], 1)
-        fused = self.vit_resnet_fuse_1x1(fused)
-        x_c = self.cba_after_backbone(fused)
-
-        nl = 256 - int(256 * 0.5)
-        out = self.ffc_bottleneck((x_c[:, :nl], x_c[:, nl:]))
-        x_c = torch.cat([out[0], out[1]], 1) + x_c
-
-        # V2 新增：高频增强
-        x_c = self.hf_enhance(x_c)
-
-        return x_bb_1, x_bb_2, x_bb_3, x_bb_4, x_c
-
-
-class MainDecoderV2(nn.Module):
-    """
-    改进版主解码器：每级 transposed_block 输出后增加 SpecularAwareAttention，
-    利用原始输入亮度作为先验。forward 签名新增 original_input 参数。
-    """
-
-    def __init__(self, in_channels):
-        super().__init__()
-
-        self.FFC1 = FFC_BN_ACT(256, 256, 3, 0.5, 0.5, padding=1)
-        self.FFC2 = FFC_BN_ACT(256, 256, 3, 0.5, 0.5, padding=1)
-
-        self.multiscale_conv = MultiscaleConvBlock(in_channels)
-        self.transposed_block_1 = TransposedConvBlock_same(192 * 3, 256)
-        self.transposed_block_2 = TransposedConvBlock(256 * 3 + 128 + 512, 128)
-        self.feature_extraction_B = FeatureExtrationLayersB(128 * 3 + 64 + 256)
-        self.transposed_block_3 = TransposedConvBlock(640, 64)
-        self.transposed_block_4 = TransposedConvBlock(64 * 3 + 32 + 128, 32)
-        self.transposed_block_5 = TransposedConvBlock(32 * 3 + 16 + 64, 16)
-
-        self.att1 = Attention_block(768, 512, 64)
-        self.att2 = Attention_block(384, 256, 64)
-        self.att3 = Attention_block(192, 128, 32)
-        self.att4 = Attention_block(96, 64, 16)
-
-        self.ffc_h8 = FFC_BN_ACT(384, 384, 3, ratio_gin=0.25, ratio_gout=0.25, padding=1)
-        self.ffc_h4 = FFC_BN_ACT(192, 192, 3, ratio_gin=0.25, ratio_gout=0.25, padding=1)
-
-        self.output_conv1 = Conv2D_BN_activa(16 * 3 + 1, 16, 3, 1, 1)
-        self.output_conv2 = Conv2D_BN_activa(16, 1, 3, 1, 1, activation=None, if_bn=False)
-        self.output_sigmoid = nn.Sigmoid()
-
-        # V2 新增：SpecularAwareAttention（每级 transposed_block 输出通道数 = 3×branch）
-        self.sa1 = SpecularAwareAttention(256 * 3, threshold=0.8)
-        self.sa2 = SpecularAwareAttention(128 * 3, threshold=0.8)
-        self.sa3 = SpecularAwareAttention(64 * 3, threshold=0.8)
-        self.sa4 = SpecularAwareAttention(32 * 3, threshold=0.8)
-
-    def forward(self, c_features, enhanced_features, x_g, original_input):
-        x_bb_1, x_bb_2, x_bb_3, x_bb_4, x_c = c_features
-        xe1, xe2, xe3, xe4 = enhanced_features
-
-        x0, x1 = x_c.chunk(2, dim=1)
-        x = self.FFC1((x0, x1)); x = self.FFC2(x)
-        x = torch.cat([x[0], x[1]], 1) + x_c
-
-        x = self.multiscale_conv(x)
-
-        # Level 1
-        x = self.transposed_block_1(x)
-        x = self.sa1(x, original_input)  # V2 新增
-        if x_bb_4.shape[-2:] != x.shape[-2:]:
-            x_bb_4 = F.interpolate(x_bb_4, x.shape[-2:], mode='bilinear', align_corners=False)
-        if xe1.shape[-2:] != x.shape[-2:]:
-            xe1 = F.interpolate(xe1, x.shape[-2:], mode='bilinear', align_corners=False)
-        bridge = self.att1(x, x_bb_4)
-        x = torch.cat([x, bridge, xe1], 1)
-
-        # Level 2
-        x = self.transposed_block_2(x)
-        nl = 384 - int(384 * 0.25)
-        fo = self.ffc_h8((x[:, :nl], x[:, nl:]))
-        x = torch.cat([fo[0], fo[1]], 1) + x
-        x = self.sa2(x, original_input)  # V2 新增
-        if x_bb_3.shape[-2:] != x.shape[-2:]:
-            x_bb_3 = F.interpolate(x_bb_3, x.shape[-2:], mode='bilinear', align_corners=False)
-        if xe2.shape[-2:] != x.shape[-2:]:
-            xe2 = F.interpolate(xe2, x.shape[-2:], mode='bilinear', align_corners=False)
-        bridge = self.att2(x, x_bb_3)
-        x = torch.cat([x, bridge, xe2], 1)
-
-        # Level 3
-        x = self.feature_extraction_B(x)
-        x = self.transposed_block_3(x)
-        nl4 = 192 - int(192 * 0.25)
-        fo4 = self.ffc_h4((x[:, :nl4], x[:, nl4:]))
-        x = torch.cat([fo4[0], fo4[1]], 1) + x
-        x = self.sa3(x, original_input)  # V2 新增
-        if x_bb_2.shape[-2:] != x.shape[-2:]:
-            x_bb_2 = F.interpolate(x_bb_2, x.shape[-2:], mode='bilinear', align_corners=False)
-        if xe3.shape[-2:] != x.shape[-2:]:
-            xe3 = F.interpolate(xe3, x.shape[-2:], mode='bilinear', align_corners=False)
-        bridge = self.att3(x, x_bb_2)
-        x = torch.cat([x, bridge, xe3], 1)
-
-        # Level 4
-        x = self.transposed_block_4(x)
-        x = self.sa4(x, original_input)  # V2 新增
-        if x_bb_1.shape[-2:] != x.shape[-2:]:
-            x_bb_1 = F.interpolate(x_bb_1, x.shape[-2:], mode='bilinear', align_corners=False)
-        if xe4.shape[-2:] != x.shape[-2:]:
-            xe4 = F.interpolate(xe4, x.shape[-2:], mode='bilinear', align_corners=False)
-        bridge = self.att4(x, x_bb_1)
-        x = torch.cat([x, bridge, xe4], 1)
-
-        # Output
-        x = self.transposed_block_5(x)
-        if x_g.shape[-2:] != x.shape[-2:]:
-            x_g = F.interpolate(x_g, x.shape[-2:], mode='bilinear', align_corners=False)
-        x = torch.cat([x, x_g], 1)
-
-        x = self.output_conv1(x)
-        return self.output_sigmoid(self.output_conv2(x))
-
-
-class YFFC_V2(nn.Module):
-    """
-    Y-FFC 改进版 V2 主网络。
-    使用 EncoderV2（+HighFrequencyEnhancement）和 MainDecoderV2（+SpecularAwareAttention）。
-    输出格式与原版 YFFC 完全一致。
-    """
-
-    def __init__(self):
-        super().__init__()
-        self.encoder = EncoderV2()
-        self.gradient_decoder = GradientDecoder()
-        self.enhancement_layers = EnhancementLayers()
-        self.main_decoder = MainDecoderV2(in_channels=256)
 
     def forward(self, x):
         c_feat = self.encoder(x)
@@ -1932,7 +1727,7 @@ class YFFC_V2(nn.Module):
 
 
 # ╔════════════════════════════════════════════════════════════════════════════╗
-# ║          第 8 层：训练工具（来源：Y_FFC.py）                                ║
+# ║          第 7 层：训练工具                                                  ║
 # ║                                                                          ║
 # ║  包括：EMA / 分层学习率优化器 / Warmup+余弦退火调度器 / 动态损失权重        ║
 # ║        调度器 / BN→GN 替换 / 单 epoch 训练 / 验证 / 训练入口              ║
@@ -1997,7 +1792,7 @@ class DynamicLossWeightScheduler:
 
 
 def build_optimizer(model, base_lr=2e-4, weight_decay=1e-4):
-    """为 YFFC/YFFC_V2 模型构建分层学习率 AdamW 优化器。"""
+    """为 YFFC 模型构建分层学习率 AdamW 优化器。"""
     encoder_pretrained = []
     ffc_params = []
     decoder_params = []
@@ -2155,17 +1950,12 @@ def validate(model, dataloader, criterion, device):
 
 
 def train(args):
-    """完整训练入口，整合全部改进。"""
+    """完整训练入口。"""
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"训练设备: {device}")
 
-    # 模型创建（根据 args.use_v2 选择版本）
-    if getattr(args, 'use_v2', False):
-        model = YFFC_V2()
-        print("使用 YFFC_V2（改进版）")
-    else:
-        model = YFFC()
-        print("使用 YFFC（原始版）")
+    model = YFFC()
+    print("使用 YFFC 模型")
 
     if args.use_gn:
         print("将 BatchNorm 替换为 GroupNorm...")
@@ -2263,7 +2053,7 @@ def train(args):
 
 
 # ╔════════════════════════════════════════════════════════════════════════════╗
-# ║          第 9 层：辅助工具 + 主入口                                        ║
+# ║          第 8 层：辅助工具 + 主入口                                        ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
 
@@ -2317,7 +2107,6 @@ def main():
     test_parser.add_argument("--image_size", type=int, default=512)
     test_parser.add_argument("--batch_size", type=int, default=1)
     test_parser.add_argument("--device", type=str, default="cpu", choices=["cpu", "cuda"])
-    test_parser.add_argument("--use_v2", action="store_true", help="测试 YFFC_V2 模型")
     test_parser.add_argument("--show_params", action="store_true", default=True)
     test_parser.add_argument("--show_summary", action="store_true", default=True)
 
@@ -2337,7 +2126,6 @@ def main():
     train_parser.add_argument("--save_interval", type=int, default=10)
     train_parser.add_argument("--use_gn", action="store_true")
     train_parser.add_argument("--use_ema", action="store_true")
-    train_parser.add_argument("--use_v2", action="store_true", help="使用 YFFC_V2 模型")
     train_parser.add_argument("--use_augmentation", action="store_true", default=True)
     train_parser.add_argument("--no_augmentation", action="store_true")
 
@@ -2349,7 +2137,6 @@ def main():
         args.image_size = 512
         args.batch_size = 1
         args.device = 'cpu'
-        args.use_v2 = False
         args.show_params = True
         args.show_summary = True
 
@@ -2364,12 +2151,8 @@ def main():
             device = torch.device("cpu")
 
         # 创建模型
-        if args.use_v2:
-            model = YFFC_V2()
-            print("测试模型: YFFC_V2")
-        else:
-            model = YFFC()
-            print("测试模型: YFFC")
+        model = YFFC()
+        print("测试模型: YFFC")
         model.to(device)
 
         input_size = (args.batch_size, args.input_channels, args.image_size, args.image_size)
@@ -2416,7 +2199,7 @@ def main():
         # BN → GN 替换测试
         print("\n--- BN -> GN 替换测试 ---")
         try:
-            model_gn = YFFC_V2() if args.use_v2 else YFFC()
+            model_gn = YFFC()
             bn_count = sum(1 for m in model_gn.modules() if isinstance(m, nn.BatchNorm2d))
             replace_bn_with_gn(model_gn)
             gn_count = sum(1 for m in model_gn.modules() if isinstance(m, nn.GroupNorm))
