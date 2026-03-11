@@ -30,7 +30,7 @@ from PIL import Image
 
 # ---------- 从项目模块导入 ----------
 from DCUNet import DC_Unet                              # 模型
-from Y_FFC import FringeDataset, SSIM                  # 数据集 + SSIM 损失
+from Y_FFC_unified import FringeDataset, SSIM                  # 数据集 + SSIM 损失
 
 
 # ==============================================================================
@@ -766,8 +766,8 @@ def main():
     # ══════════════════════════════════════════════════
 
     # ── 数据路径 ──
-    INPUT_DIR  = 'data/inputs'
-    TARGET_DIR = 'data/targets'
+    INPUT_DIR  = './data/inputs'
+    TARGET_DIR = './data/targets'
 
     # ── 图像与数据 ──
     IMAGE_RESIZE  = (160, 128)   # (width, height)，None 表示不缩放
