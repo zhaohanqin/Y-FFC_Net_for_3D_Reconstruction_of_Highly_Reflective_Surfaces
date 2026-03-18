@@ -68,6 +68,24 @@ def gaussian_window(size, sigma):
     return g.unsqueeze(0) * g.unsqueeze(1)
 
 
+def _tukey_window(size, alpha=0.25, device=None, dtype=None):
+    """[P11] Tukey 窗：中间 75% 不衰减，两端 12.5% 余弦过渡。"""
+    if size <= 1:
+        return torch.ones(size, device=device, dtype=dtype or torch.float32)
+    n = torch.arange(size, device=device, dtype=dtype or torch.float32)
+    if alpha <= 0:
+        return torch.ones(size, device=device, dtype=dtype or torch.float32)
+    if alpha >= 1:
+        return 0.5 * (1.0 - torch.cos(2.0 * math.pi * n / (size - 1)))
+    width = int(alpha * (size - 1) / 2.0)
+    w = torch.ones(size, device=device, dtype=dtype or torch.float32)
+    left = n[:width + 1]
+    w[:width + 1] = 0.5 * (1.0 + torch.cos(math.pi * (2.0 * left / (alpha * (size - 1)) - 1.0)))
+    right = n[size - width - 1:]
+    w[size - width - 1:] = 0.5 * (1.0 + torch.cos(math.pi * (2.0 * right / (alpha * (size - 1)) - 2.0 / alpha + 1.0)))
+    return w
+
+
 # ╔════════════════════════════════════════════════════════════════════════════╗
 # ║          第 1 层：FFC 核心模块                                              ║
 # ║                                                                          ║
@@ -147,12 +165,12 @@ class FourierUnit(nn.Module):
         if x.dtype == torch.float16:
             x = x.float()
 
-        # [F6] Hann 窗：减少频谱泄漏
+        # [F6][P11] Tukey 窗（α=0.25）：减少频谱泄漏，保留边缘 75% 能量
         h, w = x.shape[-2], x.shape[-1]
-        win_h = torch.hann_window(h, device=x.device, dtype=x.dtype)
-        win_w = torch.hann_window(w, device=x.device, dtype=x.dtype)
-        hann_2d = torch.outer(win_h, win_w).unsqueeze(0).unsqueeze(0)
-        x_win = x * hann_2d
+        win_h = _tukey_window(h, alpha=0.25, device=x.device, dtype=x.dtype)
+        win_w = _tukey_window(w, alpha=0.25, device=x.device, dtype=x.dtype)
+        tukey_2d = torch.outer(win_h, win_w).unsqueeze(0).unsqueeze(0)
+        x_win = x * tukey_2d
 
         # 空间域 → 频域
         ffted = torch.fft.rfftn(x_win, dim=fft_dim, norm=self.fft_norm)
@@ -667,12 +685,13 @@ class ViTEncoderBranch(nn.Module):
 
 
 class SSIM(nn.Module):
-    """SSIM 结构相似性指标，用作损失函数和评价指标。"""
+    """SSIM 结构相似性指标。[P12] as_loss=True 时不 clamp，保留梯度流。"""
 
-    def __init__(self, window_size=11, sigma=1.5):
+    def __init__(self, window_size=11, sigma=1.5, as_loss=True):
         super(SSIM, self).__init__()
         self.window_size = window_size
         self.sigma = sigma
+        self.as_loss = as_loss
         base = gaussian_window(window_size, sigma).unsqueeze(0).unsqueeze(0)
         self.register_buffer("base_window", base)
 
@@ -697,8 +716,67 @@ class SSIM(nn.Module):
 
         ssim_map = ((2 * mu12 + C1) * (2 * sigma12 + C2)) / (
             (mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2) + eps)
-        ssim_map = torch.clamp(ssim_map, 0.0, 1.0)
+        # [P12] 训练时不 clamp 保留梯度；评估时 clamp
+        if not self.as_loss:
+            ssim_map = torch.clamp(ssim_map, 0.0, 1.0)
         return ssim_map.mean()
+
+
+class MSSSIM(nn.Module):
+    """[P3] 多尺度 SSIM 损失：3 级降采样，加权融合对比度和结构分量。"""
+    def __init__(self, window_size=11, sigma=1.5, n_scales=3, weights=None):
+        super().__init__()
+        self.window_size = window_size
+        self.sigma = sigma
+        self.n_scales = n_scales
+        if weights is None:
+            dw = [0.0448, 0.2856, 0.3001, 0.2363, 0.1333]
+            weights = dw[:n_scales]
+            s = sum(weights)
+            weights = [w_/s for w_ in weights]
+        self.register_buffer("scale_weights", torch.tensor(weights, dtype=torch.float32))
+        base = gaussian_window(window_size, sigma).unsqueeze(0).unsqueeze(0)
+        self.register_buffer("base_window", base)
+
+    def _ssim_components(self, img1, img2):
+        c = img1.size(1)
+        window = self.base_window.to(dtype=img1.dtype, device=img1.device).repeat(c,1,1,1)
+        pad = self.window_size // 2
+        mu1 = F.conv2d(img1, window, padding=pad, groups=c)
+        mu2 = F.conv2d(img2, window, padding=pad, groups=c)
+        mu1_sq, mu2_sq, mu12 = mu1**2, mu2**2, mu1*mu2
+        s1_sq = F.conv2d(img1**2, window, padding=pad, groups=c) - mu1_sq
+        s2_sq = F.conv2d(img2**2, window, padding=pad, groups=c) - mu2_sq
+        s12 = F.conv2d(img1*img2, window, padding=pad, groups=c) - mu12
+        s1_sq = torch.clamp(s1_sq, min=0)
+        s2_sq = torch.clamp(s2_sq, min=0)
+        C1, C2 = 0.01**2, 0.03**2
+        lum = (2*mu12 + C1) / (mu1_sq + mu2_sq + C1)
+        cs = (2*s12 + C2) / (s1_sq + s2_sq + C2)
+        return lum.mean(), cs.mean()
+
+    def forward(self, img1, img2):
+        cs_list = []
+        for i in range(self.n_scales):
+            if i > 0:
+                img1 = F.avg_pool2d(img1, kernel_size=2, stride=2)
+                img2 = F.avg_pool2d(img2, kernel_size=2, stride=2)
+                if img1.shape[-1] < self.window_size or img1.shape[-2] < self.window_size:
+                    break
+            lum, cs = self._ssim_components(img1, img2)
+            cs_list.append(cs)
+        n_actual = len(cs_list)
+        w = self.scale_weights[:n_actual].to(img1.device)
+        w = w / w.sum()
+        msssim = 1.0
+        for i in range(n_actual):
+            msssim = msssim * (torch.clamp(cs_list[i], min=1e-8) ** w[i])
+        return msssim
+
+
+def charbonnier_loss(pred, gt, eps=1e-6):
+    """[P13] Charbonnier 损失：误差 0 处光滑可导，后期梯度更稳定。"""
+    return torch.sqrt((pred - gt)**2 + eps**2).mean()
 
 
 def statistical_loss(pred, gt):
@@ -930,24 +1008,29 @@ class CompositeLoss(nn.Module):
 
 class EnhancedCompositeLoss(nn.Module):
     """
-    增强版复合损失。
-    在 CompositeLoss 基础上增加 SpecularFocal / SpecularDice / GradientConsistency / OHEM。
+    增强版复合损失（V3 优化版 — 负数损失已修复）。
+    [P3]  SSIM → 0.8*MS-SSIM + 0.2*SSIM 混合
+    [P4]  频域损失加入相位一致性约束
+    [P5]  移除冗余 statistical_loss（lambda_stat 默认 0）
+          ★ 注意：不再使用可学习权重，这是导致负数损失的根源 ★
+    [P12] SSIM as_loss=True 保留梯度
+    [P13] L1 → Charbonnier 平滑损失
     """
 
     def __init__(self, lambda_ssim=1.0, lambda_l1=1.0, lambda_freq=0.1,
-                 lambda_perceptual=0.05, lambda_spec=0.5, lambda_stat=0.1,
+                 lambda_perceptual=0.05, lambda_spec=0.5, lambda_stat=0.0,
                  lambda_grad=0.5, use_edge_weight=True, use_perceptual=True,
                  lambda_focal=0.8, lambda_dice=0.3, lambda_gc=0.2,
                  use_ohem=True, ohem_ratio=0.3):
         super().__init__()
 
-        self.ssim_fn = SSIM()
+        self.ssim_fn = SSIM(as_loss=True)       # [P12]
+        self.msssim_fn = MSSSIM(n_scales=3)     # [P3]
         self.use_edge_weight = use_edge_weight
         self.use_perceptual = use_perceptual
         if use_perceptual:
             self.perceptual = PerceptualLoss()
         self._ew_fn = compute_edge_weight_map
-        self._stat_fn = statistical_loss
 
         self.focal = SpecularFocalLoss()
         self.dice = SpecularDiceLoss()
@@ -958,40 +1041,56 @@ class EnhancedCompositeLoss(nn.Module):
         self.lambda_freq = lambda_freq
         self.lambda_perceptual = lambda_perceptual
         self.lambda_spec = lambda_spec
-        self.lambda_stat = lambda_stat
+        self.lambda_stat = lambda_stat     # [P5] 默认 0，移除冗余 stat
         self.lambda_grad = lambda_grad
         self.lambda_focal = lambda_focal
         self.lambda_dice = lambda_dice
         self.lambda_gc = lambda_gc
         self.use_ohem = use_ohem
         self.ohem_ratio = ohem_ratio
+        # ★ P5 修复：不再有可学习损失权重 ★
+        # ★ 所有损失项的权重完全由 lambda_* 和 ImprovedWeightScheduler 控制 ★
 
     def frequency_loss(self, p, g):
-        return F.l1_loss(torch.abs(torch.fft.rfft2(p, norm='ortho')),
-                         torch.abs(torch.fft.rfft2(g, norm='ortho')))
+        """[P4] 幅度谱 + 相位一致性联合损失。"""
+        p_fft = torch.fft.rfft2(p, norm='ortho')
+        g_fft = torch.fft.rfft2(g, norm='ortho')
+        amp_loss = F.l1_loss(torch.abs(p_fft), torch.abs(g_fft))
+        phase_loss = (1.0 - torch.cos(torch.angle(p_fft) - torch.angle(g_fft))).mean()
+        return amp_loss + 0.5 * phase_loss
 
     def forward(self, pred_diffuse, target, est_b, gt_specular,
                 pred_grad, gt_grad):
         gt_sc = gt_specular.clamp(0, 1)
 
-        l_ssim = 1.0 - self.ssim_fn(pred_diffuse.float(), target.float())
+        # [P3] MS-SSIM + SSIM 混合
+        l_ssim_single = 1.0 - self.ssim_fn(pred_diffuse.float(), target.float())
+        l_msssim = 1.0 - self.msssim_fn(pred_diffuse.float(), target.float())
+        l_ssim = 0.8 * l_msssim + 0.2 * l_ssim_single
 
+        # [P13] Charbonnier 替代 L1
         if self.use_edge_weight:
             wm = self._ew_fn(gt_specular.detach())
-            l_l1 = (torch.abs(pred_diffuse - target) * wm).mean()
+            l_l1 = (torch.sqrt((pred_diffuse - target)**2 + 1e-12) * wm).mean()
         else:
-            l_l1 = F.l1_loss(pred_diffuse, target)
+            l_l1 = charbonnier_loss(pred_diffuse, target)
 
+        # [P4] 频域损失含相位
         l_freq = self.frequency_loss(pred_diffuse.float(), target.float())
 
         l_percep = (self.perceptual(pred_diffuse, target)
                     if self.use_perceptual
                     else torch.tensor(0.0, device=pred_diffuse.device))
 
-        l_spec = (F.l1_loss(est_b, gt_sc) +
+        # [P13] Charbonnier for specular
+        l_spec = (charbonnier_loss(est_b, gt_sc) +
                   0.5 * (1.0 - self.ssim_fn(est_b.float(), gt_sc.float())))
 
-        l_stat = self._stat_fn(pred_diffuse, target)
+        # [P5] stat 默认关闭
+        l_stat = torch.tensor(0.0, device=pred_diffuse.device)
+        if self.lambda_stat > 0:
+            l_stat = statistical_loss(pred_diffuse, target)
+
         l_grad = 1.0 - self.ssim_fn(pred_grad.float(), gt_grad.float())
 
         if self.use_ohem:
@@ -1001,6 +1100,7 @@ class EnhancedCompositeLoss(nn.Module):
         l_dice = self.dice(est_b, gt_sc)
         l_gc = self.gc(est_b, gt_sc)
 
+        # ★ 纯加权求和，所有项 ≥ 0，total 必定 ≥ 0 ★
         total = (self.lambda_ssim * l_ssim + self.lambda_l1 * l_l1 +
                  self.lambda_freq * l_freq + self.lambda_perceptual * l_percep +
                  self.lambda_spec * l_spec + self.lambda_stat * l_stat +
@@ -1008,7 +1108,7 @@ class EnhancedCompositeLoss(nn.Module):
                  self.lambda_dice * l_dice + self.lambda_gc * l_gc)
 
         d = {}
-        for k, v in [('total', total), ('ssim', l_ssim), ('l1', l_l1),
+        for k, v in [('total', total), ('ssim', l_ssim_single), ('l1', l_l1),
                       ('freq', l_freq), ('perceptual', l_percep),
                       ('spec', l_spec), ('stat', l_stat), ('grad', l_grad),
                       ('focal', l_focal), ('dice', l_dice), ('gc', l_gc)]:
@@ -1032,31 +1132,26 @@ class EnhancedCompositeLoss(nn.Module):
 class SpecularAwareAttention(nn.Module):
     """
     镜面反射感知注意力模块。
-
-    利用原始输入的亮度信息生成高反光空间先验掩码，
-    与深层语义特征融合后产生 specular-aware 注意力权重。
-    高亮区域特征被放大 → 网络天然对高光有更高响应灵敏度。
-
-    在整个模型中的位置：
-        MainDecoder 每级 transposed_block 输出之后调用。
+    [P9] steepness 15→6；多级阈值(0.5/0.7/0.9)区分弱/中/强高光。
     """
 
-    def __init__(self, in_channels, threshold=0.8, steepness=15.0):
+    def __init__(self, in_channels, threshold=0.8, steepness=6.0):
         super().__init__()
-        self.threshold = threshold
         self.steepness = steepness
+        self.thresholds = [0.5, 0.7, 0.9]
+        n_masks = len(self.thresholds)
 
         mid = max(in_channels // 16, 4)
         self.adaptive_thresh = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
             nn.Conv2d(in_channels, mid, 1, bias=False),
             nn.ReLU(inplace=True),
-            nn.Conv2d(mid, 1, 1, bias=True),
+            nn.Conv2d(mid, n_masks, 1, bias=True),
             nn.Sigmoid(),
         )
 
         self.modulation = nn.Sequential(
-            nn.Conv2d(in_channels + 1, in_channels, 3, 1, 1, bias=False),
+            nn.Conv2d(in_channels + n_masks, in_channels, 3, 1, 1, bias=False),
             nn.BatchNorm2d(in_channels),
             nn.GELU(),
             nn.Conv2d(in_channels, in_channels, 3, 1, 1, bias=False),
@@ -1065,23 +1160,17 @@ class SpecularAwareAttention(nn.Module):
         )
 
     def forward(self, features, original_input):
-        """
-        Args:
-            features       : [B, C, H, W]
-            original_input : [B, 1, H_in, W_in]  值域 [0,1]
-        Returns:
-            [B, C, H, W] — 注意力增强后的特征
-        """
         inp = original_input
         if inp.shape[-2:] != features.shape[-2:]:
             inp = F.interpolate(inp, size=features.shape[-2:],
                                 mode='bilinear', align_corners=False)
-
         t_off = self.adaptive_thresh(features)
-        eff_t = self.threshold * (0.5 + 0.5 * t_off)
-        mask = torch.sigmoid(self.steepness * (inp - eff_t))
-
-        att = self.modulation(torch.cat([features, mask], dim=1))
+        masks = []
+        for i, base_t in enumerate(self.thresholds):
+            eff_t = base_t * (0.5 + 0.5 * t_off[:, i:i+1, :, :])
+            masks.append(torch.sigmoid(self.steepness * (inp - eff_t)))
+        multi_mask = torch.cat(masks, dim=1)
+        att = self.modulation(torch.cat([features, multi_mask], dim=1))
         return features * (1.0 + att)
 
 
@@ -1268,10 +1357,12 @@ class EnhancedPairedTransform:
                 target_img = F.interpolate(target_img.unsqueeze(0),
                     size=(orig_h, orig_w), mode='bilinear', align_corners=False).squeeze(0)
 
+        # [P7] 先算 specular，再施加亮度增强（同步到 input+target+specular）
+        gt_specular = (input_img - target_img).clamp(0, 1)
         bf = random.uniform(*self.brightness_range)
         input_img = (input_img * bf).clamp(0, 1)
-
-        gt_specular = (input_img - target_img).clamp(0, 1)
+        target_img = (target_img * bf).clamp(0, 1)
+        gt_specular = (gt_specular * bf).clamp(0, 1)
         input_img, target_img, gt_specular = self.hl_aug(
             input_img, target_img, gt_specular)
 
@@ -1574,15 +1665,24 @@ class MainDecoder(nn.Module):
         self.ffc_h8 = FFC_BN_ACT(384, 384, 3, ratio_gin=0.25, ratio_gout=0.25, padding=1)
         self.ffc_h4 = FFC_BN_ACT(192, 192, 3, ratio_gin=0.25, ratio_gout=0.25, padding=1)
 
-        self.output_conv1 = Conv2D_BN_activa(16 * 3 + 1, 16, 3, 1, 1)
-        self.output_conv2 = Conv2D_BN_activa(16, 1, 3, 1, 1, activation=None, if_bn=False)
+        # [P2] 扩展输出头：4 层 + 膨胀卷积 + skip connection
+        _out_in = 16 * 3 + 1  # 49
+        self.output_reduce = Conv2D_BN_activa(_out_in, 32, 1, 1, 0)
+        self.output_dilated = Conv2D_BN_activa(32, 32, 3, 1, 2, dilation=2)
+        self.output_conv3 = Conv2D_BN_activa(32, 16, 3, 1, 1)
+        self.output_conv4 = Conv2D_BN_activa(16, 1, 3, 1, 1, activation=None, if_bn=False)
         self.output_sigmoid = nn.Sigmoid()
+        self.output_skip = nn.Conv2d(32, 32, 1, 1, 0, bias=False)
 
-        # SpecularAwareAttention（每级 transposed_block 输出通道数 = 3×branch）
         self.sa1 = SpecularAwareAttention(256 * 3, threshold=0.8)
         self.sa2 = SpecularAwareAttention(128 * 3, threshold=0.8)
         self.sa3 = SpecularAwareAttention(64 * 3, threshold=0.8)
         self.sa4 = SpecularAwareAttention(32 * 3, threshold=0.8)
+
+        # [P10] 梯度图调制门控
+        self.grad_gate_2 = nn.Sequential(nn.Conv2d(1, 1, 3, 1, 1, bias=True), nn.Sigmoid())
+        self.grad_gate_3 = nn.Sequential(nn.Conv2d(1, 1, 3, 1, 1, bias=True), nn.Sigmoid())
+        self.grad_gate_4 = nn.Sequential(nn.Conv2d(1, 1, 3, 1, 1, bias=True), nn.Sigmoid())
 
     def forward(self, c_features, enhanced_features, x_g, original_input):
         x_bb_1, x_bb_2, x_bb_3, x_bb_4, x_c = c_features
@@ -1609,6 +1709,9 @@ class MainDecoder(nn.Module):
         nl = 384 - int(384 * 0.25)
         fo = self.ffc_h8((x[:, :nl], x[:, nl:]))
         x = torch.cat([fo[0], fo[1]], 1) + x
+        # [P10] 梯度注入 Level 2
+        _xg2 = F.interpolate(x_g, x.shape[-2:], mode='bilinear', align_corners=False) if x_g.shape[-2:] != x.shape[-2:] else x_g
+        x = x * (1.0 + self.grad_gate_2(_xg2))
         x = self.sa2(x, original_input)
         if x_bb_3.shape[-2:] != x.shape[-2:]:
             x_bb_3 = F.interpolate(x_bb_3, x.shape[-2:], mode='bilinear', align_corners=False)
@@ -1623,6 +1726,9 @@ class MainDecoder(nn.Module):
         nl4 = 192 - int(192 * 0.25)
         fo4 = self.ffc_h4((x[:, :nl4], x[:, nl4:]))
         x = torch.cat([fo4[0], fo4[1]], 1) + x
+        # [P10] 梯度注入 Level 3
+        _xg3 = F.interpolate(x_g, x.shape[-2:], mode='bilinear', align_corners=False) if x_g.shape[-2:] != x.shape[-2:] else x_g
+        x = x * (1.0 + self.grad_gate_3(_xg3))
         x = self.sa3(x, original_input)
         if x_bb_2.shape[-2:] != x.shape[-2:]:
             x_bb_2 = F.interpolate(x_bb_2, x.shape[-2:], mode='bilinear', align_corners=False)
@@ -1633,6 +1739,9 @@ class MainDecoder(nn.Module):
 
         # Level 4
         x = self.transposed_block_4(x)
+        # [P10] 梯度注入 Level 4
+        _xg4 = F.interpolate(x_g, x.shape[-2:], mode='bilinear', align_corners=False) if x_g.shape[-2:] != x.shape[-2:] else x_g
+        x = x * (1.0 + self.grad_gate_4(_xg4))
         x = self.sa4(x, original_input)
         if x_bb_1.shape[-2:] != x.shape[-2:]:
             x_bb_1 = F.interpolate(x_bb_1, x.shape[-2:], mode='bilinear', align_corners=False)
@@ -1647,8 +1756,13 @@ class MainDecoder(nn.Module):
             x_g = F.interpolate(x_g, x.shape[-2:], mode='bilinear', align_corners=False)
         x = torch.cat([x, x_g], 1)
 
-        x = self.output_conv1(x)
-        return self.output_sigmoid(self.output_conv2(x))
+        # [P2] 扩展输出头 with skip connection
+        x = self.output_reduce(x)
+        skip = self.output_skip(x)
+        x = self.output_dilated(x)
+        x = x + skip
+        x = self.output_conv3(x)
+        return self.output_sigmoid(self.output_conv4(x))
 
 
 class _SpectralDecompositionUnit(nn.Module):
@@ -1696,19 +1810,23 @@ class EnhancementLayers(nn.Module):
         return x1, x2, x3, x4
 
 
+class ResidualRefinementHead(nn.Module):
+    """[P1] 残差精修头：硬减法后做像素级修正，Tanh 限制 ±0.05。"""
+    def __init__(self, scale=0.05):
+        super().__init__()
+        self.scale = scale
+        self.refine = nn.Sequential(
+            nn.Conv2d(2, 16, 3, 1, 1, bias=False), nn.GELU(),
+            nn.Conv2d(16, 16, 3, 1, 1, bias=False), nn.GELU(),
+            nn.Conv2d(16, 1, 3, 1, 1, bias=True), nn.Tanh(),
+        )
+    def forward(self, coarse, original):
+        delta = self.refine(torch.cat([coarse, original], dim=1))
+        return torch.clamp(coarse + self.scale * delta, 0.0, 1.0)
+
+
 class YFFC(nn.Module):
-    """
-    Y-FFC 主网络。
-
-    网络采用 Y 形结构：
-      - Encoder（含 HighFrequencyEnhancement）提取多尺度特征
-      - GradientDecoder 输出梯度图和待增强特征
-      - EnhancementLayers 对待增强特征做频域精炼
-      - MainDecoder（含 SpecularAwareAttention）输出镜面反射分量 est_b
-      - 最终输出 pred_diffuse = clamp(input - est_b, 0, 1)
-
-    输出字典：{'r': pred_diffuse, 'g': gradient_map, 'b': est_specular}
-    """
+    """Y-FFC 主网络（V3 优化版）。含 P1 残差精修头。"""
 
     def __init__(self):
         super().__init__()
@@ -1716,13 +1834,15 @@ class YFFC(nn.Module):
         self.gradient_decoder = GradientDecoder()
         self.enhancement_layers = EnhancementLayers()
         self.main_decoder = MainDecoder(in_channels=256)
+        self.refinement_head = ResidualRefinementHead(scale=0.05)  # [P1]
 
     def forward(self, x):
         c_feat = self.encoder(x)
         g_feat = self.gradient_decoder(c_feat[:-1], c_feat[-1])
         enh = self.enhancement_layers(g_feat[:-1])
         est_b = self.main_decoder(c_feat, enh, g_feat[-1], original_input=x)
-        pred_diffuse = torch.clamp(x - est_b, 0.0, 1.0)
+        coarse = torch.clamp(x - est_b, 0.0, 1.0)
+        pred_diffuse = self.refinement_head(coarse, x)  # [P1]
         return {"r": pred_diffuse, "g": g_feat[-1], "b": est_b}
 
 
@@ -1833,12 +1953,14 @@ def build_optimizer(model, base_lr=2e-4, weight_decay=1e-4):
 
 def build_scheduler(optimizer, warmup_iters=500, total_epochs=200,
                     iters_per_epoch=100, eta_min=1e-6):
-    """构建 Warmup + 余弦退火调度器。"""
+    """[P6] Warmup + CosineAnnealingLR（无重启），T_max 精确匹配总迭代数。"""
     from torch.optim.lr_scheduler import (
-        LinearLR, CosineAnnealingWarmRestarts, SequentialLR)
+        LinearLR, CosineAnnealingLR, SequentialLR)
 
     warmup_scheduler = LinearLR(optimizer, start_factor=0.01, total_iters=warmup_iters)
-    cosine_scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=50, T_mult=2, eta_min=eta_min)
+    total_iters = total_epochs * iters_per_epoch
+    cosine_iters = max(total_iters - warmup_iters, 1)
+    cosine_scheduler = CosineAnnealingLR(optimizer, T_max=cosine_iters, eta_min=eta_min)
     scheduler = SequentialLR(optimizer, schedulers=[warmup_scheduler, cosine_scheduler],
                              milestones=[warmup_iters])
     return scheduler

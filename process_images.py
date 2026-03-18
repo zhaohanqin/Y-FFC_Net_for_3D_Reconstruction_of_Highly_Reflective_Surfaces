@@ -29,7 +29,58 @@ import os
 from pathlib import Path
 import glob
 from tqdm import tqdm
-from Y_FFC import YFFC
+from Y_FFC_unified import YFFC
+
+
+def load_model(model_path, device, prefer_ema=True):
+    """
+    智能加载模型权重，自动识别 checkpoint 格式。
+
+    支持的格式：
+        1. 训练保存的完整 checkpoint 字典（含 model_state_dict / ema_shadow 等）
+        2. 纯 state_dict（旧版兼容）
+
+    参数:
+        model_path: 模型文件路径
+        device: 计算设备
+        prefer_ema: 若 checkpoint 中包含 EMA 权重，是否优先使用（推荐 True）
+
+    返回:
+        加载好权重的 YFFC 模型（已 .eval()）
+    """
+    model = YFFC()
+
+    checkpoint = torch.load(model_path, map_location=device, weights_only=False)
+
+    if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+        # ── 训练保存的标准 checkpoint ──
+        # 优先使用 EMA 权重（推理更稳定）
+        if prefer_ema and 'ema_shadow' in checkpoint:
+            # EMA shadow 的 key 与 model.named_parameters() 一致
+            ema_shadow = checkpoint['ema_shadow']
+            model_sd = model.state_dict()
+            for name, param in ema_shadow.items():
+                if name in model_sd:
+                    model_sd[name] = param
+            model.load_state_dict(model_sd)
+            epoch = checkpoint.get('epoch', '?')
+            best_ssim = checkpoint.get('best_ssim', '?')
+            print(f"  ✓ 已加载 EMA 权重 (epoch={epoch}, best_ssim={best_ssim})")
+        else:
+            model.load_state_dict(checkpoint['model_state_dict'])
+            epoch = checkpoint.get('epoch', '?')
+            best_ssim = checkpoint.get('best_ssim', '?')
+            print(f"  ✓ 已加载模型权重 (epoch={epoch}, best_ssim={best_ssim})")
+    elif isinstance(checkpoint, dict):
+        # ── 可能是纯 state_dict（key 为 layer 名称） ──
+        model.load_state_dict(checkpoint)
+        print("  ✓ 已加载纯 state_dict 权重")
+    else:
+        raise ValueError(f"无法识别的 checkpoint 格式: {type(checkpoint)}")
+
+    model.to(device)
+    model.eval()
+    return model
 
 
 def load_image(image_path, target_size=None):
@@ -273,6 +324,7 @@ def main():
     
     # 2. 模型配置
     MODEL_PATH = r'experiments\original_yffc_20260224_110909\models\best_model.pth'  # 训练好的模型路径
+    PREFER_EMA = True  # 若 checkpoint 含 EMA 权重则优先使用（推理更稳定）
     
     # 3. 输出配置
     OUTPUT_DIR = 'processed_results'  # 输出目录
@@ -318,10 +370,7 @@ def main():
     # 加载模型
     print(f"加载模型: {MODEL_PATH}")
     try:
-        model = YFFC()
-        model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
-        model.to(device)
-        model.eval()
+        model = load_model(MODEL_PATH, device, prefer_ema=PREFER_EMA)
         print("✓ 模型加载成功")
     except Exception as e:
         print(f"❌ 模型加载失败: {e}")
@@ -375,4 +424,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

@@ -169,7 +169,7 @@ class ImprovedWeightScheduler:
             'lambda_freq':       min(0.2, 0.05 + 0.15 * p),
             'lambda_perceptual': min(0.15, 0.02 + 0.13 * p),
             'lambda_spec':       0.5,
-            'lambda_stat':       0.1,
+            'lambda_stat':       0.0,    # [P5] 移除冗余 stat 损失
             'lambda_grad':       max(0.3, 0.5 - 0.2 * p),
             'lambda_focal':      min(1.0, 0.3 + 0.7 * p),
             'lambda_dice':       min(0.5, 0.1 + 0.4 * p),
@@ -411,8 +411,29 @@ def train_one_epoch(model, loader, criterion, optimizer, scheduler,
     return avg_loss, avg_ssim, avg_mae, avg_mse, avg_psnr, avg_subs
 
 
+def _tta_forward(model, inp):
+    """[P15] Test-Time Augmentation：4 次翻转推理取平均。"""
+    preds_b = []
+    for flip_h in [False, True]:
+        for flip_v in [False, True]:
+            x = inp
+            if flip_h: x = torch.flip(x, [-1])
+            if flip_v: x = torch.flip(x, [-2])
+            out = model(x)
+            b = out['b']
+            if flip_v: b = torch.flip(b, [-2])
+            if flip_h: b = torch.flip(b, [-1])
+            preds_b.append(b)
+    avg_b = torch.stack(preds_b, dim=0).mean(0)
+    avg_r = torch.clamp(inp - avg_b, 0.0, 1.0)
+    if hasattr(model, 'refinement_head'):
+        avg_r = model.refinement_head(avg_r, inp)
+    return {'r': avg_r, 'b': avg_b, 'g': out['g']}
+
+
 @torch.no_grad()
-def validate(model, loader, criterion, device, epoch=0, total_epochs=0):
+def validate(model, loader, criterion, device, epoch=0, total_epochs=0,
+             use_tta=False):
     """
     执行验证。
 
@@ -433,7 +454,7 @@ def validate(model, loader, criterion, device, epoch=0, total_epochs=0):
         inp, tgt = inp.to(device), tgt.to(device)
         gt_s, gt_g = gt_s.to(device), gt_g.to(device)
 
-        out = model(inp)
+        out = _tta_forward(model, inp) if use_tta else model(inp)  # [P15]
         loss, ld = criterion(out['r'], tgt, out['b'], gt_s, out['g'], gt_g)
 
         if not torch.isfinite(loss):
@@ -1016,9 +1037,16 @@ def train_model(cfg):
             cfg['VAL_INPUT_DIR'], cfg['VAL_TARGET_DIR'],
             resize=img_hw)
     else:
+        # [P8] 验证集不应有数据增强
+        full_ds_no_aug = ImprovedFringeDataset(
+            cfg['INPUT_DIR'], cfg['TARGET_DIR'],
+            resize=img_hw, paired_transform=None)
         train_size = int(cfg['TRAIN_SPLIT_RATIO'] * len(full_ds))
         val_size = len(full_ds) - train_size
-        train_ds, val_ds = torch.utils.data.random_split(full_ds, [train_size, val_size])
+        g = torch.Generator().manual_seed(42)
+        rand_idx = torch.randperm(len(full_ds), generator=g).tolist()
+        train_ds = torch.utils.data.Subset(full_ds, rand_idx[:train_size])
+        val_ds = torch.utils.data.Subset(full_ds_no_aug, rand_idx[train_size:])
 
     train_loader = DataLoader(
         train_ds, batch_size=cfg['BATCH_SIZE'], shuffle=True,
@@ -1139,9 +1167,11 @@ def train_model(cfg):
         # --- 验证 ---
         if ema:
             ema.apply_shadow()
+        # [P15] 后 20% 轮次启用 TTA
+        _use_tta = (ep >= cfg['EPOCHS'] * 0.8)
         vl, vs, vm, val_mse, val_psnr, val_subs = validate(
             model, val_loader, criterion, device,
-            epoch=ep, total_epochs=cfg['EPOCHS'])
+            epoch=ep, total_epochs=cfg['EPOCHS'], use_tta=_use_tta)
         if ema:
             ema.restore()
 
@@ -1383,7 +1413,7 @@ def main():
 
     # ========== 基础训练参数 ==========
     EPOCHS                = 200       # 训练总轮数
-    BATCH_SIZE            = 3         # 384 分辨率推荐 2~4
+    BATCH_SIZE            = 4         # 384 分辨率推荐 2~4
     BASE_LR               = 2e-4     # 基础学习率（分层 LR 以此为基准）
     WEIGHT_DECAY          = 1e-4     # AdamW 权重衰减
     ACCUMULATION_STEPS    = 4        # 梯度累积步数（等效 batch = BATCH_SIZE × 此值）
@@ -1397,7 +1427,7 @@ def main():
     # ========== V2 特有开关 ==========
     USE_GN                = True     # BN → GN（小 batch 必备）
     USE_EMA               = True     # 指数移动平均
-    EMA_DECAY             = 0.999    # EMA 衰减系数
+    EMA_DECAY             = 0.9995   # [P16] EMA 衰减系数（调高增加平滑力度）
     USE_OHEM              = True     # 在线难样本挖掘
 
     # ========== 数据目录 ==========
