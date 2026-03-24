@@ -6,17 +6,27 @@ Y_FFC_unified.py — Y-FFC 去高反光网络
 
   • FFC 核心模块（FourierUnit / SpectralTransform / FFC_BN_ACT / FFCResnetBlock）
   • 网络基础构件（Conv2D_BN_activa / Attention_block / MultiscaleConvBlock 等）
+  • 增强版 ViT 编码器（EnhancedViTEncoderBranch / ConvPosEncoding / CrossModalFusion）
   • 高反光专用模块（SpecularAwareAttention / HighFrequencyEnhancement）
   • 损失函数与评价指标（SSIM / PerceptualLoss / CompositeLoss / Specular 损失等）
   • 数据集与数据增强（FringeDataset / PairedTransform / EnhancedPairedTransform 等）
   • 模型结构（Encoder / GradientDecoder / MainDecoder / EnhancementLayers / YFFC）
   • 训练工具（EMA / build_optimizer / build_scheduler / train_one_epoch 等）
 
+V4 ViT 编码器增强改进：
+─────────────────────────────────────────────────
+  V1  多层特征提取：从 ViT 第 3/6/9/12 层提取中间特征，获得纹理→语义完整梯度
+  V2  卷积位置编码（CPE）：注入局部空间先验，弥补 ViT 局部感知不足
+  V3  自适应层注意力融合：通道注意力加权不同 Transformer 层的贡献
+  V4  残差特征精炼：融合后的特征经任务相关卷积精炼
+  V5  CNN-ViT 交叉注意力融合：替代简单拼接，实现双向信息交互
+─────────────────────────────────────────────────
+
 文件组织结构（自上而下）：
 ─────────────────────────────────────────────────
   第 0 层  外部依赖导入 + 通用工具函数
   第 1 层  FFC 核心模块（FourierUnit / SpectralTransform / FFC_BN_ACT / FFCResnetBlock）
-  第 2 层  网络基础构件（Conv2D_BN_activa / Attention_block / MultiscaleConvBlock / ...）
+  第 2 层  网络基础构件（Conv2D_BN_activa / Attention_block / EnhancedViTEncoderBranch / ...）
   第 3 层  损失函数与评价指标（SSIM / PerceptualLoss / CompositeLoss / Specular 损失 ...）
   第 4 层  高反光专用模块（SpecularAwareAttention / HighFrequencyEnhancement）
   第 5 层  数据集与数据增强（FringeDataset / PairedTransform / EnhancedPairedTransform / ...）
@@ -465,7 +475,8 @@ class FFCResnetBlock(nn.Module):
 # ║          第 2 层：网络基础构件                                              ║
 # ║                                                                          ║
 # ║  这些是构成 Encoder / Decoder 的基础 building block，                      ║
-# ║  包括卷积块、注意力块、多尺度卷积块、转置卷积块、ViT 编码器分支等。          ║
+# ║  包括卷积块、注意力块、多尺度卷积块、转置卷积块、                            ║
+# ║  增强版 ViT 编码器分支、交叉注意力融合模块等。                              ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
 
@@ -626,13 +637,71 @@ class TransposedConvBlock_same(nn.Module):
         return torch.cat([self.branch_1(x), self.branch_2(x), self.branch_3(x)], dim=1)
 
 
-class ViTEncoderBranch(nn.Module):
-    """ViT-B/16 编码器分支，与 ResNet50 并行提取全局语义特征。"""
+class ConvPosEncoding(nn.Module):
+    """
+    [V2] 卷积位置编码（Convolutional Position Encoding）。
 
-    def __init__(self, vit_image_size=224):
-        super(ViTEncoderBranch, self).__init__()
+    用深度可分离卷积为 Transformer token 序列注入局部空间结构信息。
+    相比标准 ViT 的固定/可学习位置编码：
+      - 能感知局部邻域关系（3×3 卷积窗口）
+      - 对不同分辨率输入具有天然的泛化能力
+      - 保留了平移等变性
+    参考：CPVT（Conditional Position encoding for Vision Transformers, ICLR 2023）
+    """
+
+    def __init__(self, dim, k=3):
+        super().__init__()
+        self.proj = nn.Conv2d(dim, dim, k, 1, k // 2, groups=dim, bias=True)
+
+    def forward(self, x, H, W):
+        """
+        Args:
+            x: (B, N, C) — token 序列
+            H, W: patch grid 的空间尺寸
+        Returns:
+            (B, N, C) — 加入局部位置信息后的 token 序列
+        """
+        B, N, C = x.shape
+        feat = x.transpose(1, 2).reshape(B, C, H, W)
+        feat = self.proj(feat)
+        feat = feat.flatten(2).transpose(1, 2)
+        return x + feat
+
+
+class EnhancedViTEncoderBranch(nn.Module):
+    """
+    增强版 ViT-B/16 编码器分支（多层特征提取 + CPE + 自适应层融合）。
+
+    相比原始 ViTEncoderBranch 的改进：
+    ─────────────────────────────────────────────
+      V1  多层特征提取：手动遍历 Transformer 的各层，从第 3/6/9/12 层
+          提取中间特征。浅层保留纹理/边缘信息（对高光边界至关重要），
+          深层提供全局语义（对大面积高光区域识别至关重要）。
+
+      V2  卷积位置编码（CPE）：在 patch embedding 之后、进入 Transformer
+          之前注入局部空间先验。弥补标准 ViT 对局部结构感知不足的缺陷，
+          使模型能更精确地定位高光边界。
+
+      V3  自适应层注意力融合：使用通道注意力机制（SE-style）自适应加权
+          不同 Transformer 层的特征贡献。训练过程中模型会自动学习：
+          浅层特征在强高光边界区域的权重更高，深层特征在大面积高光
+          区域的权重更高。
+
+      V4  残差特征精炼：融合后通过两层 3×3 Conv + BN + GELU 进行
+          任务相关的特征精炼，加残差连接避免信息丢失。
+    ─────────────────────────────────────────────
+
+    在整个模型中的位置：
+        被 Encoder 调用，与 ResNet50 并行提取全局语义特征。
+        输出通过 CrossModalFusion 与 CNN 特征进行交叉注意力融合。
+    """
+
+    def __init__(self, vit_image_size=224, extract_layers=(2, 5, 8, 11)):
+        super(EnhancedViTEncoderBranch, self).__init__()
         self.vit_image_size = vit_image_size
+        self.extract_layers = list(extract_layers)
 
+        # ---------- 加载 ViT-B/16 ----------
         vit_weights = None
         try:
             vit_weights = models.ViT_B_16_Weights.IMAGENET1K_V1
@@ -654,29 +723,212 @@ class ViTEncoderBranch(nn.Module):
 
         self.embed_dim = getattr(self.vit, "hidden_dim", self.vit.conv_proj.out_channels)
 
+        # [V2] 卷积位置编码
+        self.cpe = ConvPosEncoding(self.embed_dim, k=3)
+
+        # [V3] 多层特征的层归一化 + 自适应注意力融合
+        n_layers = len(self.extract_layers)
+        self.layer_norms = nn.ModuleList([
+            nn.LayerNorm(self.embed_dim) for _ in range(n_layers)
+        ])
+
+        fused_dim = self.embed_dim * n_layers
+        se_mid = max(n_layers * 2, 4)
+        self.layer_attention = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            nn.Linear(fused_dim, se_mid),
+            nn.GELU(),
+            nn.Linear(se_mid, n_layers),
+            nn.Softmax(dim=-1),
+        )
+
+        # [V4] 残差特征精炼
+        self.refine = nn.Sequential(
+            nn.Conv2d(self.embed_dim, self.embed_dim, 3, 1, 1, bias=False),
+            nn.BatchNorm2d(self.embed_dim),
+            nn.GELU(),
+            nn.Conv2d(self.embed_dim, self.embed_dim, 3, 1, 1, bias=False),
+            nn.BatchNorm2d(self.embed_dim),
+        )
+
     def forward(self, x):
         if x.size(1) == 1:
             x = x.repeat(1, 3, 1, 1)
 
         x = F.interpolate(x, size=(self.vit_image_size, self.vit_image_size),
                           mode="bilinear", align_corners=False)
-        batch_size = x.size(0)
+        B = x.size(0)
 
+        # Patch embedding
         x = self.vit.conv_proj(x)
         grid_h, grid_w = x.shape[-2], x.shape[-1]
-        x = x.flatten(2).transpose(1, 2)
+        x = x.flatten(2).transpose(1, 2)  # (B, N, C)
 
-        if hasattr(self.vit, "class_token"):
-            cls_token = self.vit.class_token.expand(batch_size, -1, -1)
+        # [V2] 注入局部空间位置先验
+        x = self.cpe(x, grid_h, grid_w)
+
+        # 添加 class token
+        has_cls = hasattr(self.vit, "class_token")
+        if has_cls:
+            cls_token = self.vit.class_token.expand(B, -1, -1)
             x = torch.cat((cls_token, x), dim=1)
 
-        x = self.vit.encoder(x)
+        # 添加 ViT 原始位置编码 + dropout
+        if hasattr(self.vit.encoder, "pos_embedding"):
+            x = x + self.vit.encoder.pos_embedding
+        x = self.vit.encoder.dropout(x)
 
-        if x.shape[1] == grid_h * grid_w + 1:
-            x = x[:, 1:, :]
+        # [V1] 手动遍历 Transformer 层，收集中间特征
+        multi_feats = []
+        for i, layer in enumerate(self.vit.encoder.layers):
+            x = layer(x)
+            if i in self.extract_layers:
+                multi_feats.append(x)
 
-        x = x.transpose(1, 2).reshape(batch_size, x.shape[2], grid_h, grid_w)
-        return x
+        # 确保收集到足够的特征（如果 ViT 层数不够则用最后的输出补齐）
+        while len(multi_feats) < len(self.extract_layers):
+            multi_feats.append(x)
+
+        # [V3] 多层特征处理 + 自适应加权融合
+        layer_feats_2d = []
+        for i, feat in enumerate(multi_feats):
+            feat = self.layer_norms[i](feat)
+            # 移除 class token
+            if has_cls and feat.shape[1] == grid_h * grid_w + 1:
+                feat = feat[:, 1:, :]
+            elif feat.shape[1] > grid_h * grid_w:
+                feat = feat[:, 1:, :]
+            feat_2d = feat.transpose(1, 2).reshape(B, self.embed_dim, grid_h, grid_w)
+            layer_feats_2d.append(feat_2d)
+
+        # 通道注意力加权：自适应选择各层贡献
+        concat_feats = torch.cat(layer_feats_2d, dim=1)  # (B, embed_dim*n, H, W)
+        attn_weights = self.layer_attention(concat_feats)  # (B, n_layers)
+
+        fused = torch.zeros_like(layer_feats_2d[0])
+        for i, feat in enumerate(layer_feats_2d):
+            w = attn_weights[:, i].view(B, 1, 1, 1)
+            fused = fused + w * feat
+
+        # [V4] 残差精炼
+        fused = fused + self.refine(fused)
+
+        return fused
+
+
+class CrossModalFusion(nn.Module):
+    """
+    [V5] 轻量级 CNN-ViT 交叉注意力融合模块。
+
+    替代原始的简单 concat + 1×1 Conv 融合方式。
+    核心思想：
+      - CNN → ViT 方向：CNN 特征作为 Query 去查询 ViT 的全局语义 Key/Value，
+        为局部细节注入全局上下文（例如：判断某个高亮区域是局部反射还是全局照明）
+      - ViT → CNN 方向：ViT 特征作为 Query 去查询 CNN 的局部细节 Key/Value，
+        为全局语义补充精确的空间结构信息（例如：高光边界的精确位置）
+      - 双向交叉后通过门控机制融合，输出维度为 out_dim
+
+    使用降采样键值对减少计算量（sr_ratio），适合高分辨率特征图。
+
+    在整个模型中的位置：
+        Encoder 中，在 ResNet50 backbone 输出 x_bb_4 和 ViT 输出 vit_feat
+        之后进行融合，替代原来的 cat + 1×1 Conv。
+    """
+
+    def __init__(self, cnn_dim, vit_dim, out_dim, num_heads=4, sr_ratio=2):
+        super(CrossModalFusion, self).__init__()
+        self.num_heads = num_heads
+        self.head_dim = out_dim // num_heads
+        self.scale = self.head_dim ** -0.5
+        self.out_dim = out_dim
+
+        # CNN 关注 ViT（获取全局上下文）
+        self.q_c2v = nn.Conv2d(cnn_dim, out_dim, 1, bias=False)
+        self.k_c2v = nn.Conv2d(vit_dim, out_dim, 1, bias=False)
+        self.v_c2v = nn.Conv2d(vit_dim, out_dim, 1, bias=False)
+        self.proj_c2v = nn.Sequential(
+            nn.Conv2d(out_dim, out_dim, 1, bias=False),
+            nn.BatchNorm2d(out_dim),
+        )
+
+        # ViT 关注 CNN（获取局部细节）
+        self.q_v2c = nn.Conv2d(vit_dim, out_dim, 1, bias=False)
+        self.k_v2c = nn.Conv2d(cnn_dim, out_dim, 1, bias=False)
+        self.v_v2c = nn.Conv2d(cnn_dim, out_dim, 1, bias=False)
+        self.proj_v2c = nn.Sequential(
+            nn.Conv2d(out_dim, out_dim, 1, bias=False),
+            nn.BatchNorm2d(out_dim),
+        )
+
+        # 键值对空间降采样（减少计算量）
+        self.sr_ratio = sr_ratio
+        if sr_ratio > 1:
+            self.sr_pool = nn.AvgPool2d(kernel_size=sr_ratio, stride=sr_ratio)
+
+        # 门控融合：自适应平衡两个方向的贡献
+        self.gate = nn.Sequential(
+            nn.Conv2d(out_dim * 2, out_dim, 1, bias=False),
+            nn.BatchNorm2d(out_dim),
+            nn.Sigmoid(),
+        )
+
+        # 最终投影
+        self.final_proj = nn.Sequential(
+            nn.Conv2d(out_dim, out_dim, 3, 1, 1, bias=False),
+            nn.BatchNorm2d(out_dim),
+            nn.GELU(),
+        )
+
+    def _cross_attn(self, q, k, v, proj):
+        """执行单方向的交叉注意力。"""
+        B, C, H, W = q.shape
+        Hk, Wk = k.shape[-2:]
+        nh = self.num_heads
+        hd = self.head_dim
+
+        q = q.reshape(B, nh, hd, H * W).permute(0, 1, 3, 2)   # (B, nh, HW, hd)
+        k = k.reshape(B, nh, hd, Hk * Wk).permute(0, 1, 3, 2) # (B, nh, HkWk, hd)
+        v = v.reshape(B, nh, hd, Hk * Wk).permute(0, 1, 3, 2) # (B, nh, HkWk, hd)
+
+        attn = (q @ k.transpose(-2, -1)) * self.scale           # (B, nh, HW, HkWk)
+        attn = attn.softmax(dim=-1)
+        out = (attn @ v).permute(0, 1, 3, 2).reshape(B, C, H, W)
+        return proj(out)
+
+    def forward(self, cnn_feat, vit_feat):
+        """
+        Args:
+            cnn_feat: (B, cnn_dim, H, W) — ResNet50 输出
+            vit_feat: (B, vit_dim, H, W) — ViT 输出（已对齐到相同空间尺寸）
+        Returns:
+            (B, out_dim, H, W) — 融合后的特征
+        """
+        # 降采样键值对以减少计算量
+        if self.sr_ratio > 1:
+            vit_kv = self.sr_pool(vit_feat)
+            cnn_kv = self.sr_pool(cnn_feat)
+        else:
+            vit_kv = vit_feat
+            cnn_kv = cnn_feat
+
+        # CNN → ViT 方向：CNN 查询 ViT 的全局语义
+        q_c = self.q_c2v(cnn_feat)
+        k_v = self.k_c2v(vit_kv)
+        v_v = self.v_c2v(vit_kv)
+        c2v_out = self._cross_attn(q_c, k_v, v_v, self.proj_c2v)
+
+        # ViT → CNN 方向：ViT 查询 CNN 的局部细节
+        q_v = self.q_v2c(vit_feat)
+        k_c = self.k_v2c(cnn_kv)
+        v_c = self.v_v2c(cnn_kv)
+        v2c_out = self._cross_attn(q_v, k_c, v_c, self.proj_v2c)
+
+        # 门控融合
+        gate = self.gate(torch.cat([c2v_out, v2c_out], dim=1))
+        fused = gate * c2v_out + (1.0 - gate) * v2c_out
+
+        return self.final_proj(fused)
 
 
 # ╔════════════════════════════════════════════════════════════════════════════╗
@@ -1466,7 +1718,8 @@ class FringeDataset(Dataset):
 # ║          第 6 层：模型结构                                                  ║
 # ║                                                                          ║
 # ║  网络总体架构（X 形结构）：                                                 ║
-# ║    Encoder（ResNet50 + ViT + FFC bottleneck + HighFrequencyEnhancement）  ║
+# ║    Encoder（ResNet50 + EnhancedViT + CrossModalFusion +                   ║
+# ║            FFC bottleneck + HighFrequencyEnhancement）                    ║
 # ║      ↓ 编码特征（5 级：x_bb_1~4, x_c）                                    ║
 # ║      ├── GradientDecoder → 梯度图 x_g + 4 级增强特征                      ║
 # ║      │   ├── EnhancementLayers → 对增强特征做频域精炼                      ║
@@ -1478,8 +1731,12 @@ class FringeDataset(Dataset):
 
 class Encoder(nn.Module):
     """
-    编码器：ResNet50（dilated）+ ViT-B/16 双分支，末尾接 FFC bottleneck
+    编码器：ResNet50（dilated）+ 增强版 ViT-B/16 双分支，末尾接 FFC bottleneck
     和 HighFrequencyEnhancement。
+
+    改进点（相比原始版本）：
+      - ViT 分支升级为 EnhancedViTEncoderBranch（多层特征 + CPE + 自适应融合）
+      - CNN-ViT 融合升级为 CrossModalFusion（双向交叉注意力）
     输出 5 级特征用于后续 Decoder 的 skip connection。
     """
 
@@ -1516,9 +1773,11 @@ class Encoder(nn.Module):
         self.reduce_l4 = Conv2D_BN_activa(2048, 512, 1, 1, 0)
         self.fuse_l34 = Conv2D_BN_activa(1024, 512, 3, 1, 1)
 
-        self.vit_branch = ViTEncoderBranch(vit_image_size=vit_image_size)
-        self.vit_resnet_fuse_1x1 = Conv2D_BN_activa(
-            512 + self.vit_branch.embed_dim, 512, 1, 1, 0)
+        self.vit_branch = EnhancedViTEncoderBranch(vit_image_size=vit_image_size)
+        # [V5] 交叉注意力融合替代简单拼接
+        self.cross_modal_fusion = CrossModalFusion(
+            cnn_dim=512, vit_dim=self.vit_branch.embed_dim,
+            out_dim=512, num_heads=4, sr_ratio=2)
         self.cba_after_backbone = Conv2D_BN_activa(512, 256, 3, 1, 1)
         self.ffc_bottleneck = FFC_BN_ACT(256, 256, 3, 0.5, 0.5, padding=1)
 
@@ -1544,8 +1803,8 @@ class Encoder(nn.Module):
             vit_feat = F.interpolate(vit_feat, size=x_bb_4.shape[-2:],
                                      mode='bilinear', align_corners=False)
 
-        fused = torch.cat([x_bb_4, vit_feat], 1)
-        fused = self.vit_resnet_fuse_1x1(fused)
+        # [V5] 交叉注意力融合
+        fused = self.cross_modal_fusion(x_bb_4, vit_feat)
         x_c = self.cba_after_backbone(fused)
 
         nl = 256 - int(256 * 0.5)

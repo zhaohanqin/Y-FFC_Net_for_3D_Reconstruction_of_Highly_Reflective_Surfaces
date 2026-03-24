@@ -128,32 +128,129 @@ except:
     pass
 
 
-def save_phase_data(absolute_phase, masked_phase, mask, save_dir):
+def save_phase_data(absolute_phase, masked_phase, mask, save_dir,
+                    wrapped_phases=None, intermediate_phases=None,
+                    freq_list=None):
     """
-    保存绝对相位数据为 .npy 和 .mat 格式。
-    - absolute_phase: 完整的绝对相位（二维数组）
-    - masked_phase: 掩码区域内的绝对相位（掩码外为 NaN）
-    - mask: 布尔掩码
-    - save_dir: 保存目录
+    保存相位数据，格式与 绝对相位可视化工具.py 完全一致，
+    可直接被 phase_visualization.m 识别并显示。
+
+    保存规则（与 绝对相位可视化工具.py 保持一致）：
+      - 主输出 .mat：单变量 {'phase_data': 2D_float64}
+          * 不使用掩码版：全场绝对相位（无 NaN）
+          * 使用掩码版：掩码外像素置为 NaN
+      - 主输出 .npy：与对应 .mat 内容相同的 2D 数组
+      - phase_visualization.m 加载 phase_data 变量即可直接使用
+
+    Parameters
+    ----------
+    absolute_phase : ndarray (H, W), float64
+        最终绝对相位（弧度）
+    masked_phase : ndarray (H, W), float64
+        掩码区域内的绝对相位，掩码外已置为 NaN
+    mask : ndarray (H, W), bool / uint8
+        布尔掩码（True / 1 = 有效区域）
+    save_dir : str
+        保存目录
+    wrapped_phases : list of ndarray, optional
+        三个频率的包裹相位 [高频, 中频, 低频]，额外保存为独立文件
+    intermediate_phases : list of ndarray, optional
+        外差中间相位列表，额外保存为独立文件
+    freq_list : list of int, optional
+        三个频率值 [高, 中, 低]
     """
     os.makedirs(save_dir, exist_ok=True)
-    
-    # 保存完整绝对相位
-    np.save(os.path.join(save_dir, "absolute_phase.npy"), absolute_phase)
-    savemat(os.path.join(save_dir, "absolute_phase.mat"), {"absolute_phase": absolute_phase})
-    print(f"  已保存: absolute_phase.npy / absolute_phase.mat")
-    
-    # 保存掩码区域内的绝对相位
-    np.save(os.path.join(save_dir, "masked_absolute_phase.npy"), masked_phase)
-    savemat(os.path.join(save_dir, "masked_absolute_phase.mat"), {"masked_absolute_phase": masked_phase})
-    print(f"  已保存: masked_absolute_phase.npy / masked_absolute_phase.mat")
-    
-    # 保存掩码本身（便于后续复用）
-    np.save(os.path.join(save_dir, "mask.npy"), mask)
-    savemat(os.path.join(save_dir, "mask.mat"), {"mask": mask.astype(np.uint8)})
-    print(f"  已保存: mask.npy / mask.mat")
-    
-    print(f"所有数据已保存至: {save_dir}")
+    H, W = absolute_phase.shape
+
+    # 确保 mask 为 uint8（0/1），与 绝对相位可视化工具.py 一致
+    mask_u8 = (np.asarray(mask) > 0).astype(np.uint8)
+
+    # =========================================================================
+    # ① 使用掩码前——全场绝对相位
+    #    格式：{'phase_data': 2D float64}，与 绝对相位可视化工具.py 完全一致
+    # =========================================================================
+    folder_no_mask = os.path.join(save_dir, "使用掩码前")
+    os.makedirs(folder_no_mask, exist_ok=True)
+
+    phase_no_mask = absolute_phase.astype(np.float64)   # 全场，无 NaN
+
+    # .npy
+    npy_no_mask = os.path.join(folder_no_mask, "absolute_phase_original.npy")
+    np.save(npy_no_mask, phase_no_mask)
+    print(f"  [使用掩码前] npy 已保存: {npy_no_mask}")
+
+    # .mat — 变量名 phase_data，可直接被 phase_visualization.m 读取
+    mat_no_mask = os.path.join(folder_no_mask, "absolute_phase_original.mat")
+    savemat(mat_no_mask, {"phase_data": phase_no_mask})
+    print(f"  [使用掩码前] mat 已保存: {mat_no_mask}")
+
+    # =========================================================================
+    # ② 使用掩码后——掩码区域绝对相位（掩码外为 NaN）
+    #    格式：{'phase_data': 2D float64}，与 绝对相位可视化工具.py 完全一致
+    # =========================================================================
+    folder_with_mask = os.path.join(save_dir, "使用掩码后")
+    os.makedirs(folder_with_mask, exist_ok=True)
+
+    # 应用掩码：mask==0 的位置置为 NaN（与 绝对相位可视化工具.py 第1394~1396行一致）
+    phase_with_mask = absolute_phase.astype(np.float64).copy()
+    phase_with_mask[mask_u8 == 0] = np.nan
+
+    # .npy
+    npy_with_mask = os.path.join(folder_with_mask, "absolute_phase_masked.npy")
+    np.save(npy_with_mask, phase_with_mask)
+    print(f"  [使用掩码后] npy 已保存: {npy_with_mask}")
+
+    # .mat — 变量名 phase_data，可直接被 phase_visualization.m 读取
+    mat_with_mask = os.path.join(folder_with_mask, "absolute_phase_masked.mat")
+    savemat(mat_with_mask, {"phase_data": phase_with_mask})
+    print(f"  [使用掩码后] mat 已保存: {mat_with_mask}")
+
+    # =========================================================================
+    # ③ 中间相位（包裹相位 + 外差相位）独立保存
+    #    每个文件同样使用 phase_data 作为变量名，保持格式统一
+    # =========================================================================
+    inter_keys = [
+        "diff_phase_high_mid",
+        "diff_phase_mid_low",
+        "diff_phase_final_low",
+        "unwrapped_diff_phase",
+    ]
+
+    if wrapped_phases is not None and len(wrapped_phases) == 3:
+        wrap_labels = ["wrapped_phase_high", "wrapped_phase_mid", "wrapped_phase_low"]
+        for lbl, arr in zip(wrap_labels, wrapped_phases):
+            arr_f64 = arr.astype(np.float64)
+            np.save(os.path.join(folder_no_mask, f"{lbl}.npy"), arr_f64)
+            savemat(os.path.join(folder_no_mask, f"{lbl}.mat"), {"phase_data": arr_f64})
+        print(f"  [中间相位] 三频包裹相位已保存至: {folder_no_mask}")
+
+    if intermediate_phases is not None:
+        for k, arr in zip(inter_keys, intermediate_phases):
+            arr_f64 = arr.astype(np.float64)
+            np.save(os.path.join(folder_no_mask, f"{k}.npy"), arr_f64)
+            savemat(os.path.join(folder_no_mask, f"{k}.mat"), {"phase_data": arr_f64})
+        print(f"  [中间相位] 外差相位已保存至: {folder_no_mask}")
+
+    # =========================================================================
+    # ④ 掩码文件
+    # =========================================================================
+    np.save(os.path.join(save_dir, "mask.npy"), mask_u8)
+    savemat(os.path.join(save_dir, "mask.mat"), {"mask": mask_u8})
+    print(f"  [掩码] mask.npy / mask.mat 已保存至: {save_dir}")
+
+    # =========================================================================
+    # 统计信息
+    # =========================================================================
+    valid_vals = phase_with_mask[~np.isnan(phase_with_mask)]
+    print(f"\n  绝对相位统计（掩码内有效区域）:")
+    print(f"    范围: [{np.nanmin(phase_with_mask):.4f}, {np.nanmax(phase_with_mask):.4f}] rad")
+    print(f"    均值: {np.mean(valid_vals):.4f} rad  标准差: {np.std(valid_vals):.4f} rad")
+    print(f"    有效像素: {len(valid_vals):,} / {H*W:,}  "
+          f"({len(valid_vals)/H/W*100:.1f}%)")
+    print(f"\n  MATLAB 读取示例（phase_visualization.m）:")
+    print(f"    data = load('absolute_phase_masked.mat');")
+    print(f"    phase = data.phase_data;   %% shape: ({H}, {W}), 掩码外为 NaN")
+    print(f"\n所有相位数据已保存至: {save_dir}")
 
 
 def show_phase_line_profile(phase: np.ndarray, 
@@ -245,6 +342,10 @@ def process_3_frequency_pipeline(folder_path, phase_step, freq_list, orientation
     unwrap_phi12 = PhaseCalculator.unwrap_phase_with_reference(phi_final_low, phi12, f_final, f_diff12)
     absolute_phase = PhaseCalculator.unwrap_phase_with_reference(unwrap_phi12, w_phase_h, f_diff12, freq_list[0])
 
+    # 汇总各阶段相位，供后续完整保存
+    _wrapped_phases      = [w_phase_h, w_phase_m, w_phase_l]
+    _intermediate_phases = [phi12, phi23, phi_final_low, unwrap_phi12]
+
     # =========================================================================
     # 3. 掩码处理
     # =========================================================================
@@ -270,7 +371,12 @@ def process_3_frequency_pipeline(folder_path, phase_step, freq_list, orientation
     # 4. 保存数据（.npy 和 .mat）
     # =========================================================================
     print("Step 4: 正在保存相位数据...")
-    save_phase_data(absolute_phase, masked_phase, mask, save_dir)
+    save_phase_data(
+        absolute_phase, masked_phase, mask, save_dir,
+        wrapped_phases=_wrapped_phases,
+        intermediate_phases=_intermediate_phases,
+        freq_list=freq_list,
+    )
 
     # =========================================================================
     # 5. 可视化并保存图片
