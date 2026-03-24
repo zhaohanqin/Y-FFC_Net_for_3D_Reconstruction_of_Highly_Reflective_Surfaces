@@ -156,24 +156,33 @@ class ImprovedFringeDataset(Dataset):
 
 class ImprovedWeightScheduler:
     """
-    策略：早期以 L1 快速收敛 → 中期加大 focal/dice/freq → 后期精修边界（gc 加大）
+    策略（修复版）：
+      早期(0~30%)   以 L1 快速收敛
+      中期(30~60%)  加大 focal/dice/freq
+      后期(60~100%) 权重冻结在平台值，不再变化 ← 关键修复
+
+    原版问题：权重持续线性增大直到最后一轮，导致后期优化目标不断漂移，
+    与学习率衰减产生冲突，叠加 LR 回弹造成损失突增。
     """
     def __init__(self, total_epochs):
         self.T = max(total_epochs, 1)
 
     def get_weights(self, ep):
+        # 在 60% 训练进度处截断，之后权重不再变化
         p = min(ep / self.T, 1.0)
+        p_clamped = min(p / 0.6, 1.0)  # 在 60% 处达到最终值
+
         return {
             'lambda_ssim':       1.0,
-            'lambda_l1':         max(0.5, 1.0 - 0.5 * p),
-            'lambda_freq':       min(0.2, 0.05 + 0.15 * p),
-            'lambda_perceptual': min(0.15, 0.02 + 0.13 * p),
+            'lambda_l1':         max(0.5, 1.0 - 0.5 * p_clamped),
+            'lambda_freq':       min(0.15, 0.05 + 0.10 * p_clamped),      # 上限降低
+            'lambda_perceptual': min(0.10, 0.02 + 0.08 * p_clamped),      # 上限降低
             'lambda_spec':       0.5,
             'lambda_stat':       0.0,    # [P5] 移除冗余 stat 损失
-            'lambda_grad':       max(0.3, 0.5 - 0.2 * p),
-            'lambda_focal':      min(1.0, 0.3 + 0.7 * p),
-            'lambda_dice':       min(0.5, 0.1 + 0.4 * p),
-            'lambda_gc':         min(0.3, 0.05 + 0.25 * p),
+            'lambda_grad':       max(0.3, 0.5 - 0.2 * p_clamped),
+            'lambda_focal':      min(0.8, 0.3 + 0.5 * p_clamped),         # 上限降低
+            'lambda_dice':       min(0.3, 0.1 + 0.2 * p_clamped),         # 上限降低
+            'lambda_gc':         min(0.2, 0.05 + 0.15 * p_clamped),       # 上限降低
         }
 
     def step(self, criterion, ep):
@@ -370,11 +379,22 @@ def train_one_epoch(model, loader, criterion, optimizer, scheduler,
                     out['g'].float(), gt_g.float())
             loss = loss / accum
 
-        # NaN 保护
+        # NaN / Inf 保护
         if not torch.isfinite(loss):
             tqdm.write(f'[WARNING] Epoch {epoch+1} Batch {i+1}: loss NaN/Inf, 跳过')
             optimizer.zero_grad()
             continue
+
+        # [FIX] 损失尖峰保护：如果单批损失超过历史均值的 10 倍，跳过该批次
+        # 防止异常样本或数值不稳定导致的梯度爆炸
+        _current_loss_val = ld['total']
+        if tracker.n > 5:  # 至少积累 5 批数据后才判断
+            _avg_so_far = tracker.tot_loss / tracker.n
+            if _avg_so_far > 0 and _current_loss_val > _avg_so_far * 10.0:
+                tqdm.write(f'[WARNING] Epoch {epoch+1} Batch {i+1}: '
+                           f'loss spike {_current_loss_val:.4f} >> avg {_avg_so_far:.4f}, 跳过')
+                optimizer.zero_grad()
+                continue
 
         if device.type == 'cuda':
             scaler.scale(loss).backward()
@@ -1167,8 +1187,9 @@ def train_model(cfg):
         # --- 验证 ---
         if ema:
             ema.apply_shadow()
-        # [P15] 后 20% 轮次启用 TTA
-        _use_tta = (ep >= cfg['EPOCHS'] * 0.8)
+        # [P15-FIX] TTA 会导致验证指标突变，训练过程中禁用以保持一致性
+        # TTA 仅在最终评估/推理时使用，不影响训练中的模型选择
+        _use_tta = False
         vl, vs, vm, val_mse, val_psnr, val_subs = validate(
             model, val_loader, criterion, device,
             epoch=ep, total_epochs=cfg['EPOCHS'], use_tta=_use_tta)
@@ -1201,6 +1222,12 @@ def train_model(cfg):
         remaining = avg_epoch_time * (cfg['EPOCHS'] - ep - 1)
         eta = timedelta(seconds=int(remaining))
         current_lr = optimizer.param_groups[0]['lr']
+
+        # [FIX] LR 回弹检测：若 LR 比上一 epoch 增加超过 50%，发出警告
+        if ep > 0 and hasattr(train_model, '_prev_lr'):
+            if current_lr > train_model._prev_lr * 1.5 and current_lr > 1e-5:
+                print(f"  ⚠️ [LR 异常] LR 从 {train_model._prev_lr:.2e} 跳升至 {current_lr:.2e}！")
+        train_model._prev_lr = current_lr
 
         # ── 多指标最优模型保存 ──
         composite = COMPOSITE_ALPHA * vs + (1.0 - COMPOSITE_ALPHA) * (1.0 / (1.0 + vl))
@@ -1412,12 +1439,12 @@ def main():
     # ╚══════════════════════════════════════════════════════════════╝
 
     # ========== 基础训练参数 ==========
-    EPOCHS                = 200       # 训练总轮数
+    EPOCHS                = 400       # 训练总轮数
     BATCH_SIZE            = 4         # 384 分辨率推荐 2~4
     BASE_LR               = 2e-4     # 基础学习率（分层 LR 以此为基准）
     WEIGHT_DECAY          = 1e-4     # AdamW 权重衰减
     ACCUMULATION_STEPS    = 4        # 梯度累积步数（等效 batch = BATCH_SIZE × 此值）
-    GRAD_CLIP_VALUE       = 1.0      # 梯度裁剪阈值
+    GRAD_CLIP_VALUE       = 0.5      # [FIX] 梯度裁剪阈值（从 1.0 降低到 0.5，更稳定）
 
     # ========== 图像与数据参数 ==========
     IMAGE_SIZE            = (128, 160)  # ⭐ 输入分辨率 (H, W)，支持任意矩形
@@ -1437,7 +1464,7 @@ def main():
     VAL_TARGET_DIR        = None     # 独立验证集目标目录
 
     # ========== 模型保存与检查点 ==========
-    SAVE_EVERY_N_EPOCHS   = 10       # 每 N 轮保存检查点（0=不保存）
+    SAVE_EVERY_N_EPOCHS   = 20       # 每 N 轮保存检查点（0=不保存）
 
     # ========== 可视化间隔 ==========
     VIS_EVERY_N_EPOCHS    = 10       # 每 N 轮保存验证样本可视化（0=不保存）

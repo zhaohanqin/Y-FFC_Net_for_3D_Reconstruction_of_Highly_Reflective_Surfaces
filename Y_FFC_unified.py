@@ -968,9 +968,13 @@ class SSIM(nn.Module):
 
         ssim_map = ((2 * mu12 + C1) * (2 * sigma12 + C2)) / (
             (mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2) + eps)
-        # [P12] 训练时不 clamp 保留梯度；评估时 clamp
+        # [P12-FIX] 训练时用 soft clamp 保护：允许梯度流但限制在合理范围
+        # 原版 as_loss=True 完全不 clamp，可能出现 >1 的值使 1-ssim 变负
         if not self.as_loss:
             ssim_map = torch.clamp(ssim_map, 0.0, 1.0)
+        else:
+            # soft clamp：限制在 [-0.5, 1.0] 范围，保护梯度但阻止极端值
+            ssim_map = torch.clamp(ssim_map, -0.5, 1.0)
         return ssim_map.mean()
 
 
@@ -1304,11 +1308,17 @@ class EnhancedCompositeLoss(nn.Module):
         # ★ 所有损失项的权重完全由 lambda_* 和 ImprovedWeightScheduler 控制 ★
 
     def frequency_loss(self, p, g):
-        """[P4] 幅度谱 + 相位一致性联合损失。"""
+        """[P4-FIX] 幅度谱 + 相位一致性联合损失（修复数值稳定性）。"""
         p_fft = torch.fft.rfft2(p, norm='ortho')
         g_fft = torch.fft.rfft2(g, norm='ortho')
         amp_loss = F.l1_loss(torch.abs(p_fft), torch.abs(g_fft))
-        phase_loss = (1.0 - torch.cos(torch.angle(p_fft) - torch.angle(g_fft))).mean()
+        # 修复：用复数乘法代替 torch.angle() 的不连续梯度
+        # cos(angle_p - angle_g) = Re(p_fft * conj(g_fft)) / (|p_fft| * |g_fft|)
+        p_norm = torch.abs(p_fft).clamp(min=1e-8)
+        g_norm = torch.abs(g_fft).clamp(min=1e-8)
+        cross = p_fft * g_fft.conj()
+        cos_diff = cross.real / (p_norm * g_norm)
+        phase_loss = (1.0 - cos_diff).mean()
         return amp_loss + 0.5 * phase_loss
 
     def forward(self, pred_diffuse, target, est_b, gt_specular,
@@ -2146,21 +2156,23 @@ class EMA:
 
 
 class DynamicLossWeightScheduler:
-    """根据训练进度动态调整各 loss 项的权重。"""
+    """根据训练进度动态调整各 loss 项的权重（修复版：60% 后冻结）。"""
 
     def __init__(self, total_epochs):
         self.total_epochs = max(total_epochs, 1)
 
     def get_weights(self, current_epoch):
         progress = min(current_epoch / self.total_epochs, 1.0)
+        # 修复：在 60% 处截断变化，之后权重不再改变
+        p = min(progress / 0.6, 1.0)
         weights = {
             'lambda_ssim':       1.0,
-            'lambda_l1':         max(0.5, 1.0 - 0.5 * progress),
-            'lambda_freq':       min(0.2, 0.05 + 0.15 * progress),
-            'lambda_perceptual': min(0.15, 0.02 + 0.13 * progress),
+            'lambda_l1':         max(0.5, 1.0 - 0.5 * p),
+            'lambda_freq':       min(0.15, 0.05 + 0.10 * p),
+            'lambda_perceptual': min(0.10, 0.02 + 0.08 * p),
             'lambda_spec':       0.5,
-            'lambda_stat':       0.1,
-            'lambda_grad':       max(0.3, 0.5 - 0.2 * progress),
+            'lambda_stat':       0.0,     # 移除冗余 stat
+            'lambda_grad':       max(0.3, 0.5 - 0.2 * p),
         }
         return weights
 
@@ -2212,14 +2224,37 @@ def build_optimizer(model, base_lr=2e-4, weight_decay=1e-4):
 
 def build_scheduler(optimizer, warmup_iters=500, total_epochs=200,
                     iters_per_epoch=100, eta_min=1e-6):
-    """[P6] Warmup + CosineAnnealingLR（无重启），T_max 精确匹配总迭代数。"""
-    from torch.optim.lr_scheduler import (
-        LinearLR, CosineAnnealingLR, SequentialLR)
+    """
+    [P6-FIX] Warmup + 余弦退火调度器（修复版：防止 LR 回弹）。
+
+    关键修复：
+      原版使用 CosineAnnealingLR，当训练超过 T_max 迭代后，LR 会自动周期性
+      回升，导致训练后期损失突然增大。
+
+      修复方案：使用 LambdaLR + 自定义余弦衰减函数，超过 T_max 后 LR 钳位在
+      eta_min，不再回弹。
+    """
+    from torch.optim.lr_scheduler import LinearLR, LambdaLR, SequentialLR
 
     warmup_scheduler = LinearLR(optimizer, start_factor=0.01, total_iters=warmup_iters)
     total_iters = total_epochs * iters_per_epoch
     cosine_iters = max(total_iters - warmup_iters, 1)
-    cosine_scheduler = CosineAnnealingLR(optimizer, T_max=cosine_iters, eta_min=eta_min)
+
+    # 自定义余弦衰减：超过 cosine_iters 后 LR 钳位在 eta_min，不循环
+    base_lrs = [pg['lr'] for pg in optimizer.param_groups]
+
+    def _cosine_no_restart(current_iter):
+        """余弦退火 lambda，到达 T_max 后保持 eta_min，不回弹。"""
+        if current_iter >= cosine_iters:
+            # 钳位在最低学习率比例
+            return eta_min / base_lrs[0] if base_lrs[0] > 0 else eta_min
+        progress = current_iter / cosine_iters
+        cosine_decay = 0.5 * (1.0 + math.cos(math.pi * progress))
+        # 从 1.0 衰减到 eta_min / base_lr
+        min_ratio = eta_min / base_lrs[0] if base_lrs[0] > 0 else eta_min
+        return min_ratio + (1.0 - min_ratio) * cosine_decay
+
+    cosine_scheduler = LambdaLR(optimizer, lr_lambda=_cosine_no_restart)
     scheduler = SequentialLR(optimizer, schedulers=[warmup_scheduler, cosine_scheduler],
                              milestones=[warmup_iters])
     return scheduler
@@ -2241,7 +2276,7 @@ def replace_bn_with_gn(module, num_groups=8):
 
 def train_one_epoch(model, dataloader, criterion, optimizer, scheduler,
                     scaler, ema, device,
-                    accumulation_steps=4, max_grad_norm=1.0,
+                    accumulation_steps=4, max_grad_norm=0.5,
                     epoch=0, total_epochs=200):
     """单个 epoch 的训练循环（AMP + 梯度累积 + EMA）。"""
     model.train()
@@ -2270,6 +2305,12 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scheduler,
                     pred_grad.float(), gt_gradient.float())
 
             loss = loss / accumulation_steps
+
+        # [FIX] NaN / Inf 保护
+        if not torch.isfinite(loss):
+            print(f'[WARNING] Epoch {epoch+1} Batch {i+1}: loss NaN/Inf, 跳过')
+            optimizer.zero_grad()
+            continue
 
         if device.type == 'cuda':
             scaler.scale(loss).backward()
