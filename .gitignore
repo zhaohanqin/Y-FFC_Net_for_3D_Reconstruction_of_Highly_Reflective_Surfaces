@@ -9,6 +9,20 @@ datasets/
 *.tar.gz
 *.rar
 *.7z
+*.tar
+*.gz
+*.bz2
+*.whl
+*.whl.part
+*.whl.part.1
+*.whl.part.2
+*.bmp
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.webp
+*.ico
 
 # ---- 模型文件 ----
 *.pth
