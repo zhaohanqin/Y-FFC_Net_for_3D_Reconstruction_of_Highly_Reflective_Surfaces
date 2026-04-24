@@ -490,7 +490,7 @@ def validate(model, loader, criterion, device, epoch=0, total_epochs=0,
 # ════════════════════════════════════════════════════════════════════════
 
 @torch.no_grad()
-def visualize_sample_during_training(model, val_loader, device, output_folder,
+def visualize_sample_during_training(model, vis_loader, device, output_folder,
                                       current_epoch, num_samples=2):
     """
     训练过程中可视化验证样本结果。
@@ -501,7 +501,7 @@ def visualize_sample_during_training(model, val_loader, device, output_folder,
 
     参数:
         model          : 当前模型
-        val_loader     : 验证数据加载器
+        vis_loader     : 本次训练固定的可视化样本 DataLoader
         device         : 计算设备
         output_folder  : 输出目录
         current_epoch  : 当前 epoch 编号
@@ -511,7 +511,7 @@ def visualize_sample_during_training(model, val_loader, device, output_folder,
     vis_dir = os.path.join(output_folder, 'val_visualization')
     os.makedirs(vis_dir, exist_ok=True)
 
-    batch = next(iter(val_loader))
+    batch = next(iter(vis_loader))
     inputs, gt_diffuse, gt_specular, gt_gradient = [x.to(device) for x in batch]
 
     estimations = model(inputs)
@@ -575,6 +575,35 @@ def visualize_sample_during_training(model, val_loader, device, output_folder,
 
     model.train()
     return vis_dir
+
+
+def build_fixed_visualization_loader(val_dataset, num_samples, num_workers,
+                                     pin_memory=False, seed=None):
+    """
+    为本次训练固定抽取一批验证样本。
+
+    seed=None 时使用当前时间生成种子，因此不同训练文件夹通常会选到不同图像；
+    训练开始后样本索引固定，保证同一次训练中各 epoch 的可视化可直接对比。
+    """
+    dataset_size = len(val_dataset)
+    if dataset_size <= 0:
+        raise ValueError("验证集为空，无法抽取可视化样本")
+
+    sample_count = min(max(int(num_samples), 1), dataset_size)
+    if seed is None:
+        seed = time.time_ns() % (2**63 - 1)
+    seed = int(seed)
+
+    generator = torch.Generator().manual_seed(seed)
+    vis_indices = torch.randperm(dataset_size, generator=generator)[:sample_count].tolist()
+    vis_dataset = torch.utils.data.Subset(val_dataset, vis_indices)
+    vis_loader = DataLoader(
+        vis_dataset,
+        batch_size=sample_count,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=pin_memory)
+    return vis_loader, vis_indices, seed
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -911,7 +940,11 @@ def save_training_summary(output_folder, cfg, history, best_info, total_time_str
         f.write(f'  Use GN            : {cfg["USE_GN"]}\n')
         f.write(f'  Use EMA           : {cfg["USE_EMA"]}\n')
         f.write(f'  Use OHEM          : {cfg["USE_OHEM"]}\n')
-        f.write(f'  Mixed Precision   : Enabled (AMP)\n\n')
+        f.write(f'  Mixed Precision   : Enabled (AMP)\n')
+        f.write(f'  Val Vis Interval  : {cfg.get("VIS_EVERY_N_EPOCHS", 10)}\n')
+        f.write(f'  Val Vis Samples   : {cfg.get("VIS_NUM_SAMPLES", 2)}\n')
+        f.write(f'  Val Vis Seed Used : {cfg.get("VIS_SAMPLE_SEED_USED")}\n')
+        f.write(f'  Val Vis Indices   : {cfg.get("VIS_SAMPLE_INDICES", [])}\n\n')
 
         # ② 最优模型
         f.write(sep)
@@ -1081,6 +1114,26 @@ def train_model(cfg):
     print(f"批次大小: {cfg['BATCH_SIZE']} × 累积{cfg['ACCUMULATION_STEPS']}"
           f" = 等效 {cfg['BATCH_SIZE'] * cfg['ACCUMULATION_STEPS']}")
 
+    # 可视化使用单独固定样本集：每次训练随机抽一次，同一次训练全程不变
+    vis_interval = int(cfg.get('VIS_EVERY_N_EPOCHS', 10))
+    vis_num_samples = int(cfg.get('VIS_NUM_SAMPLES', 2))
+    vis_loader = None
+    if vis_interval > 0 and vis_num_samples > 0:
+        vis_loader, vis_indices, vis_seed = build_fixed_visualization_loader(
+            val_ds,
+            num_samples=vis_num_samples,
+            num_workers=cfg['NUM_WORKERS'],
+            pin_memory=(device.type == 'cuda'),
+            seed=cfg.get('VIS_SAMPLE_SEED'))
+        cfg['VIS_SAMPLE_SEED_USED'] = vis_seed
+        cfg['VIS_SAMPLE_INDICES'] = vis_indices
+        print(f"可视化样本: 本次训练固定抽取 {len(vis_indices)} 张 "
+              f"(seed={vis_seed}, val_indices={vis_indices})")
+    else:
+        cfg['VIS_SAMPLE_SEED_USED'] = None
+        cfg['VIS_SAMPLE_INDICES'] = []
+        print("可视化样本: 已禁用")
+
     # ══════════ 3. 损失函数 ══════════
     criterion = EnhancedCompositeLoss(
         use_perceptual=True, use_ohem=cfg['USE_OHEM']).to(device)
@@ -1161,9 +1214,6 @@ def train_model(cfg):
     print(f"  Loss最优 -> {best_loss_path}")
     print(f"  最新模型 -> {last_model_path}")
     print(f"  综合评分权重: SSIM×{COMPOSITE_ALPHA:.1f} + Loss归一化×{1 - COMPOSITE_ALPHA:.1f}")
-
-    # ══════════ 可视化间隔配置 ══════════
-    vis_interval = cfg.get('VIS_EVERY_N_EPOCHS', 10)  # 默认每 10 轮可视化一次
 
     # ══════════ 7. 训练循环 ══════════
     start_time_total = time.time()
@@ -1300,12 +1350,12 @@ def train_model(cfg):
             plot_training_curves_realtime(history, output_folder, ep + 1)
 
         # ── 验证样本可视化 ──
-        if (ep + 1) % vis_interval == 0 or ep == 0:
+        if vis_loader is not None and ((ep + 1) % vis_interval == 0 or ep == 0):
             if ema:
                 ema.apply_shadow()
             vis_path = visualize_sample_during_training(
-                model, val_loader, device, output_folder,
-                current_epoch=ep + 1, num_samples=2)
+                model, vis_loader, device, output_folder,
+                current_epoch=ep + 1, num_samples=vis_num_samples)
             if ema:
                 ema.restore()
             print(f"  样本可视化已保存: {vis_path}")
@@ -1468,6 +1518,8 @@ def main():
 
     # ========== 可视化间隔 ==========
     VIS_EVERY_N_EPOCHS    = 10       # 每 N 轮保存验证样本可视化（0=不保存）
+    VIS_NUM_SAMPLES       = 2        # 每次保存几张固定验证样本
+    VIS_SAMPLE_SEED       = None     # None=每次训练随机抽样；填整数可复现同一批图像
 
     # ========== 早停策略 ==========
     USE_EARLY_STOPPING    = False
@@ -1502,6 +1554,8 @@ def main():
         'VAL_TARGET_DIR':         VAL_TARGET_DIR,
         'SAVE_EVERY_N_EPOCHS':    SAVE_EVERY_N_EPOCHS,
         'VIS_EVERY_N_EPOCHS':     VIS_EVERY_N_EPOCHS,
+        'VIS_NUM_SAMPLES':        VIS_NUM_SAMPLES,
+        'VIS_SAMPLE_SEED':        VIS_SAMPLE_SEED,
         'USE_EARLY_STOPPING':     USE_EARLY_STOPPING,
         'EARLY_STOPPING_PATIENCE': EARLY_STOPPING_PATIENCE,
         'OUTPUT_FOLDER':          OUTPUT_FOLDER,
