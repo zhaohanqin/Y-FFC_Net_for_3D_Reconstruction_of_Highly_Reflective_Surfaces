@@ -55,9 +55,16 @@ def load_model(model_path, device, prefer_ema=True):
     if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
         # ── 训练保存的标准 checkpoint ──
         # 优先使用 EMA 权重（推理更稳定）
-        if prefer_ema and 'ema_shadow' in checkpoint:
+        ema_key = None
+        if prefer_ema:
+            if 'ema_shadow' in checkpoint:
+                ema_key = 'ema_shadow'
+            elif 'ema' in checkpoint:
+                ema_key = 'ema'
+
+        if ema_key is not None:
             # EMA shadow 的 key 与 model.named_parameters() 一致
-            ema_shadow = checkpoint['ema_shadow']
+            ema_shadow = checkpoint[ema_key]
             model_sd = model.state_dict()
             for name, param in ema_shadow.items():
                 if name in model_sd:
@@ -65,16 +72,16 @@ def load_model(model_path, device, prefer_ema=True):
             model.load_state_dict(model_sd)
             epoch = checkpoint.get('epoch', '?')
             best_ssim = checkpoint.get('best_ssim', '?')
-            print(f"  ✓ 已加载 EMA 权重 (epoch={epoch}, best_ssim={best_ssim})")
+            print(f"  [OK] 已加载 EMA 权重 ({ema_key}, epoch={epoch}, best_ssim={best_ssim})")
         else:
             model.load_state_dict(checkpoint['model_state_dict'])
             epoch = checkpoint.get('epoch', '?')
             best_ssim = checkpoint.get('best_ssim', '?')
-            print(f"  ✓ 已加载模型权重 (epoch={epoch}, best_ssim={best_ssim})")
+            print(f"  [OK] 已加载模型权重 (epoch={epoch}, best_ssim={best_ssim})")
     elif isinstance(checkpoint, dict):
         # ── 可能是纯 state_dict（key 为 layer 名称） ──
         model.load_state_dict(checkpoint)
-        print("  ✓ 已加载纯 state_dict 权重")
+        print("  [OK] 已加载纯 state_dict 权重")
     else:
         raise ValueError(f"无法识别的 checkpoint 格式: {type(checkpoint)}")
 
@@ -306,7 +313,7 @@ def process_folder(model, input_folder, output_folder, device, show_visualizatio
     print("\n" + "=" * 70)
     print("批量处理完成！")
     print("=" * 70)
-    print(f"✓ 成功: {success_count} 张")
+    print(f"[OK] 成功: {success_count} 张")
     if fail_count > 0:
         print(f"❌ 失败: {fail_count} 张")
     print(f"输出目录: {output_folder}")
@@ -371,7 +378,7 @@ def main():
     print(f"加载模型: {MODEL_PATH}")
     try:
         model = load_model(MODEL_PATH, device, prefer_ema=PREFER_EMA)
-        print("✓ 模型加载成功")
+        print("[OK] 模型加载成功")
     except Exception as e:
         print(f"❌ 模型加载失败: {e}")
         return
@@ -388,7 +395,7 @@ def main():
         print(f"开始处理...")
         if process_single_image(model, INPUT_PATH, image_output_dir, device, SHOW_VISUALIZATION,
                                 DIFFUSE_COLLECTION_DIR):
-            print(f"✓ 处理完成!")
+            print(f"[OK] 处理完成!")
             print(f"\n输出文件位置:")
             print(f"  - {image_output_dir}/{image_name}_diffuse.png       (⭐ 去除高反光后的结果)")
             print(f"  - {image_output_dir}/{image_name}_specular.png     (镜面反射分量)")

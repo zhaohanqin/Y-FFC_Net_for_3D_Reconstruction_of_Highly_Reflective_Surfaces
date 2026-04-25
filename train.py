@@ -33,6 +33,7 @@ from torch.utils.data import Dataset, DataLoader
 import os
 import time
 import math
+import random
 import numpy as np
 from PIL import Image
 from datetime import datetime, timedelta
@@ -54,7 +55,96 @@ from Y_FFC_unified import (
     EnhancedCompositeLoss,
     EnhancedPairedTransform,
     HighlightAugmentation,
+    compute_gradient_target,
 )
+
+
+def set_global_seed(seed):
+    """统一设置训练相关随机种子，seed=None 时保持默认随机行为。"""
+    if seed is None:
+        return
+    seed = int(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
+def seed_worker(worker_id):
+    """DataLoader worker 随机源初始化，配合 generator 保证增强可复现。"""
+    worker_seed = torch.initial_seed() % (2 ** 32)
+    random.seed(worker_seed)
+    np.random.seed(worker_seed)
+
+
+def make_generator(seed, offset=0):
+    if seed is None:
+        return None
+    return torch.Generator().manual_seed(int(seed) + int(offset))
+
+
+def get_lr_groups(optimizer):
+    return {g.get('name', f'group_{idx}'): g['lr']
+            for idx, g in enumerate(optimizer.param_groups)}
+
+
+def format_lr_groups(lr_groups):
+    return ', '.join(f'{name}={lr:.2e}' for name, lr in lr_groups.items())
+
+
+def metric_from_loss(loss_value):
+    if loss_value is None:
+        return float('nan')
+    return 1.0 - float(loss_value)
+
+
+def collect_pretrained_status(model, criterion=None):
+    """收集预训练权重加载状态，写入日志和 summary 便于复现实验。"""
+    statuses = []
+    encoder = getattr(model, 'encoder', None)
+    if encoder is not None:
+        statuses.append(getattr(encoder, 'pretrained_status', 'resnet50: status unknown'))
+        vit_branch = getattr(encoder, 'vit_branch', None)
+        if vit_branch is not None:
+            statuses.append(getattr(vit_branch, 'pretrained_status', 'vit_b_16: status unknown'))
+    if criterion is not None and hasattr(criterion, 'perceptual'):
+        statuses.append(getattr(criterion.perceptual, 'pretrained_status', 'vgg16: status unknown'))
+    return statuses
+
+
+def set_fourier_tukey_window(model, enabled=True, alpha=0.25):
+    changed = 0
+    for module in model.modules():
+        if hasattr(module, 'use_tukey_window'):
+            module.use_tukey_window = bool(enabled)
+            if hasattr(module, 'tukey_alpha'):
+                module.tukey_alpha = float(alpha)
+            changed += 1
+    return changed
+
+
+def apply_ohem_schedule(criterion, epoch, total_epochs, cfg):
+    if not hasattr(criterion, 'use_ohem') or not hasattr(criterion, 'ohem_ratio'):
+        return {}
+    if not cfg.get('USE_OHEM', True):
+        criterion.use_ohem = False
+        return {'use_ohem': False, 'ohem_ratio': 0.0}
+
+    start_ratio = float(cfg.get('OHEM_START_RATIO', 0.3))
+    final_ratio = float(cfg.get('OHEM_FINAL_RATIO', start_ratio))
+    decay_start = float(cfg.get('OHEM_DECAY_START', 0.65))
+    progress = epoch / max(total_epochs - 1, 1)
+
+    if progress <= decay_start:
+        ratio = start_ratio
+    else:
+        t = (progress - decay_start) / max(1.0 - decay_start, 1e-8)
+        ratio = start_ratio + (final_ratio - start_ratio) * min(max(t, 0.0), 1.0)
+
+    criterion.use_ohem = ratio > 0
+    criterion.ohem_ratio = max(ratio, 0.0)
+    return {'use_ohem': criterion.use_ohem, 'ohem_ratio': criterion.ohem_ratio}
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -141,11 +231,7 @@ class ImprovedFringeDataset(Dataset):
             inp, tgt, gt_spec, gt_grad = self.paired_transform(inp, tgt)
         else:
             gt_spec = (inp - tgt).clamp(0, 1)
-            gx, gy = torch.gradient(tgt, dim=(1, 2))
-            mag = torch.sqrt(gx ** 2 + gy ** 2 + 1e-8)
-            flat = mag.flatten()
-            p995 = torch.quantile(flat, 0.995) if flat.numel() > 0 else torch.tensor(1.0)
-            gt_grad = (mag / (p995 + 1e-8)).clamp(0, 1)
+            gt_grad = compute_gradient_target(tgt)
 
         return inp, tgt, gt_spec, gt_grad
 
@@ -235,7 +321,7 @@ def build_optimizer_v2(model, base_lr=2e-4, weight_decay=1e-4):
 # 主要的子损失键名（EnhancedCompositeLoss 的 loss_dict 中可能出现的所有键）
 # 'total' 和 'ssim' 是必有的；其余根据配置可能存在也可能为 0
 SUB_LOSS_KEYS = [
-    'total', 'ssim', 'l1', 'freq', 'perceptual',
+    'total', 'ssim', 'msssim', 'ssim_mix', 'l1', 'freq', 'perceptual',
     'spec', 'stat', 'grad',
     'focal', 'dice', 'gc',
 ]
@@ -244,7 +330,9 @@ SUB_LOSS_KEYS = [
 SUB_LOSS_DISPLAY_NAMES = {
     'total':      'Total Loss',
     'ssim':       'SSIM Loss (1-SSIM)',
-    'l1':         'L1 / MAE Loss',
+    'msssim':     'MS-SSIM Loss',
+    'ssim_mix':   'SSIM Mix Loss',
+    'l1':         'Weighted Charbonnier',
     'freq':       'Frequency Loss',
     'perceptual': 'Perceptual Loss',
     'spec':       'Specular Loss',
@@ -267,7 +355,7 @@ class MetricTracker:
 
     追踪指标：
       - SSIM（漫反射分支，1 - ssim_loss，越高越好）
-      - MAE （漫反射分支，L1 距离）
+      - True MAE （漫反射分支，mean(abs(pred-target))）
       - MSE （漫反射分支，均方误差）
       - PSNR（漫反射分支，峰值信噪比，dB）
       - 全部子损失项（来自 EnhancedCompositeLoss 的 loss_dict）
@@ -288,8 +376,10 @@ class MetricTracker:
         self.tot_mse = 0.0
         self.tot_psnr = 0.0
         self.sub_accum = defaultdict(float)
+        self.region_accum = defaultdict(float)
+        self.region_count = defaultdict(int)
 
-    def update(self, loss_dict, pred, target):
+    def update(self, loss_dict, pred, target, gt_specular=None, input_img=None):
         """
         更新一个 batch 的指标。
 
@@ -304,7 +394,8 @@ class MetricTracker:
         # 主指标
         self.tot_loss += loss_dict['total']
         self.tot_ssim += (1.0 - loss_dict['ssim'])
-        self.tot_mae += loss_dict.get('l1', loss_dict.get('mae', 0.0))
+        true_mae = torch.mean(torch.abs(pred - target)).item()
+        self.tot_mae += true_mae
 
         # MSE（漫反射分支）
         mse_val = torch.mean((pred - target) ** 2).item()
@@ -319,6 +410,36 @@ class MetricTracker:
         # 子损失项
         for k, v in loss_dict.items():
             self.sub_accum[k] += v
+
+        if gt_specular is not None:
+            self._update_region_metrics(pred, target, gt_specular, input_img)
+
+    def _accumulate_masked_error(self, name, abs_err, sq_err, mask):
+        mask = mask.to(dtype=abs_err.dtype)
+        denom = mask.sum()
+        if denom <= 1:
+            return
+        self.region_accum[f'{name}_mae'] += (abs_err * mask).sum().item() / denom.item()
+        self.region_accum[f'{name}_mse'] += (sq_err * mask).sum().item() / denom.item()
+        self.region_count[f'{name}_mae'] += 1
+        self.region_count[f'{name}_mse'] += 1
+
+    def _update_region_metrics(self, pred, target, gt_specular, input_img=None):
+        with torch.no_grad():
+            abs_err = torch.abs(pred - target)
+            sq_err = (pred - target) ** 2
+            spec_mask = gt_specular > 0.05
+
+            gx = gt_specular[..., :, 1:] - gt_specular[..., :, :-1]
+            gy = gt_specular[..., 1:, :] - gt_specular[..., :-1, :]
+            gx = F.pad(gx, (0, 1, 0, 0), mode='replicate')
+            gy = F.pad(gy, (0, 0, 0, 1), mode='replicate')
+            boundary_mask = torch.sqrt(gx ** 2 + gy ** 2 + 1e-8) > 0.02
+
+            self._accumulate_masked_error('specular_region', abs_err, sq_err, spec_mask)
+            self._accumulate_masked_error('specular_boundary', abs_err, sq_err, boundary_mask)
+            if input_img is not None:
+                self._accumulate_masked_error('saturated_region', abs_err, sq_err, input_img > 0.98)
 
     def compute(self):
         """
@@ -340,6 +461,8 @@ class MetricTracker:
             self.tot_mse / d,
             self.tot_psnr / d,
             {k: v / d for k, v in self.sub_accum.items()},
+            {k: self.region_accum[k] / max(self.region_count[k], 1)
+             for k in self.region_accum.keys()},
         )
 
 
@@ -355,14 +478,19 @@ def train_one_epoch(model, loader, criterion, optimizer, scheduler,
     返回:
         avg_loss  : float，平均总损失
         avg_ssim  : float，平均 SSIM（漫反射分支，越高越好）
-        avg_mae   : float，平均 MAE（漫反射分支）
+        avg_mae   : float，平均 True MAE（漫反射分支）
         avg_mse   : float，平均 MSE（漫反射分支）
         avg_psnr  : float，平均 PSNR（漫反射分支，dB）
         avg_subs  : dict，所有子损失项的 epoch 平均值
+        train_info: dict，记录 spike batch 数和实际 optimizer step 数
     """
     model.train()
     tracker = MetricTracker()
     optimizer.zero_grad()
+    valid_accum = 0
+    optimizer_steps = 0
+    spike_batches = 0
+    nonfinite_batches = 0
 
     pbar = tqdm(enumerate(loader), total=len(loader),
                 desc=f'Train {epoch+1}/{total_epochs}', leave=False)
@@ -382,7 +510,7 @@ def train_one_epoch(model, loader, criterion, optimizer, scheduler,
         # NaN / Inf 保护
         if not torch.isfinite(loss):
             tqdm.write(f'[WARNING] Epoch {epoch+1} Batch {i+1}: loss NaN/Inf, 跳过')
-            optimizer.zero_grad()
+            nonfinite_batches += 1
             continue
 
         # [FIX] 损失尖峰保护：如果单批损失超过历史均值的 10 倍，跳过该批次
@@ -393,15 +521,16 @@ def train_one_epoch(model, loader, criterion, optimizer, scheduler,
             if _avg_so_far > 0 and _current_loss_val > _avg_so_far * 10.0:
                 tqdm.write(f'[WARNING] Epoch {epoch+1} Batch {i+1}: '
                            f'loss spike {_current_loss_val:.4f} >> avg {_avg_so_far:.4f}, 跳过')
-                optimizer.zero_grad()
+                spike_batches += 1
                 continue
 
         if device.type == 'cuda':
             scaler.scale(loss).backward()
         else:
             loss.backward()
+        valid_accum += 1
 
-        if (i + 1) % accum == 0 or (i + 1) == len(loader):
+        if valid_accum >= accum or ((i + 1) == len(loader) and valid_accum > 0):
             if device.type == 'cuda':
                 scaler.unscale_(optimizer)
                 nn.utils.clip_grad_norm_(model.parameters(), max_norm)
@@ -415,10 +544,12 @@ def train_one_epoch(model, loader, criterion, optimizer, scheduler,
             optimizer.zero_grad()
             if ema:
                 ema.update()
+            optimizer_steps += 1
+            valid_accum = 0
 
         # 使用 MetricTracker 统一累积全部指标（含 MSE / PSNR）
         with torch.no_grad():
-            tracker.update(ld, out['r'].float(), tgt.float())
+            tracker.update(ld, out['r'].float(), tgt.float(), gt_s.float(), inp.float())
 
         # 更新进度条
         pbar.set_postfix({
@@ -427,8 +558,30 @@ def train_one_epoch(model, loader, criterion, optimizer, scheduler,
             'l1':   f"{ld.get('l1', ld.get('mae', 0.0)):.4f}",
         })
 
-    avg_loss, avg_ssim, avg_mae, avg_mse, avg_psnr, avg_subs = tracker.compute()
-    return avg_loss, avg_ssim, avg_mae, avg_mse, avg_psnr, avg_subs
+    # 如果 epoch 末尾遇到异常 batch，仍需提交之前已累积的正常梯度。
+    if valid_accum > 0:
+        if device.type == 'cuda':
+            scaler.unscale_(optimizer)
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm)
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm)
+            optimizer.step()
+        if scheduler:
+            scheduler.step()
+        optimizer.zero_grad()
+        if ema:
+            ema.update()
+        optimizer_steps += 1
+
+    avg_loss, avg_ssim, avg_mae, avg_mse, avg_psnr, avg_subs, region_metrics = tracker.compute()
+    train_info = {
+        'spike_batches': spike_batches,
+        'nonfinite_batches': nonfinite_batches,
+        'optimizer_steps': optimizer_steps,
+    }
+    return avg_loss, avg_ssim, avg_mae, avg_mse, avg_psnr, avg_subs, region_metrics, train_info
 
 
 def _tta_forward(model, inp):
@@ -460,7 +613,7 @@ def validate(model, loader, criterion, device, epoch=0, total_epochs=0,
     返回:
         avg_loss  : float，平均总损失
         avg_ssim  : float，平均 SSIM（漫反射分支，越高越好）
-        avg_mae   : float，平均 MAE（漫反射分支）
+        avg_mae   : float，平均 True MAE（漫反射分支）
         avg_mse   : float，平均 MSE（漫反射分支）
         avg_psnr  : float，平均 PSNR（漫反射分支，dB）
         avg_subs  : dict，所有子损失项的 epoch 平均值
@@ -480,7 +633,7 @@ def validate(model, loader, criterion, device, epoch=0, total_epochs=0,
         if not torch.isfinite(loss):
             continue
 
-        tracker.update(ld, out['r'].float(), tgt.float())
+        tracker.update(ld, out['r'].float(), tgt.float(), gt_s.float(), inp.float())
 
     return tracker.compute()
 
@@ -602,7 +755,9 @@ def build_fixed_visualization_loader(val_dataset, num_samples, num_workers,
         batch_size=sample_count,
         shuffle=False,
         num_workers=num_workers,
-        pin_memory=pin_memory)
+        pin_memory=pin_memory,
+        worker_init_fn=seed_worker,
+        generator=make_generator(seed, offset=1))
     return vis_loader, vis_indices, seed
 
 
@@ -612,7 +767,7 @@ def build_fixed_visualization_loader(val_dataset, num_samples, num_workers,
 
 def plot_training_history(history, output_folder, total_epochs):
     """
-    绘制完整训练历史曲线（Loss / SSIM / MAE / MSE），保存为 training_history.png。
+    绘制完整训练历史曲线（Loss / SSIM / True MAE / MSE），保存为 training_history.png。
 
     布局：4 行 × 2 列（参考 train.py 风格）
         左列：Train vs Val 折线图
@@ -624,7 +779,7 @@ def plot_training_history(history, output_folder, total_epochs):
     pairs = [
         ('train_losses', 'val_losses',  'Loss',  'purple'),
         ('train_ssims',  'val_ssims',   'SSIM',  'green'),
-        ('train_maes',   'val_maes',    'MAE',   'orange'),
+        ('train_maes',   'val_maes',    'True MAE',   'orange'),
         ('train_mses',   'val_mses',    'MSE',   'teal'),
     ]
 
@@ -634,13 +789,13 @@ def plot_training_history(history, output_folder, total_epochs):
     left_titles = [
         'Train vs Val Loss',
         'Train vs Val SSIM (Diffuse)',
-        'Train vs Val MAE (Diffuse)',
+        'Train vs Val True MAE (Diffuse)',
         'Train vs Val MSE (Diffuse)',
     ]
     right_titles = [
         'Loss Gap (filled)',
         'SSIM Gap (filled)',
-        'MAE Gap (filled)',
+        'True MAE Gap (filled)',
         'MSE Gap (filled)',
     ]
 
@@ -652,10 +807,10 @@ def plot_training_history(history, output_folder, total_epochs):
 
         # 左：折线图
         axes[row, 0].plot(epochs_range, t_data, 'b-o',
-                          label=f'Train {label}' + (' (Diffuse)' if label in ('MAE', 'MSE') else ''),
+                          label=f'Train {label}' + (' (Diffuse)' if label in ('True MAE', 'MSE') else ''),
                           linewidth=2, markersize=3)
         axes[row, 0].plot(epochs_range, v_data, 'r-s',
-                          label=f'Val {label}' + (' (Diffuse)' if label in ('MAE', 'MSE') else ''),
+                          label=f'Val {label}' + (' (Diffuse)' if label in ('True MAE', 'MSE') else ''),
                           linewidth=2, markersize=3)
         axes[row, 0].set_xlabel('Epoch', fontsize=11)
         axes[row, 0].set_ylabel(label, fontsize=11)
@@ -692,7 +847,7 @@ def plot_training_history(history, output_folder, total_epochs):
 
 def plot_individual_curves(history, output_folder, total_epochs):
     """
-    将 Loss / SSIM / MAE / MSE 四条训练曲线分别保存为独立图片，
+    将 Loss / SSIM / True MAE / MSE 四条训练曲线分别保存为独立图片，
     放在 output_folder/training_curves/ 文件夹中。
 
     每张图包含 Train vs Val 两条曲线。
@@ -705,7 +860,7 @@ def plot_individual_curves(history, output_folder, total_epochs):
     items = [
         ('train_losses', 'val_losses', 'Loss',  '损失值 (Loss)', 'loss'),
         ('train_ssims',  'val_ssims',  'SSIM',  'SSIM',          'ssim'),
-        ('train_maes',   'val_maes',   'MAE',   'MAE',           'mae'),
+        ('train_maes',   'val_maes',   'True MAE',   'True MAE', 'mae'),
         ('train_mses',   'val_mses',   'MSE',   'MSE',           'mse'),
     ]
 
@@ -842,20 +997,29 @@ def plot_training_curves_realtime(history, output_folder, current_epoch):
 def print_epoch_log(ep, total_epochs, epoch_time, avg_epoch_time, eta,
                     tl, ts, tm, train_mse, train_psnr,
                     vl, vs, vm, val_mse, val_psnr,
-                    train_subs, val_subs, weights, current_lr, device,
+                    train_subs, val_subs, weights, lr_groups, train_info, device,
                     composite, best_val_ssim, best_val_loss):
     """紧凑版 epoch 日志输出。"""
     sep = '=' * 78
     sep2 = '-' * 78
 
     print(f"\n{sep}")
-    print(f"  Epoch [{ep+1:03d}/{total_epochs}]  耗时: {epoch_time:.1f}s | 均: {avg_epoch_time:.1f}s/ep | ETA: {eta} | LR: {current_lr:.8f}")
+    print(f"  Epoch [{ep+1:03d}/{total_epochs}]  耗时: {epoch_time:.1f}s | 均: {avg_epoch_time:.1f}s/ep | ETA: {eta}")
+    print(f"  LR Groups: {format_lr_groups(lr_groups)}")
     print(f"  {sep2}")
     print(f"  {'指标':<16s}  {'Train':>12s}  {'Val':>12s}  {'Gap':>12s}")
     print(f"  {sep2}")
     print(f"  {'Total Loss':<16s}  {tl:>12.6f}  {vl:>12.6f}  {abs(tl-vl):>12.6f}")
     print(f"  {'SSIM':<16s}  {ts:>12.4f}  {vs:>12.4f}  {abs(ts-vs):>12.4f}")
-    print(f"  {'MAE':<16s}  {tm:>12.6f}  {vm:>12.6f}  {abs(tm-vm):>12.6f}")
+    train_msssim = metric_from_loss(train_subs.get('msssim'))
+    val_msssim = metric_from_loss(val_subs.get('msssim'))
+    train_ssim_mix = metric_from_loss(train_subs.get('ssim_mix'))
+    val_ssim_mix = metric_from_loss(val_subs.get('ssim_mix'))
+    if not math.isnan(train_msssim) and not math.isnan(val_msssim):
+        print(f"  {'MS-SSIM':<16s}  {train_msssim:>12.4f}  {val_msssim:>12.4f}  {abs(train_msssim-val_msssim):>12.4f}")
+    if not math.isnan(train_ssim_mix) and not math.isnan(val_ssim_mix):
+        print(f"  {'SSIM Mix':<16s}  {train_ssim_mix:>12.4f}  {val_ssim_mix:>12.4f}  {abs(train_ssim_mix-val_ssim_mix):>12.4f}")
+    print(f"  {'True MAE':<16s}  {tm:>12.6f}  {vm:>12.6f}  {abs(tm-vm):>12.6f}")
     print(f"  {'MSE':<16s}  {train_mse:>12.6f}  {val_mse:>12.6f}  {abs(train_mse-val_mse):>12.6f}")
     print(f"  {'PSNR (dB)':<16s}  {train_psnr:>12.2f}  {val_psnr:>12.2f}  {abs(train_psnr-val_psnr):>12.2f}")
 
@@ -873,6 +1037,12 @@ def print_epoch_log(ep, total_epochs, epoch_time, avg_epoch_time, eta,
             w_str = f'{w_val:.4f}' if w_val is not None else '--'
             name = SUB_LOSS_DISPLAY_NAMES.get(k, k)
             print(f"  {name:<20s}  {t_val:>10.6f}  {v_val:>10.6f}  {w_str:>10s}")
+
+    if train_info:
+        print(f"  {sep2}")
+        print(f"  Train steps: optimizer={train_info.get('optimizer_steps', 0)} | "
+              f"spike_skip={train_info.get('spike_batches', 0)} | "
+              f"nonfinite_skip={train_info.get('nonfinite_batches', 0)}")
 
     # ── 最优 + 显存（合并为一行） ──
     mem_str = ''
@@ -905,6 +1075,10 @@ def save_training_summary(output_folder, cfg, history, best_info, total_time_str
     final_vl_loss = history['val_losses'][-1]   if history['val_losses']   else float('nan')
     final_tr_ssim = history['train_ssims'][-1]  if history['train_ssims']  else float('nan')
     final_vl_ssim = history['val_ssims'][-1]    if history['val_ssims']    else float('nan')
+    final_tr_msssim = history['train_msssims'][-1] if history.get('train_msssims') else float('nan')
+    final_vl_msssim = history['val_msssims'][-1] if history.get('val_msssims') else float('nan')
+    final_tr_ssim_mix = history['train_ssim_mixes'][-1] if history.get('train_ssim_mixes') else float('nan')
+    final_vl_ssim_mix = history['val_ssim_mixes'][-1] if history.get('val_ssim_mixes') else float('nan')
     final_tr_mae  = history['train_maes'][-1]   if history['train_maes']   else float('nan')
     final_vl_mae  = history['val_maes'][-1]     if history['val_maes']     else float('nan')
     final_vl_mse  = history['val_mses'][-1]     if history.get('val_mses') else None
@@ -924,8 +1098,13 @@ def save_training_summary(output_folder, cfg, history, best_info, total_time_str
         f.write(f'  Total Epochs      : {actual_epochs}\n')
         f.write(f'  Batch Size        : {cfg["BATCH_SIZE"]}\n')
         f.write(f'  Learning Rate     : {cfg["BASE_LR"]}\n')
+        f.write(f'  Seed              : {cfg.get("SEED")}\n')
+        final_lr_groups = cfg.get('FINAL_LR_GROUPS')
+        if final_lr_groups:
+            f.write(f'  Final LR Groups   : {format_lr_groups(final_lr_groups)}\n')
         f.write(f'  Grad Accum Steps  : {cfg["ACCUMULATION_STEPS"]}'
                 f'  (effective batch = {cfg["BATCH_SIZE"] * cfg["ACCUMULATION_STEPS"]})\n')
+        f.write(f'  Scheduler Steps/Ep: {cfg.get("SCHEDULER_ITERS_PER_EPOCH")}\n')
         # 格式化图像尺寸
         img_sz = cfg['IMAGE_SIZE']
         if img_sz is None:
@@ -940,11 +1119,23 @@ def save_training_summary(output_folder, cfg, history, best_info, total_time_str
         f.write(f'  Use GN            : {cfg["USE_GN"]}\n')
         f.write(f'  Use EMA           : {cfg["USE_EMA"]}\n')
         f.write(f'  Use OHEM          : {cfg["USE_OHEM"]}\n')
+        f.write(f'  OHEM Ratio        : {cfg.get("OHEM_START_RATIO", 0.3)}'
+                f' -> {cfg.get("OHEM_FINAL_RATIO", 0.3)}'
+                f' (decay_start={cfg.get("OHEM_DECAY_START", 0.65)})\n')
+        f.write(f'  Raw/EMA Eval Intv : {cfg.get("RAW_EMA_EVAL_INTERVAL", 0)}\n')
+        f.write(f'  Tukey Window      : {cfg.get("USE_TUKEY_WINDOW", True)}'
+                f' (alpha={cfg.get("TUKEY_ALPHA", 0.25)})\n')
         f.write(f'  Mixed Precision   : Enabled (AMP)\n')
         f.write(f'  Val Vis Interval  : {cfg.get("VIS_EVERY_N_EPOCHS", 10)}\n')
         f.write(f'  Val Vis Samples   : {cfg.get("VIS_NUM_SAMPLES", 2)}\n')
         f.write(f'  Val Vis Seed Used : {cfg.get("VIS_SAMPLE_SEED_USED")}\n')
         f.write(f'  Val Vis Indices   : {cfg.get("VIS_SAMPLE_INDICES", [])}\n\n')
+        pretrained_status = cfg.get('PRETRAINED_STATUS', [])
+        if pretrained_status:
+            f.write('  [Pretrained Status]\n')
+            for status in pretrained_status:
+                f.write(f'  - {status}\n')
+            f.write('\n')
 
         # ② 最优模型
         f.write(sep)
@@ -956,7 +1147,11 @@ def save_training_summary(output_folder, cfg, history, best_info, total_time_str
             f.write(f'  Epoch             : {info["epoch"]}\n')
             f.write(f'  Val Loss          : {info["loss"]:.6f}\n')
             f.write(f'  Val SSIM          : {info["ssim"]:.4f}\n')
-            f.write(f'  Val MAE           : {info["mae"]:.6f}\n')
+            if 'msssim' in info and info['msssim'] is not None:
+                f.write(f'  Val MS-SSIM       : {info["msssim"]:.4f}\n')
+            if 'ssim_mix' in info and info['ssim_mix'] is not None:
+                f.write(f'  Val SSIM Mix      : {info["ssim_mix"]:.4f}\n')
+            f.write(f'  Val True MAE      : {info["mae"]:.6f}\n')
             if 'mse' in info and info['mse'] is not None:
                 f.write(f'  Val MSE           : {info["mse"]:.6f}\n')
             if 'psnr' in info and info['psnr'] is not None:
@@ -972,12 +1167,40 @@ def save_training_summary(output_folder, cfg, history, best_info, total_time_str
         f.write(f'  Val   Loss        : {final_vl_loss:.6f}\n')
         f.write(f'  Train SSIM        : {final_tr_ssim:.4f}\n')
         f.write(f'  Val   SSIM        : {final_vl_ssim:.4f}\n')
-        f.write(f'  Train MAE         : {final_tr_mae:.6f}\n')
-        f.write(f'  Val   MAE         : {final_vl_mae:.6f}\n')
+        f.write(f'  Train MS-SSIM     : {final_tr_msssim:.4f}\n')
+        f.write(f'  Val   MS-SSIM     : {final_vl_msssim:.4f}\n')
+        f.write(f'  Train SSIM Mix    : {final_tr_ssim_mix:.4f}\n')
+        f.write(f'  Val   SSIM Mix    : {final_vl_ssim_mix:.4f}\n')
+        f.write(f'  Train True MAE    : {final_tr_mae:.6f}\n')
+        f.write(f'  Val   True MAE    : {final_vl_mae:.6f}\n')
         if final_vl_mse is not None:
             f.write(f'  Val   MSE         : {final_vl_mse:.6f}\n')
         if final_vl_psnr is not None:
             f.write(f'  Val   PSNR        : {final_vl_psnr:.2f} dB\n')
+        total_spikes = sum(history.get('spike_batches', []))
+        total_nonfinite = sum(history.get('nonfinite_batches', []))
+        total_optimizer_steps = sum(history.get('optimizer_steps', []))
+        f.write(f'  Spike Batches     : {total_spikes}\n')
+        f.write(f'  Nonfinite Batches : {total_nonfinite}\n')
+        f.write(f'  Optimizer Steps   : {total_optimizer_steps}\n')
+        if history.get('ohem_ratios'):
+            f.write(f'  Final OHEM Ratio  : {history["ohem_ratios"][-1]:.4f}\n')
+        val_regions = history.get('val_region_metrics', {})
+        if val_regions:
+            f.write('\n  [Final Hard-Region Metrics]\n')
+            for k in sorted(val_regions.keys()):
+                vals = val_regions[k]
+                if vals:
+                    f.write(f'  {k:<24s}: {vals[-1]:.6f}\n')
+        raw_ssims = [x for x in history.get('raw_val_ssims', []) if not math.isnan(x)]
+        if raw_ssims:
+            last_idx = max(i for i, x in enumerate(history.get('raw_val_ssims', [])) if not math.isnan(x))
+            f.write('\n  [Last Raw vs EMA Validation]\n')
+            f.write(f'  Epoch             : {last_idx + 1}\n')
+            f.write(f'  Raw Val Loss      : {history["raw_val_losses"][last_idx]:.6f}\n')
+            f.write(f'  Raw Val SSIM      : {history["raw_val_ssims"][last_idx]:.4f}\n')
+            f.write(f'  EMA Val Loss      : {history["val_losses"][last_idx]:.6f}\n')
+            f.write(f'  EMA Val SSIM      : {history["val_ssims"][last_idx]:.4f}\n')
 
         # 子损失分解（最终 epoch）
         val_sub = history.get('val_sub_losses', {})
@@ -1033,6 +1256,10 @@ def train_model(cfg):
         history: dict，包含全部训练历史与最优模型信息
     """
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    seed = cfg.get('SEED')
+    set_global_seed(seed)
+    if seed is not None:
+        print(f"随机种子: {int(seed)}")
     if device.type == 'cuda':
         torch.cuda.empty_cache()
         print(f"已清理 CUDA 缓存，当前显存: {torch.cuda.memory_allocated(device)/1024**3:.2f} GB")
@@ -1064,6 +1291,12 @@ def train_model(cfg):
     if cfg['USE_GN']:
         print("[GN] BN -> GN 替换")
         replace_bn_with_gn(model, 8)
+    tukey_changed = set_fourier_tukey_window(
+        model,
+        enabled=cfg.get('USE_TUKEY_WINDOW', True),
+        alpha=cfg.get('TUKEY_ALPHA', 0.25))
+    print(f"[FourierUnit] Tukey window={cfg.get('USE_TUKEY_WINDOW', True)} "
+          f"alpha={cfg.get('TUKEY_ALPHA', 0.25)} modules={tukey_changed}")
     model.to(device)
 
     total_params = sum(p.numel() for p in model.parameters())
@@ -1096,7 +1329,7 @@ def train_model(cfg):
             resize=img_hw, paired_transform=None)
         train_size = int(cfg['TRAIN_SPLIT_RATIO'] * len(full_ds))
         val_size = len(full_ds) - train_size
-        g = torch.Generator().manual_seed(42)
+        g = make_generator(seed if seed is not None else 42)
         rand_idx = torch.randperm(len(full_ds), generator=g).tolist()
         train_ds = torch.utils.data.Subset(full_ds, rand_idx[:train_size])
         val_ds = torch.utils.data.Subset(full_ds_no_aug, rand_idx[train_size:])
@@ -1104,11 +1337,15 @@ def train_model(cfg):
     train_loader = DataLoader(
         train_ds, batch_size=cfg['BATCH_SIZE'], shuffle=True,
         num_workers=cfg['NUM_WORKERS'],
-        pin_memory=(device.type == 'cuda'), drop_last=True)
+        pin_memory=(device.type == 'cuda'), drop_last=False,
+        worker_init_fn=seed_worker if seed is not None else None,
+        generator=make_generator(seed, offset=101))
     val_loader = DataLoader(
         val_ds, batch_size=cfg['BATCH_SIZE'], shuffle=False,
         num_workers=cfg['NUM_WORKERS'],
-        pin_memory=(device.type == 'cuda'))
+        pin_memory=(device.type == 'cuda'),
+        worker_init_fn=seed_worker if seed is not None else None,
+        generator=make_generator(seed, offset=202))
 
     print(f"数据集: 训练={len(train_ds)}, 验证={len(val_ds)}")
     print(f"批次大小: {cfg['BATCH_SIZE']} × 累积{cfg['ACCUMULATION_STEPS']}"
@@ -1119,12 +1356,15 @@ def train_model(cfg):
     vis_num_samples = int(cfg.get('VIS_NUM_SAMPLES', 2))
     vis_loader = None
     if vis_interval > 0 and vis_num_samples > 0:
+        vis_seed_cfg = cfg.get('VIS_SAMPLE_SEED')
+        if vis_seed_cfg is None and seed is not None:
+            vis_seed_cfg = int(seed) + 303
         vis_loader, vis_indices, vis_seed = build_fixed_visualization_loader(
             val_ds,
             num_samples=vis_num_samples,
             num_workers=cfg['NUM_WORKERS'],
             pin_memory=(device.type == 'cuda'),
-            seed=cfg.get('VIS_SAMPLE_SEED'))
+            seed=vis_seed_cfg)
         cfg['VIS_SAMPLE_SEED_USED'] = vis_seed
         cfg['VIS_SAMPLE_INDICES'] = vis_indices
         print(f"可视化样本: 本次训练固定抽取 {len(vis_indices)} 张 "
@@ -1138,20 +1378,27 @@ def train_model(cfg):
     criterion = EnhancedCompositeLoss(
         use_perceptual=True, use_ohem=cfg['USE_OHEM']).to(device)
     ws = ImprovedWeightScheduler(cfg['EPOCHS'])
+    pretrained_status = collect_pretrained_status(model, criterion)
+    cfg['PRETRAINED_STATUS'] = pretrained_status
 
     # 打印损失函数结构
     print(f"\n损失函数: EnhancedCompositeLoss")
     print(f"  use_perceptual={True}, use_ohem={cfg['USE_OHEM']}")
     print(f"  子损失项: {', '.join(SUB_LOSS_KEYS)}")
+    print("\n预训练权重状态:")
+    for status in pretrained_status:
+        print(f"  - {status}")
 
     # ══════════ 4. 优化器 + 调度器 ══════════
     print("\n分层学习率配置:")
     optimizer = build_optimizer_v2(model, cfg['BASE_LR'], cfg['WEIGHT_DECAY'])
+    optimizer_steps_per_epoch = max(1, math.ceil(len(train_loader) / cfg['ACCUMULATION_STEPS']))
+    cfg['SCHEDULER_ITERS_PER_EPOCH'] = optimizer_steps_per_epoch
     scheduler = build_scheduler(
         optimizer,
-        warmup_iters=min(500, len(train_loader) * 3),
+        warmup_iters=min(500, optimizer_steps_per_epoch * 3),
         total_epochs=cfg['EPOCHS'],
-        iters_per_epoch=len(train_loader))
+        iters_per_epoch=optimizer_steps_per_epoch)
 
     # ══════════ 5. AMP + EMA ══════════
     scaler = torch.amp.GradScaler('cuda', enabled=(device.type == 'cuda'))
@@ -1161,6 +1408,8 @@ def train_model(cfg):
     history = {
         'train_losses': [], 'val_losses': [],
         'train_ssims':  [], 'val_ssims':  [],
+        'train_msssims': [], 'val_msssims': [],
+        'train_ssim_mixes': [], 'val_ssim_mixes': [],
         'train_maes':   [], 'val_maes':   [],
         'val_mses':     [], 'val_psnrs':  [],
         # 训练阶段不额外计算 MSE/PSNR，用 placeholder 对齐
@@ -1168,6 +1417,15 @@ def train_model(cfg):
         # 子损失历史：{key: [epoch_1_avg, epoch_2_avg, ...]}
         'train_sub_losses': defaultdict(list),
         'val_sub_losses':   defaultdict(list),
+        'train_region_metrics': defaultdict(list),
+        'val_region_metrics': defaultdict(list),
+        'raw_val_losses': [], 'raw_val_ssims': [], 'raw_val_msssims': [],
+        'raw_val_ssim_mixes': [], 'raw_val_maes': [], 'raw_val_mses': [],
+        'lr_groups': [],
+        'spike_batches': [],
+        'nonfinite_batches': [],
+        'optimizer_steps': [],
+        'ohem_ratios': [],
     }
     epoch_times = []
 
@@ -1177,21 +1435,24 @@ def train_model(cfg):
     best_loss_path      = os.path.join(models_dir, 'best_model_best_loss.pth')
     last_model_path     = os.path.join(models_dir, 'last_model.pth')
 
-    COMPOSITE_ALPHA = 0.7
+    COMPOSITE_SSIM_WEIGHT = 0.7
+    COMPOSITE_MAE_WEIGHT = 0.2
+    COMPOSITE_MSE_WEIGHT = 0.1
+    COMPOSITE_NAME = 'Best Overall (SSIM×0.7 + TrueMAE×0.2 + MSE×0.1)'
     best_composite  = 0.0
     best_val_ssim   = 0.0
     best_val_loss   = float('inf')
 
     best_info = {
-        'Best Overall (SSIM×0.7 + NormLoss×0.3)': {
+        COMPOSITE_NAME: {
             'epoch': 0, 'loss': float('inf'), 'ssim': 0.0, 'mae': float('inf'),
-            'mse': None, 'psnr': None, 'path': best_composite_path},
+            'msssim': None, 'ssim_mix': None, 'mse': None, 'psnr': None, 'path': best_composite_path},
         'Best SSIM': {
             'epoch': 0, 'loss': float('inf'), 'ssim': 0.0, 'mae': float('inf'),
-            'mse': None, 'psnr': None, 'path': best_ssim_path},
+            'msssim': None, 'ssim_mix': None, 'mse': None, 'psnr': None, 'path': best_ssim_path},
         'Best Loss': {
             'epoch': 0, 'loss': float('inf'), 'ssim': 0.0, 'mae': float('inf'),
-            'mse': None, 'psnr': None, 'path': best_loss_path},
+            'msssim': None, 'ssim_mix': None, 'mse': None, 'psnr': None, 'path': best_loss_path},
     }
 
     # 早停
@@ -1202,10 +1463,14 @@ def train_model(cfg):
     print("训练配置总览:")
     print(f"  训练轮数    : {cfg['EPOCHS']}")
     print(f"  学习率      : {cfg['BASE_LR']}")
+    print(f"  随机种子    : {seed}")
     print(f"  图像分辨率  : {img_hw[0]} × {img_hw[1]} (H × W)")
     print(f"  Use GN      : {cfg['USE_GN']}")
     print(f"  Use EMA     : {cfg['USE_EMA']} (decay={cfg['EMA_DECAY']})")
-    print(f"  Use OHEM    : {cfg['USE_OHEM']}")
+    print(f"  Use OHEM    : {cfg['USE_OHEM']} "
+          f"(ratio {cfg.get('OHEM_START_RATIO', 0.3)} -> {cfg.get('OHEM_FINAL_RATIO', 0.3)})")
+    print(f"  Tukey Window: {cfg.get('USE_TUKEY_WINDOW', True)} "
+          f"(alpha={cfg.get('TUKEY_ALPHA', 0.25)})")
     print(f"  早停策略    : {'启用 (patience=' + str(cfg['EARLY_STOPPING_PATIENCE']) + ')' if cfg['USE_EARLY_STOPPING'] else '禁用'}")
     print(f"  输出目录    : {os.path.abspath(output_folder)}")
     print(f"\n模型保存路径:")
@@ -1213,7 +1478,7 @@ def train_model(cfg):
     print(f"  SSIM最优 -> {best_ssim_path}")
     print(f"  Loss最优 -> {best_loss_path}")
     print(f"  最新模型 -> {last_model_path}")
-    print(f"  综合评分权重: SSIM×{COMPOSITE_ALPHA:.1f} + Loss归一化×{1 - COMPOSITE_ALPHA:.1f}")
+    print(f"  综合评分权重: SSIM×{COMPOSITE_SSIM_WEIGHT:.1f} + TrueMAE归一化×{COMPOSITE_MAE_WEIGHT:.1f} + MSE归一化×{COMPOSITE_MSE_WEIGHT:.1f}")
 
     # ══════════ 7. 训练循环 ══════════
     start_time_total = time.time()
@@ -1225,9 +1490,12 @@ def train_model(cfg):
 
         # 动态权重调度
         w = ws.step(criterion, ep)
+        ohem_state = apply_ohem_schedule(criterion, ep, cfg['EPOCHS'], cfg)
+        if ohem_state:
+            w['ohem_ratio'] = ohem_state.get('ohem_ratio', 0.0)
 
         # --- 训练 ---
-        tl, ts, tm, train_mse, train_psnr, train_subs = train_one_epoch(
+        tl, ts, tm, train_mse, train_psnr, train_subs, train_regions, train_info = train_one_epoch(
             model, train_loader, criterion, optimizer, scheduler,
             scaler, ema, device,
             accum=cfg['ACCUMULATION_STEPS'],
@@ -1235,12 +1503,19 @@ def train_model(cfg):
             epoch=ep, total_epochs=cfg['EPOCHS'])
 
         # --- 验证 ---
+        _use_tta = False
+        raw_metrics = None
+        raw_interval = int(cfg.get('RAW_EMA_EVAL_INTERVAL', 0) or 0)
+        if ema and raw_interval > 0 and (ep == 0 or (ep + 1) % raw_interval == 0):
+            raw_metrics = validate(
+                model, val_loader, criterion, device,
+                epoch=ep, total_epochs=cfg['EPOCHS'], use_tta=_use_tta)
+
         if ema:
             ema.apply_shadow()
         # [P15-FIX] TTA 会导致验证指标突变，训练过程中禁用以保持一致性
         # TTA 仅在最终评估/推理时使用，不影响训练中的模型选择
-        _use_tta = False
-        vl, vs, vm, val_mse, val_psnr, val_subs = validate(
+        vl, vs, vm, val_mse, val_psnr, val_subs, val_regions = validate(
             model, val_loader, criterion, device,
             epoch=ep, total_epochs=cfg['EPOCHS'], use_tta=_use_tta)
         if ema:
@@ -1254,41 +1529,83 @@ def train_model(cfg):
         history['val_losses'].append(vl)
         history['train_ssims'].append(ts)
         history['val_ssims'].append(vs)
+        train_msssim = metric_from_loss(train_subs.get('msssim'))
+        val_msssim = metric_from_loss(val_subs.get('msssim'))
+        train_ssim_mix = metric_from_loss(train_subs.get('ssim_mix'))
+        val_ssim_mix = metric_from_loss(val_subs.get('ssim_mix'))
+        history['train_msssims'].append(train_msssim)
+        history['val_msssims'].append(val_msssim)
+        history['train_ssim_mixes'].append(train_ssim_mix)
+        history['val_ssim_mixes'].append(val_ssim_mix)
         history['train_maes'].append(tm)
         history['val_maes'].append(vm)
         history['val_mses'].append(val_mse)
         history['val_psnrs'].append(val_psnr)
         history['train_mses'].append(train_mse)
         history['train_psnrs'].append(train_psnr)
+        if raw_metrics is not None:
+            raw_vl, raw_vs, raw_vm, raw_mse, raw_psnr, raw_subs, raw_regions = raw_metrics
+            history['raw_val_losses'].append(raw_vl)
+            history['raw_val_ssims'].append(raw_vs)
+            history['raw_val_msssims'].append(metric_from_loss(raw_subs.get('msssim')))
+            history['raw_val_ssim_mixes'].append(metric_from_loss(raw_subs.get('ssim_mix')))
+            history['raw_val_maes'].append(raw_vm)
+            history['raw_val_mses'].append(raw_mse)
+        else:
+            raw_regions = {}
+            for key in ('raw_val_losses', 'raw_val_ssims', 'raw_val_msssims',
+                        'raw_val_ssim_mixes', 'raw_val_maes', 'raw_val_mses'):
+                history[key].append(float('nan'))
+        history['spike_batches'].append(train_info.get('spike_batches', 0))
+        history['nonfinite_batches'].append(train_info.get('nonfinite_batches', 0))
+        history['optimizer_steps'].append(train_info.get('optimizer_steps', 0))
+        history['ohem_ratios'].append(w.get('ohem_ratio', float('nan')))
 
         # 记录子损失历史
         for k, v in train_subs.items():
             history['train_sub_losses'][k].append(v)
         for k, v in val_subs.items():
             history['val_sub_losses'][k].append(v)
+        for k, v in train_regions.items():
+            history['train_region_metrics'][k].append(v)
+        for k, v in val_regions.items():
+            history['val_region_metrics'][k].append(v)
 
         # ETA
         avg_epoch_time = np.mean(epoch_times)
         remaining = avg_epoch_time * (cfg['EPOCHS'] - ep - 1)
         eta = timedelta(seconds=int(remaining))
-        current_lr = optimizer.param_groups[0]['lr']
+        lr_groups = get_lr_groups(optimizer)
+        history['lr_groups'].append(lr_groups.copy())
 
         # [FIX] LR 回弹检测：若 LR 比上一 epoch 增加超过 50%，发出警告
-        if ep > 0 and hasattr(train_model, '_prev_lr'):
-            if current_lr > train_model._prev_lr * 1.5 and current_lr > 1e-5:
-                print(f"  ⚠️ [LR 异常] LR 从 {train_model._prev_lr:.2e} 跳升至 {current_lr:.2e}！")
-        train_model._prev_lr = current_lr
+        if ep > 0 and hasattr(train_model, '_prev_lr_groups'):
+            for name, lr in lr_groups.items():
+                prev_lr = train_model._prev_lr_groups.get(name)
+                if prev_lr is not None and lr > prev_lr * 1.5 and lr > 1e-5:
+                    print(f"  ⚠️ [LR 异常] {name}: {prev_lr:.2e} -> {lr:.2e}")
+        train_model._prev_lr_groups = lr_groups.copy()
 
         # ── 多指标最优模型保存 ──
-        composite = COMPOSITE_ALPHA * vs + (1.0 - COMPOSITE_ALPHA) * (1.0 / (1.0 + vl))
+        composite = (
+            COMPOSITE_SSIM_WEIGHT * vs
+            + COMPOSITE_MAE_WEIGHT * (1.0 / (1.0 + vm))
+            + COMPOSITE_MSE_WEIGHT * (1.0 / (1.0 + val_mse))
+        )
 
         # ── 结构化日志 ──
         print_epoch_log(
             ep, cfg['EPOCHS'], epoch_time, avg_epoch_time, eta,
             tl, ts, tm, train_mse, train_psnr,
             vl, vs, vm, val_mse, val_psnr,
-            train_subs, val_subs, w, current_lr, device,
+            train_subs, val_subs, w, lr_groups, train_info, device,
             composite, best_val_ssim, best_val_loss)
+        if raw_metrics is not None:
+            print(f"  Raw vs EMA: raw_ssim={raw_metrics[1]:.4f}, ema_ssim={vs:.4f}, "
+                  f"raw_loss={raw_metrics[0]:.6f}, ema_loss={vl:.6f}")
+        if val_regions:
+            region_line = ', '.join(f'{k}={v:.6f}' for k, v in sorted(val_regions.items()))
+            print(f"  Hard-region metrics (Val): {region_line}")
 
         # ── 模型保存逻辑 ──
         improved_flags = []
@@ -1303,6 +1620,7 @@ def train_model(cfg):
             }
             if ema:
                 sd['ema'] = ema.shadow
+                sd['ema_shadow'] = ema.shadow
             if scaler is not None:
                 sd['scaler_state_dict'] = scaler.state_dict()
             torch.save(sd, path)
@@ -1313,8 +1631,9 @@ def train_model(cfg):
             early_stopping_counter = 0
             _save_best(model.state_dict(), best_composite_path)
             improved_flags.append(f'综合↑{composite:.4f}')
-            best_info['Best Overall (SSIM×0.7 + NormLoss×0.3)'].update(
+            best_info[COMPOSITE_NAME].update(
                 {'epoch': ep + 1, 'loss': vl, 'ssim': vs, 'mae': vm,
+                 'msssim': val_msssim, 'ssim_mix': val_ssim_mix,
                  'mse': val_mse, 'psnr': val_psnr})
         else:
             early_stopping_counter += 1
@@ -1326,6 +1645,7 @@ def train_model(cfg):
             improved_flags.append(f'SSIM↑{vs:.4f}')
             best_info['Best SSIM'].update(
                 {'epoch': ep + 1, 'loss': vl, 'ssim': vs, 'mae': vm,
+                 'msssim': val_msssim, 'ssim_mix': val_ssim_mix,
                  'mse': val_mse, 'psnr': val_psnr})
 
         # 策略 C：Loss 最优
@@ -1335,6 +1655,7 @@ def train_model(cfg):
             improved_flags.append(f'Loss↓{vl:.6f}')
             best_info['Best Loss'].update(
                 {'epoch': ep + 1, 'loss': vl, 'ssim': vs, 'mae': vm,
+                 'msssim': val_msssim, 'ssim_mix': val_ssim_mix,
                  'mse': val_mse, 'psnr': val_psnr})
 
         if improved_flags:
@@ -1375,6 +1696,9 @@ def train_model(cfg):
                 ckpt['scheduler_state_dict'] = scheduler.state_dict()
             if scaler is not None:
                 ckpt['scaler_state_dict'] = scaler.state_dict()
+            if ema:
+                ckpt['ema'] = ema.shadow
+                ckpt['ema_shadow'] = ema.shadow
             torch.save(ckpt, ckpt_path)
             print(f"  检查点已保存: {ckpt_path}")
 
@@ -1384,11 +1708,19 @@ def train_model(cfg):
             break
 
     # ══════════ 8. 保存 last_model ══════════
-    torch.save({
+    last_ckpt = {
         'epoch': ep + 1,
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
-    }, last_model_path)
+    }
+    if scheduler is not None:
+        last_ckpt['scheduler_state_dict'] = scheduler.state_dict()
+    if scaler is not None:
+        last_ckpt['scaler_state_dict'] = scaler.state_dict()
+    if ema:
+        last_ckpt['ema'] = ema.shadow
+        last_ckpt['ema_shadow'] = ema.shadow
+    torch.save(last_ckpt, last_model_path)
 
     # ══════════ 9. 训练总结 ══════════
     total_time = time.time() - start_time_total
@@ -1401,7 +1733,7 @@ def train_model(cfg):
     print(f"  总训练时间   : {total_time_str}")
     print(f"  实际完成轮数 : {actual_epochs}")
     print(f"  最佳综合评分 : {best_composite:.4f}"
-          f"  (Epoch {best_info['Best Overall (SSIM×0.7 + NormLoss×0.3)']['epoch']})")
+          f"  (Epoch {best_info[COMPOSITE_NAME]['epoch']})")
     print(f"  最佳 SSIM    : {best_val_ssim:.4f}"
           f"  (Epoch {best_info['Best SSIM']['epoch']})")
     print(f"  最佳 Loss    : {best_val_loss:.6f}"
@@ -1437,6 +1769,7 @@ def train_model(cfg):
 
     # 训练总结文件
     print("生成训练总结文件...")
+    cfg['FINAL_LR_GROUPS'] = get_lr_groups(optimizer)
     summary_path = save_training_summary(output_folder, cfg, history, best_info, total_time_str)
     print(f"  -> {summary_path}")
 
@@ -1456,7 +1789,7 @@ def train_model(cfg):
     print(f"  │   ├── mae_curve.png")
     print(f"  │   └── mse_curve.png")
     print(f"  ├── val_visualization/              (验证样本可视化)")
-    print(f"  ├── training_history.png            (Loss / SSIM / MAE / MSE 总览)")
+    print(f"  ├── training_history.png            (Loss / SSIM / True MAE / MSE 总览)")
     print(f"  ├── sub_loss_history.png            (子损失项历史曲线)")
     print(f"  ├── training_curves_realtime.png    (实时 Loss + SSIM)")
     print(f"  └── training_summary.txt            (配置 / 最优 Epoch / 总结)")
@@ -1489,15 +1822,16 @@ def main():
     # ╚══════════════════════════════════════════════════════════════╝
 
     # ========== 基础训练参数 ==========
-    EPOCHS                = 400       # 训练总轮数
+    EPOCHS                = 100       # 训练总轮数
     BATCH_SIZE            = 4         # 384 分辨率推荐 2~4
     BASE_LR               = 2e-4     # 基础学习率（分层 LR 以此为基准）
     WEIGHT_DECAY          = 1e-4     # AdamW 权重衰减
     ACCUMULATION_STEPS    = 4        # 梯度累积步数（等效 batch = BATCH_SIZE × 此值）
     GRAD_CLIP_VALUE       = 0.5      # [FIX] 梯度裁剪阈值（从 1.0 降低到 0.5，更稳定）
+    SEED                  = 42       # None=不固定随机性；整数=固定数据划分和随机增强
 
     # ========== 图像与数据参数 ==========
-    IMAGE_SIZE            = (128, 160)  # ⭐ 输入分辨率 (H, W)，支持任意矩形
+    IMAGE_SIZE            = (160, 160)  # ⭐ 输入分辨率 (H, W)，支持任意矩形
     TRAIN_SPLIT_RATIO     = 0.8      # 自动划分时训练集比例（有独立验证集时忽略）
     NUM_WORKERS           = 4        # DataLoader 工作进程数
 
@@ -1506,10 +1840,16 @@ def main():
     USE_EMA               = True     # 指数移动平均
     EMA_DECAY             = 0.9995   # [P16] EMA 衰减系数（调高增加平滑力度）
     USE_OHEM              = True     # 在线难样本挖掘
+    OHEM_START_RATIO      = 0.30     # 前中期难样本比例
+    OHEM_DECAY_START      = 0.65     # 训练后期开始降低 OHEM 强度
+    OHEM_FINAL_RATIO      = 0.10     # 最后一轮难样本比例，0=后期关闭 OHEM
+    RAW_EMA_EVAL_INTERVAL = 10       # 每 N 轮额外验证 raw model；0=禁用
+    USE_TUKEY_WINDOW      = True     # FourierUnit Tukey 窗消融开关
+    TUKEY_ALPHA           = 0.25     # Tukey 窗过渡比例
 
     # ========== 数据目录 ==========
-    INPUT_DIR             = 'data/inputs'
-    TARGET_DIR            = 'data/targets'
+    INPUT_DIR             = 'data3/inputs'
+    TARGET_DIR            = 'data3/targets'
     VAL_INPUT_DIR         = None     # 独立验证集输入目录（None 则自动划分）
     VAL_TARGET_DIR        = None     # 独立验证集目标目录
 
@@ -1541,6 +1881,7 @@ def main():
         'WEIGHT_DECAY':           WEIGHT_DECAY,
         'ACCUMULATION_STEPS':     ACCUMULATION_STEPS,
         'GRAD_CLIP_VALUE':        GRAD_CLIP_VALUE,
+        'SEED':                   SEED,
         'IMAGE_SIZE':             IMAGE_SIZE,
         'TRAIN_SPLIT_RATIO':      TRAIN_SPLIT_RATIO,
         'NUM_WORKERS':            NUM_WORKERS,
@@ -1548,6 +1889,12 @@ def main():
         'USE_EMA':                USE_EMA,
         'EMA_DECAY':              EMA_DECAY,
         'USE_OHEM':               USE_OHEM,
+        'OHEM_START_RATIO':       OHEM_START_RATIO,
+        'OHEM_DECAY_START':       OHEM_DECAY_START,
+        'OHEM_FINAL_RATIO':       OHEM_FINAL_RATIO,
+        'RAW_EMA_EVAL_INTERVAL':  RAW_EMA_EVAL_INTERVAL,
+        'USE_TUKEY_WINDOW':       USE_TUKEY_WINDOW,
+        'TUKEY_ALPHA':            TUKEY_ALPHA,
         'INPUT_DIR':              INPUT_DIR,
         'TARGET_DIR':             TARGET_DIR,
         'VAL_INPUT_DIR':          VAL_INPUT_DIR,

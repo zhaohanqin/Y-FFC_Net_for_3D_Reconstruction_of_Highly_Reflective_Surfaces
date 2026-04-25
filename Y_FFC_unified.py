@@ -129,7 +129,8 @@ class FourierUnit(nn.Module):
     def __init__(self, in_channels, out_channels, groups=1,
                  spatial_scale_factor=None, spatial_scale_mode='bilinear',
                  spectral_pos_encoding=False, use_se=False, se_kwargs=None,
-                 ffc3d=False, fft_norm='ortho'):
+                 ffc3d=False, fft_norm='ortho',
+                 use_tukey_window=True, tukey_alpha=0.25):
         super(FourierUnit, self).__init__()
         self.groups = groups
 
@@ -158,6 +159,8 @@ class FourierUnit(nn.Module):
         self.spectral_pos_encoding = spectral_pos_encoding
         self.ffc3d = ffc3d
         self.fft_norm = fft_norm
+        self.use_tukey_window = use_tukey_window
+        self.tukey_alpha = tukey_alpha
 
     def forward(self, x):
         batch = x.shape[0]
@@ -175,12 +178,15 @@ class FourierUnit(nn.Module):
         if x.dtype == torch.float16:
             x = x.float()
 
-        # [F6][P11] Tukey 窗（α=0.25）：减少频谱泄漏，保留边缘 75% 能量
-        h, w = x.shape[-2], x.shape[-1]
-        win_h = _tukey_window(h, alpha=0.25, device=x.device, dtype=x.dtype)
-        win_w = _tukey_window(w, alpha=0.25, device=x.device, dtype=x.dtype)
-        tukey_2d = torch.outer(win_h, win_w).unsqueeze(0).unsqueeze(0)
-        x_win = x * tukey_2d
+        # [F6][P11] Tukey 窗可做消融；默认保留原行为。
+        if self.use_tukey_window:
+            h, w = x.shape[-2], x.shape[-1]
+            win_h = _tukey_window(h, alpha=self.tukey_alpha, device=x.device, dtype=x.dtype)
+            win_w = _tukey_window(w, alpha=self.tukey_alpha, device=x.device, dtype=x.dtype)
+            tukey_2d = torch.outer(win_h, win_w).unsqueeze(0).unsqueeze(0)
+            x_win = x * tukey_2d
+        else:
+            x_win = x
 
         # 空间域 → 频域
         ffted = torch.fft.rfftn(x_win, dim=fft_dim, norm=self.fft_norm)
@@ -553,7 +559,8 @@ class Attention_block(nn.Module):
         x1 = self.W_x(x)
         psi = self.relu(g1 + x1)
         psi = self.psi(psi)
-        return x * psi
+        gate = 1.0 + 0.5 * (2.0 * psi - 1.0)
+        return x * gate
 
 
 class MultiscaleConvBlock(nn.Module):
@@ -700,6 +707,8 @@ class EnhancedViTEncoderBranch(nn.Module):
         super(EnhancedViTEncoderBranch, self).__init__()
         self.vit_image_size = vit_image_size
         self.extract_layers = list(extract_layers)
+        self.pretrained_loaded = False
+        self.pretrained_status = "vit_b_16: not initialized"
 
         # ---------- 加载 ViT-B/16 ----------
         vit_weights = None
@@ -713,8 +722,25 @@ class EnhancedViTEncoderBranch(nn.Module):
 
         try:
             self.vit = models.vit_b_16(weights=vit_weights)
-        except Exception:
+            self.pretrained_loaded = vit_weights is not None
+            self.pretrained_status = (
+                "vit_b_16: ImageNet pretrained"
+                if self.pretrained_loaded else
+                "vit_b_16: random init (weights unavailable)"
+            )
+        except Exception as exc:
             self.vit = models.vit_b_16(weights=None)
+            self.pretrained_loaded = False
+            self.pretrained_status = f"vit_b_16: random init ({type(exc).__name__})"
+
+        self.register_buffer(
+            "imagenet_mean",
+            torch.tensor([0.485, 0.456, 0.406], dtype=torch.float32).view(1, 3, 1, 1),
+            persistent=False)
+        self.register_buffer(
+            "imagenet_std",
+            torch.tensor([0.229, 0.224, 0.225], dtype=torch.float32).view(1, 3, 1, 1),
+            persistent=False)
 
         if hasattr(self.vit, "heads"):
             self.vit.heads = nn.Identity()
@@ -755,6 +781,9 @@ class EnhancedViTEncoderBranch(nn.Module):
     def forward(self, x):
         if x.size(1) == 1:
             x = x.repeat(1, 3, 1, 1)
+        mean = self.imagenet_mean.to(dtype=x.dtype, device=x.device)
+        std = self.imagenet_std.to(dtype=x.dtype, device=x.device)
+        x = (x - mean) / std
 
         x = F.interpolate(x, size=(self.vit_image_size, self.vit_image_size),
                           mode="bilinear", align_corners=False)
@@ -1012,6 +1041,7 @@ class MSSSIM(nn.Module):
         return lum.mean(), cs.mean()
 
     def forward(self, img1, img2):
+        lum_list = []
         cs_list = []
         for i in range(self.n_scales):
             if i > 0:
@@ -1020,13 +1050,16 @@ class MSSSIM(nn.Module):
                 if img1.shape[-1] < self.window_size or img1.shape[-2] < self.window_size:
                     break
             lum, cs = self._ssim_components(img1, img2)
+            lum_list.append(lum)
             cs_list.append(cs)
         n_actual = len(cs_list)
         w = self.scale_weights[:n_actual].to(img1.device)
         w = w / w.sum()
         msssim = 1.0
-        for i in range(n_actual):
-            msssim = msssim * (torch.clamp(cs_list[i], min=1e-8) ** w[i])
+        for i in range(max(n_actual - 1, 0)):
+            msssim = msssim * (torch.clamp(cs_list[i], min=1e-8, max=1.0) ** w[i])
+        if n_actual > 0:
+            msssim = msssim * (torch.clamp(lum_list[-1], min=1e-8, max=1.0) ** w[n_actual - 1])
         return msssim
 
 
@@ -1056,10 +1089,34 @@ class PerceptualLoss(nn.Module):
     def __init__(self, layers=('relu1_2', 'relu2_2', 'relu3_3'),
                  weights=(1.0, 0.5, 0.25)):
         super(PerceptualLoss, self).__init__()
+        self.pretrained_loaded = False
+        self.pretrained_status = "vgg16: not initialized"
+        vgg_weights = None
         try:
-            vgg = models.vgg16(weights=models.VGG16_Weights.IMAGENET1K_V1).features
+            vgg_weights = models.VGG16_Weights.IMAGENET1K_V1
         except Exception:
+            vgg_weights = None
+        try:
+            vgg = models.vgg16(weights=vgg_weights).features
+            self.pretrained_loaded = vgg_weights is not None
+            self.pretrained_status = (
+                "vgg16: ImageNet pretrained"
+                if self.pretrained_loaded else
+                "vgg16: random init (weights unavailable)"
+            )
+        except Exception as exc:
             vgg = models.vgg16(weights=None).features
+            self.pretrained_loaded = False
+            self.pretrained_status = f"vgg16: random init ({type(exc).__name__})"
+
+        self.register_buffer(
+            "imagenet_mean",
+            torch.tensor([0.485, 0.456, 0.406], dtype=torch.float32).view(1, 3, 1, 1),
+            persistent=False)
+        self.register_buffer(
+            "imagenet_std",
+            torch.tensor([0.229, 0.224, 0.225], dtype=torch.float32).view(1, 3, 1, 1),
+            persistent=False)
 
         layer_map = {'relu1_2': 4, 'relu2_2': 9, 'relu3_3': 16}
         self.slices = nn.ModuleList()
@@ -1078,6 +1135,10 @@ class PerceptualLoss(nn.Module):
         if pred.size(1) == 1:
             pred = pred.repeat(1, 3, 1, 1)
             gt = gt.repeat(1, 3, 1, 1)
+        mean = self.imagenet_mean.to(dtype=pred.dtype, device=pred.device)
+        std = self.imagenet_std.to(dtype=pred.dtype, device=pred.device)
+        pred = (pred - mean) / std
+        gt = (gt - mean) / std
         loss = 0.0
         x, y = pred, gt
         for i, slice_module in enumerate(self.slices):
@@ -1105,6 +1166,19 @@ def compute_edge_weight_map(gt_specular, sigma=3.0, base_weight=1.0, edge_weight
     edge_mag = edge_mag / (batch_max + 1e-8)
     weight_map = base_weight + (edge_weight - base_weight) * edge_mag
     return weight_map
+
+
+def compute_gradient_target(target_img, threshold=0.025, steepness=80.0):
+    """
+    生成稳定的边缘概率监督，避免每张图按 p995 独立归一化导致梯度强度语义漂移。
+    输入支持 (1,H,W) 或 (B,1,H,W)，输出形状与输入一致。
+    """
+    gx = target_img[..., :, 1:] - target_img[..., :, :-1]
+    gy = target_img[..., 1:, :] - target_img[..., :-1, :]
+    gx = F.pad(gx, (0, 1, 0, 0), mode='replicate')
+    gy = F.pad(gy, (0, 0, 0, 1), mode='replicate')
+    mag = torch.sqrt(gx ** 2 + gy ** 2 + 1e-8)
+    return torch.sigmoid((mag - threshold) * steepness).clamp(0.0, 1.0)
 
 
 # --- Specular 专用损失 ---
@@ -1311,14 +1385,18 @@ class EnhancedCompositeLoss(nn.Module):
         """[P4-FIX] 幅度谱 + 相位一致性联合损失（修复数值稳定性）。"""
         p_fft = torch.fft.rfft2(p, norm='ortho')
         g_fft = torch.fft.rfft2(g, norm='ortho')
-        amp_loss = F.l1_loss(torch.abs(p_fft), torch.abs(g_fft))
+        p_amp = torch.abs(p_fft)
+        g_amp = torch.abs(g_fft)
+        amp_loss = F.l1_loss(p_amp, g_amp)
         # 修复：用复数乘法代替 torch.angle() 的不连续梯度
         # cos(angle_p - angle_g) = Re(p_fft * conj(g_fft)) / (|p_fft| * |g_fft|)
-        p_norm = torch.abs(p_fft).clamp(min=1e-8)
-        g_norm = torch.abs(g_fft).clamp(min=1e-8)
+        p_norm = p_amp.clamp(min=1e-8)
+        g_norm = g_amp.clamp(min=1e-8)
         cross = p_fft * g_fft.conj()
-        cos_diff = cross.real / (p_norm * g_norm)
-        phase_loss = (1.0 - cos_diff).mean()
+        cos_diff = torch.clamp(cross.real / (p_norm * g_norm), -1.0, 1.0)
+        phase_weight = (0.5 * (p_amp.detach() + g_amp.detach()))
+        phase_weight = phase_weight / (phase_weight.mean(dim=(-2, -1), keepdim=True) + 1e-8)
+        phase_loss = ((1.0 - cos_diff) * phase_weight).sum() / (phase_weight.sum() + 1e-8)
         return amp_loss + 0.5 * phase_loss
 
     def forward(self, pred_diffuse, target, est_b, gt_specular,
@@ -1370,7 +1448,8 @@ class EnhancedCompositeLoss(nn.Module):
                  self.lambda_dice * l_dice + self.lambda_gc * l_gc)
 
         d = {}
-        for k, v in [('total', total), ('ssim', l_ssim_single), ('l1', l_l1),
+        for k, v in [('total', total), ('ssim', l_ssim_single),
+                      ('msssim', l_msssim), ('ssim_mix', l_ssim), ('l1', l_l1),
                       ('freq', l_freq), ('perceptual', l_percep),
                       ('spec', l_spec), ('stat', l_stat), ('grad', l_grad),
                       ('focal', l_focal), ('dice', l_dice), ('gc', l_gc)]:
@@ -1401,6 +1480,7 @@ class SpecularAwareAttention(nn.Module):
         super().__init__()
         self.steepness = steepness
         self.thresholds = [0.5, 0.7, 0.9]
+        self.gate_scale = 0.5
         n_masks = len(self.thresholds)
 
         mid = max(in_channels // 16, 4)
@@ -1418,7 +1498,7 @@ class SpecularAwareAttention(nn.Module):
             nn.GELU(),
             nn.Conv2d(in_channels, in_channels, 3, 1, 1, bias=False),
             nn.BatchNorm2d(in_channels),
-            nn.Sigmoid(),
+            nn.Tanh(),
         )
 
     def forward(self, features, original_input):
@@ -1433,7 +1513,7 @@ class SpecularAwareAttention(nn.Module):
             masks.append(torch.sigmoid(self.steepness * (inp - eff_t)))
         multi_mask = torch.cat(masks, dim=1)
         att = self.modulation(torch.cat([features, multi_mask], dim=1))
-        return features * (1.0 + att)
+        return features * (1.0 + self.gate_scale * att)
 
 
 class HighFrequencyEnhancement(nn.Module):
@@ -1510,6 +1590,7 @@ class PairedTransform:
         self.brightness_range = brightness_range
 
     def __call__(self, input_img, target_img):
+        _, orig_h, orig_w = input_img.shape
         if random.random() < self.p_flip:
             input_img = torch.flip(input_img, [-1])
             target_img = torch.flip(target_img, [-1])
@@ -1517,7 +1598,7 @@ class PairedTransform:
             input_img = torch.flip(input_img, [-2])
             target_img = torch.flip(target_img, [-2])
         if random.random() < self.p_rotate:
-            k = random.choice([1, 2, 3])
+            k = random.choice([1, 2, 3]) if orig_h == orig_w else 2
             input_img = torch.rot90(input_img, k, [1, 2])
             target_img = torch.rot90(target_img, k, [1, 2])
         if random.random() < self.p_crop:
@@ -1627,12 +1708,9 @@ class EnhancedPairedTransform:
         gt_specular = (gt_specular * bf).clamp(0, 1)
         input_img, target_img, gt_specular = self.hl_aug(
             input_img, target_img, gt_specular)
+        gt_specular = (input_img - target_img).clamp(0, 1)
 
-        gx, gy = torch.gradient(target_img, dim=(1, 2))
-        mag = torch.sqrt(gx ** 2 + gy ** 2 + 1e-8)
-        flat = mag.flatten()
-        p995 = torch.quantile(flat, 0.995) if flat.numel() > 0 else torch.tensor(1.0)
-        gt_gradient = (mag / (p995 + 1e-8)).clamp(0, 1)
+        gt_gradient = compute_gradient_target(target_img)
 
         return input_img, target_img, gt_specular, gt_gradient
 
@@ -1695,7 +1773,7 @@ class FringeDataset(Dataset):
             if isinstance(self.resize, (int, float)):
                 resize_size = (int(self.resize), int(self.resize))
             elif isinstance(self.resize, (tuple, list)) and len(self.resize) == 2:
-                resize_size = (int(self.resize[0]), int(self.resize[1]))
+                resize_size = (int(self.resize[1]), int(self.resize[0]))  # PIL expects (W, H)
             else:
                 resize_size = None
             if resize_size:
@@ -1712,14 +1790,10 @@ class FringeDataset(Dataset):
         if self.paired_transform is not None:
             input_img, target_img = self.paired_transform(input_img, target_img)
 
-        gt_specular = input_img - target_img
+        gt_specular = (input_img - target_img).clamp(0, 1)
 
-        # 梯度幅值作为 gt_gradient
-        gx, gy = torch.gradient(target_img, dim=(1, 2))
-        gt_gradient_mag = torch.sqrt(gx ** 2 + gy ** 2 + 1e-8)
-        flat = gt_gradient_mag.flatten()
-        p995 = torch.quantile(flat, 0.995) if flat.numel() > 0 else torch.tensor(1.0)
-        gt_gradient = (gt_gradient_mag / (p995 + 1e-8)).clamp(0.0, 1.0)
+        # 稳定边缘概率作为 gt_gradient，避免逐图 p995 归一化造成强度语义漂移。
+        gt_gradient = compute_gradient_target(target_img)
 
         return input_img, target_img, gt_specular, gt_gradient
 
@@ -1752,20 +1826,34 @@ class Encoder(nn.Module):
 
     def __init__(self, vit_image_size=224):
         super().__init__()
+        self.pretrained_loaded = False
+        self.pretrained_status = "resnet50: not initialized"
 
         try:
             backbone = models.resnet50(
                 weights=models.ResNet50_Weights.IMAGENET1K_V1,
                 replace_stride_with_dilation=[False, False, True])
-        except Exception:
+            self.pretrained_loaded = True
+            self.pretrained_status = "resnet50: ImageNet pretrained"
+        except Exception as exc:
             backbone = models.resnet50(
                 weights=None,
                 replace_stride_with_dilation=[False, False, True])
+            self.pretrained_loaded = False
+            self.pretrained_status = f"resnet50: random init ({type(exc).__name__})"
 
         old_conv1 = backbone.conv1
         backbone.conv1 = nn.Conv2d(1, 64, 7, 2, 3, bias=False)
         with torch.no_grad():
             backbone.conv1.weight.copy_(old_conv1.weight.mean(1, keepdim=True))
+        self.register_buffer(
+            "resnet_mean",
+            torch.tensor([0.485, 0.456, 0.406], dtype=torch.float32).mean().view(1, 1, 1, 1),
+            persistent=False)
+        self.register_buffer(
+            "resnet_std",
+            torch.tensor([0.229, 0.224, 0.225], dtype=torch.float32).mean().view(1, 1, 1, 1),
+            persistent=False)
 
         self.stem_conv = backbone.conv1
         self.stem_bn = backbone.bn1
@@ -1796,6 +1884,9 @@ class Encoder(nn.Module):
 
     def forward(self, x):
         x_in = x
+        mean = self.resnet_mean.to(dtype=x.dtype, device=x.device)
+        std = self.resnet_std.to(dtype=x.dtype, device=x.device)
+        x = (x - mean) / std
         x = self.stem_conv(x); x = self.stem_bn(x)
         x_bb_1 = self.stem_relu(x)
 
@@ -1935,7 +2026,12 @@ class MainDecoder(nn.Module):
         self.ffc_h4 = FFC_BN_ACT(192, 192, 3, ratio_gin=0.25, ratio_gout=0.25, padding=1)
 
         # [P2] 扩展输出头：4 层 + 膨胀卷积 + skip connection
-        _out_in = 16 * 3 + 1  # 49
+        _out_in = 16 * 3
+        self.final_grad_scale = 0.25
+        self.final_grad_proj = nn.Sequential(
+            nn.Conv2d(1, _out_in, 3, 1, 1, bias=True),
+            nn.Tanh(),
+        )
         self.output_reduce = Conv2D_BN_activa(_out_in, 32, 1, 1, 0)
         self.output_dilated = Conv2D_BN_activa(32, 32, 3, 1, 2, dilation=2)
         self.output_conv3 = Conv2D_BN_activa(32, 16, 3, 1, 1)
@@ -1949,9 +2045,10 @@ class MainDecoder(nn.Module):
         self.sa4 = SpecularAwareAttention(32 * 3, threshold=0.8)
 
         # [P10] 梯度图调制门控
-        self.grad_gate_2 = nn.Sequential(nn.Conv2d(1, 1, 3, 1, 1, bias=True), nn.Sigmoid())
-        self.grad_gate_3 = nn.Sequential(nn.Conv2d(1, 1, 3, 1, 1, bias=True), nn.Sigmoid())
-        self.grad_gate_4 = nn.Sequential(nn.Conv2d(1, 1, 3, 1, 1, bias=True), nn.Sigmoid())
+        self.grad_gate_scale = 0.5
+        self.grad_gate_2 = nn.Sequential(nn.Conv2d(1, 1, 3, 1, 1, bias=True), nn.Tanh())
+        self.grad_gate_3 = nn.Sequential(nn.Conv2d(1, 1, 3, 1, 1, bias=True), nn.Tanh())
+        self.grad_gate_4 = nn.Sequential(nn.Conv2d(1, 1, 3, 1, 1, bias=True), nn.Tanh())
 
     def forward(self, c_features, enhanced_features, x_g, original_input):
         x_bb_1, x_bb_2, x_bb_3, x_bb_4, x_c = c_features
@@ -1980,7 +2077,7 @@ class MainDecoder(nn.Module):
         x = torch.cat([fo[0], fo[1]], 1) + x
         # [P10] 梯度注入 Level 2
         _xg2 = F.interpolate(x_g, x.shape[-2:], mode='bilinear', align_corners=False) if x_g.shape[-2:] != x.shape[-2:] else x_g
-        x = x * (1.0 + self.grad_gate_2(_xg2))
+        x = x * (1.0 + self.grad_gate_scale * self.grad_gate_2(_xg2))
         x = self.sa2(x, original_input)
         if x_bb_3.shape[-2:] != x.shape[-2:]:
             x_bb_3 = F.interpolate(x_bb_3, x.shape[-2:], mode='bilinear', align_corners=False)
@@ -1997,7 +2094,7 @@ class MainDecoder(nn.Module):
         x = torch.cat([fo4[0], fo4[1]], 1) + x
         # [P10] 梯度注入 Level 3
         _xg3 = F.interpolate(x_g, x.shape[-2:], mode='bilinear', align_corners=False) if x_g.shape[-2:] != x.shape[-2:] else x_g
-        x = x * (1.0 + self.grad_gate_3(_xg3))
+        x = x * (1.0 + self.grad_gate_scale * self.grad_gate_3(_xg3))
         x = self.sa3(x, original_input)
         if x_bb_2.shape[-2:] != x.shape[-2:]:
             x_bb_2 = F.interpolate(x_bb_2, x.shape[-2:], mode='bilinear', align_corners=False)
@@ -2010,7 +2107,7 @@ class MainDecoder(nn.Module):
         x = self.transposed_block_4(x)
         # [P10] 梯度注入 Level 4
         _xg4 = F.interpolate(x_g, x.shape[-2:], mode='bilinear', align_corners=False) if x_g.shape[-2:] != x.shape[-2:] else x_g
-        x = x * (1.0 + self.grad_gate_4(_xg4))
+        x = x * (1.0 + self.grad_gate_scale * self.grad_gate_4(_xg4))
         x = self.sa4(x, original_input)
         if x_bb_1.shape[-2:] != x.shape[-2:]:
             x_bb_1 = F.interpolate(x_bb_1, x.shape[-2:], mode='bilinear', align_corners=False)
@@ -2023,7 +2120,7 @@ class MainDecoder(nn.Module):
         x = self.transposed_block_5(x)
         if x_g.shape[-2:] != x.shape[-2:]:
             x_g = F.interpolate(x_g, x.shape[-2:], mode='bilinear', align_corners=False)
-        x = torch.cat([x, x_g], 1)
+        x = x * (1.0 + self.final_grad_scale * self.final_grad_proj(x_g))
 
         # [P2] 扩展输出头 with skip connection
         x = self.output_reduce(x)
@@ -2043,9 +2140,10 @@ class _SpectralDecompositionUnit(nn.Module):
         self.projection_branch = Conv2D_BN_activa(in_c, out_c, 7, 1, 3)
         self.specular_branch = Conv2D_BN_activa(in_c, out_c, 3, 1, 1)
         self.ffc_specular = FFC_BN_ACT(out_c, out_c, 3, ratio_gin=0.25, ratio_gout=0.25, padding=1)
+        self.gate_scale = 0.5
         self.gate_conv = nn.Sequential(
             nn.Conv2d(out_c * 2, out_c, kernel_size=1, stride=1, padding=0, bias=True),
-            nn.Sigmoid(),
+            nn.Tanh(),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -2057,7 +2155,7 @@ class _SpectralDecompositionUnit(nn.Module):
         specular = torch.cat([_ffc_spec_out[0], _ffc_spec_out[1]], dim=1) + specular
 
         gate = self.gate_conv(torch.cat([projection, specular], dim=1))
-        specular_refined = specular + specular * gate
+        specular_refined = specular * (1.0 + self.gate_scale * gate)
         return specular_refined
 
 
@@ -2080,18 +2178,45 @@ class EnhancementLayers(nn.Module):
 
 
 class ResidualRefinementHead(nn.Module):
-    """[P1] 残差精修头：硬减法后做像素级修正，Tanh 限制 ±0.05。"""
-    def __init__(self, scale=0.05):
+    """[P1] 残差精修头：提升硬减法后局部结构纠错能力，输出仍保持 [0, 1]。"""
+
+    def __init__(self, scale=0.10, channels=32):
         super().__init__()
         self.scale = scale
-        self.refine = nn.Sequential(
-            nn.Conv2d(2, 16, 3, 1, 1, bias=False), nn.GELU(),
-            nn.Conv2d(16, 16, 3, 1, 1, bias=False), nn.GELU(),
-            nn.Conv2d(16, 1, 3, 1, 1, bias=True), nn.Tanh(),
+        self.entry = nn.Sequential(
+            nn.Conv2d(3, channels, 3, 1, 1, bias=False),
+            nn.GroupNorm(8, channels),
+            nn.GELU(),
         )
-    def forward(self, coarse, original):
-        delta = self.refine(torch.cat([coarse, original], dim=1))
-        return torch.clamp(coarse + self.scale * delta, 0.0, 1.0)
+        self.refine = nn.Sequential(
+            nn.Conv2d(channels, channels, 3, 1, 1, bias=False),
+            nn.GroupNorm(8, channels),
+            nn.GELU(),
+            nn.Conv2d(channels, channels, 3, 1, 2, dilation=2, bias=False),
+            nn.GroupNorm(8, channels),
+            nn.GELU(),
+            nn.Conv2d(channels, channels, 3, 1, 1, bias=False),
+            nn.GroupNorm(8, channels),
+            nn.GELU(),
+        )
+        self.out = nn.Conv2d(channels, 1, 3, 1, 1, bias=True)
+        self.direct = nn.Conv2d(channels, 1, 3, 1, 1, bias=True)
+        self.blend = nn.Conv2d(channels, 1, 3, 1, 1, bias=True)
+        nn.init.zeros_(self.out.weight)
+        nn.init.zeros_(self.out.bias)
+        nn.init.zeros_(self.direct.weight)
+        nn.init.zeros_(self.direct.bias)
+        nn.init.zeros_(self.blend.weight)
+        nn.init.constant_(self.blend.bias, -12.0)
+
+    def forward(self, coarse, original, specular):
+        feat = self.entry(torch.cat([coarse, original, specular], dim=1))
+        refined_feat = feat + self.refine(feat)
+        delta = torch.tanh(self.out(refined_feat))
+        residual = torch.clamp(coarse + self.scale * delta, 0.0, 1.0)
+        direct = torch.sigmoid(self.direct(refined_feat))
+        blend = torch.sigmoid(self.blend(refined_feat))
+        return torch.clamp(residual * (1.0 - blend) + direct * blend, 0.0, 1.0)
 
 
 class YFFC(nn.Module):
@@ -2103,7 +2228,7 @@ class YFFC(nn.Module):
         self.gradient_decoder = GradientDecoder()
         self.enhancement_layers = EnhancementLayers()
         self.main_decoder = MainDecoder(in_channels=256)
-        self.refinement_head = ResidualRefinementHead(scale=0.05)  # [P1]
+        self.refinement_head = ResidualRefinementHead(scale=0.10)  # [P1]
 
     def forward(self, x):
         c_feat = self.encoder(x)
@@ -2111,7 +2236,7 @@ class YFFC(nn.Module):
         enh = self.enhancement_layers(g_feat[:-1])
         est_b = self.main_decoder(c_feat, enh, g_feat[-1], original_input=x)
         coarse = torch.clamp(x - est_b, 0.0, 1.0)
-        pred_diffuse = self.refinement_head(coarse, x)  # [P1]
+        pred_diffuse = self.refinement_head(coarse, x, est_b)  # [P1]
         return {"r": pred_diffuse, "g": g_feat[-1], "b": est_b}
 
 
@@ -2173,6 +2298,9 @@ class DynamicLossWeightScheduler:
             'lambda_spec':       0.5,
             'lambda_stat':       0.0,     # 移除冗余 stat
             'lambda_grad':       max(0.3, 0.5 - 0.2 * p),
+            'lambda_focal':      min(0.8, 0.4 + 0.4 * p),
+            'lambda_dice':       min(0.3, 0.1 + 0.2 * p),
+            'lambda_gc':         min(0.2, 0.1 + 0.1 * p),
         }
         return weights
 
@@ -2234,29 +2362,35 @@ def build_scheduler(optimizer, warmup_iters=500, total_epochs=200,
       修复方案：使用 LambdaLR + 自定义余弦衰减函数，超过 T_max 后 LR 钳位在
       eta_min，不再回弹。
     """
-    from torch.optim.lr_scheduler import LinearLR, LambdaLR, SequentialLR
+    from torch.optim.lr_scheduler import LambdaLR
 
-    warmup_scheduler = LinearLR(optimizer, start_factor=0.01, total_iters=warmup_iters)
     total_iters = total_epochs * iters_per_epoch
     cosine_iters = max(total_iters - warmup_iters, 1)
 
-    # 自定义余弦衰减：超过 cosine_iters 后 LR 钳位在 eta_min，不循环
+    # 自定义 warmup + 余弦衰减：超过 cosine_iters 后 LR 钳位在 eta_min，不循环
     base_lrs = [pg['lr'] for pg in optimizer.param_groups]
 
-    def _cosine_no_restart(current_iter):
-        """余弦退火 lambda，到达 T_max 后保持 eta_min，不回弹。"""
-        if current_iter >= cosine_iters:
-            # 钳位在最低学习率比例
-            return eta_min / base_lrs[0] if base_lrs[0] > 0 else eta_min
-        progress = current_iter / cosine_iters
-        cosine_decay = 0.5 * (1.0 + math.cos(math.pi * progress))
-        # 从 1.0 衰减到 eta_min / base_lr
-        min_ratio = eta_min / base_lrs[0] if base_lrs[0] > 0 else eta_min
-        return min_ratio + (1.0 - min_ratio) * cosine_decay
+    def _make_schedule(base_lr):
+        min_ratio = min(1.0, eta_min / base_lr) if base_lr > 0 else 1.0
 
-    cosine_scheduler = LambdaLR(optimizer, lr_lambda=_cosine_no_restart)
-    scheduler = SequentialLR(optimizer, schedulers=[warmup_scheduler, cosine_scheduler],
-                             milestones=[warmup_iters])
+        def _warmup_cosine_no_restart(current_iter):
+            """每个参数组独立 warmup + 余弦退火，到达 T_max 后保持自己的 eta_min。"""
+            if warmup_iters > 0 and current_iter < warmup_iters:
+                warmup_progress = current_iter / warmup_iters
+                return 0.01 + (1.0 - 0.01) * warmup_progress
+
+            cosine_iter = current_iter - warmup_iters
+            if cosine_iter >= cosine_iters:
+                return min_ratio
+            progress = cosine_iter / cosine_iters
+            cosine_decay = 0.5 * (1.0 + math.cos(math.pi * progress))
+            return min_ratio + (1.0 - min_ratio) * cosine_decay
+
+        return _warmup_cosine_no_restart
+
+    scheduler = LambdaLR(
+        optimizer,
+        lr_lambda=[_make_schedule(base_lr) for base_lr in base_lrs])
     return scheduler
 
 
@@ -2269,6 +2403,12 @@ def replace_bn_with_gn(module, num_groups=8):
             while num_channels % groups != 0 and groups > 1:
                 groups -= 1
             gn = nn.GroupNorm(groups, num_channels, eps=child.eps)
+            if child.affine:
+                with torch.no_grad():
+                    gn.weight.copy_(child.weight)
+                    gn.bias.copy_(child.bias)
+                gn.weight.requires_grad = child.weight.requires_grad
+                gn.bias.requires_grad = child.bias.requires_grad
             setattr(module, name, gn)
         else:
             replace_bn_with_gn(child, num_groups)
@@ -2285,6 +2425,7 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scheduler,
     n_batches = 0
 
     optimizer.zero_grad()
+    valid_accum = 0
 
     for i, (input_img, target_img, gt_specular, gt_gradient) in enumerate(dataloader):
         input_img = input_img.to(device)
@@ -2309,15 +2450,15 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scheduler,
         # [FIX] NaN / Inf 保护
         if not torch.isfinite(loss):
             print(f'[WARNING] Epoch {epoch+1} Batch {i+1}: loss NaN/Inf, 跳过')
-            optimizer.zero_grad()
             continue
 
         if device.type == 'cuda':
             scaler.scale(loss).backward()
         else:
             loss.backward()
+        valid_accum += 1
 
-        if (i + 1) % accumulation_steps == 0 or (i + 1) == len(dataloader):
+        if valid_accum >= accumulation_steps or ((i + 1) == len(dataloader) and valid_accum > 0):
             if device.type == 'cuda':
                 scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
@@ -2330,13 +2471,28 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scheduler,
             optimizer.zero_grad()
             if ema is not None:
                 ema.update()
-
-        if scheduler is not None:
-            scheduler.step()
+            if scheduler is not None:
+                scheduler.step()
+            valid_accum = 0
 
         running_loss += loss_dict['total']
         running_ssim += (1.0 - loss_dict['ssim'])
         n_batches += 1
+
+    if valid_accum > 0:
+        if device.type == 'cuda':
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
+            optimizer.step()
+        optimizer.zero_grad()
+        if ema is not None:
+            ema.update()
+        if scheduler is not None:
+            scheduler.step()
 
     avg_loss = running_loss / max(n_batches, 1)
     avg_ssim = running_ssim / max(n_batches, 1)
@@ -2395,7 +2551,7 @@ def train(args):
                                   resize=args.image_size, paired_transform=paired_aug)
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size,
                               shuffle=True, num_workers=args.num_workers,
-                              pin_memory=(device.type == 'cuda'), drop_last=True)
+                              pin_memory=(device.type == 'cuda'), drop_last=False)
 
     val_loader = None
     if args.val_input_dir and args.val_target_dir:
@@ -2406,12 +2562,12 @@ def train(args):
                                 pin_memory=(device.type == 'cuda'))
 
     # 损失函数
-    criterion = CompositeLoss(use_perceptual=True).to(device)
+    criterion = EnhancedCompositeLoss(use_perceptual=True).to(device)
     loss_weight_scheduler = DynamicLossWeightScheduler(total_epochs=args.epochs)
 
     # 优化器 + 调度器
     optimizer = build_optimizer(model, base_lr=args.base_lr, weight_decay=1e-4)
-    iters_per_epoch = len(train_loader)
+    iters_per_epoch = max(1, math.ceil(len(train_loader) / args.accumulation_steps))
     scheduler = build_scheduler(optimizer, warmup_iters=min(500, iters_per_epoch * 3),
                                 total_epochs=args.epochs, iters_per_epoch=iters_per_epoch)
 
@@ -2458,6 +2614,7 @@ def train(args):
                 'best_ssim': best_val_ssim,
             }
             if ema is not None:
+                save_dict['ema'] = ema.shadow
                 save_dict['ema_shadow'] = ema.shadow
             save_path = os.path.join(args.save_dir, 'best_model.pth')
             os.makedirs(args.save_dir, exist_ok=True)
@@ -2467,8 +2624,12 @@ def train(args):
         if (epoch + 1) % args.save_interval == 0:
             ckpt_path = os.path.join(args.save_dir, f'checkpoint_epoch{epoch + 1}.pth')
             os.makedirs(args.save_dir, exist_ok=True)
-            torch.save({'epoch': epoch + 1, 'model_state_dict': model.state_dict(),
-                        'optimizer_state_dict': optimizer.state_dict()}, ckpt_path)
+            ckpt = {'epoch': epoch + 1, 'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict()}
+            if ema is not None:
+                ckpt['ema'] = ema.shadow
+                ckpt['ema_shadow'] = ema.shadow
+            torch.save(ckpt, ckpt_path)
 
     print("=" * 70)
     print(f"训练完成！最佳 SSIM: {best_val_ssim:.4f}")
@@ -2552,6 +2713,8 @@ def main():
     train_parser.add_argument("--no_augmentation", action="store_true")
 
     args = parser.parse_args()
+    if getattr(args, 'command', None) == 'train' and getattr(args, 'no_augmentation', False):
+        args.use_augmentation = False
 
     if args.command is None:
         args.command = 'test'
@@ -2598,14 +2761,14 @@ def main():
         # 损失函数测试
         print("\n--- 损失函数测试 ---")
         try:
-            criterion = CompositeLoss(use_perceptual=False).to(device)
+            criterion = EnhancedCompositeLoss(use_perceptual=False).to(device)
             target = torch.rand_like(out['r'])
             gt_specular = (test_input - target).clamp(0, 1)
             gt_gradient = torch.rand_like(out['g'])
             with torch.no_grad():
                 loss, loss_dict = criterion(
                     out['r'], target, out['b'], gt_specular, out['g'], gt_gradient)
-            print(f"CompositeLoss 前向成功, total={loss.item():.4f}")
+            print(f"EnhancedCompositeLoss 前向成功, total={loss.item():.4f}")
         except Exception as e:
             print(f"损失函数测试失败: {e}")
 
