@@ -1078,6 +1078,7 @@ def train_model(cfg):
         radius_range=(3, max(5, min_side // 20)),
         intensity_range=(0.2, 0.7))
     aug = EnhancedPairedTransform(highlight_aug=hl_aug)
+    print("[Aug] 训练集已启用 EnhancedPairedTransform + HighlightAugmentation(p=0.4)")
 
     full_ds = ImprovedFringeDataset(
         cfg['INPUT_DIR'], cfg['TARGET_DIR'],
@@ -1489,17 +1490,17 @@ def main():
     # ╚══════════════════════════════════════════════════════════════╝
 
     # ========== 基础训练参数 ==========
-    EPOCHS                = 400       # 训练总轮数
-    BATCH_SIZE            = 4         # 384 分辨率推荐 2~4
+    EPOCHS                = 50       # 训练总轮数
+    BATCH_SIZE            = 3         # 384 分辨率推荐 2~4
     BASE_LR               = 2e-4     # 基础学习率（分层 LR 以此为基准）
     WEIGHT_DECAY          = 1e-4     # AdamW 权重衰减
-    ACCUMULATION_STEPS    = 4        # 梯度累积步数（等效 batch = BATCH_SIZE × 此值）
+    ACCUMULATION_STEPS    = 3        # 梯度累积步数（等效 batch = BATCH_SIZE × 此值）
     GRAD_CLIP_VALUE       = 0.5      # [FIX] 梯度裁剪阈值（从 1.0 降低到 0.5，更稳定）
 
     # ========== 图像与数据参数 ==========
     IMAGE_SIZE            = (128, 160)  # ⭐ 输入分辨率 (H, W)，支持任意矩形
     TRAIN_SPLIT_RATIO     = 0.8      # 自动划分时训练集比例（有独立验证集时忽略）
-    NUM_WORKERS           = 4        # DataLoader 工作进程数
+    NUM_WORKERS           = 5        # DataLoader 工作进程数
 
     # ========== V2 特有开关 ==========
     USE_GN                = True     # BN → GN（小 batch 必备）
@@ -1508,8 +1509,8 @@ def main():
     USE_OHEM              = True     # 在线难样本挖掘
 
     # ========== 数据目录 ==========
-    INPUT_DIR             = 'data/inputs'
-    TARGET_DIR            = 'data/targets'
+    INPUT_DIR             = 'data2/inputs'
+    TARGET_DIR            = 'data2/targets'
     VAL_INPUT_DIR         = None     # 独立验证集输入目录（None 则自动划分）
     VAL_TARGET_DIR        = None     # 独立验证集目标目录
 

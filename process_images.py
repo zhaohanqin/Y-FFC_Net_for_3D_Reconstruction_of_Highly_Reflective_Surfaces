@@ -27,9 +27,25 @@ from PIL import Image
 import matplotlib.pyplot as plt
 import os
 from pathlib import Path
-import glob
 from tqdm import tqdm
-from Y_FFC_unified import YFFC
+from Y_FFC_unified import YFFC, replace_bn_with_gn
+
+
+def _uses_group_norm_state_dict(state_dict):
+    """检测 checkpoint 是否来自 BN->GN 后的模型。"""
+    return not any(
+        key.endswith(('running_mean', 'running_var', 'num_batches_tracked'))
+        for key in state_dict
+    )
+
+
+def _merge_ema_weights(base_state_dict, ema_state_dict):
+    """将 EMA 参数覆盖到完整 state_dict 上，保留非 EMA 项。"""
+    merged = dict(base_state_dict)
+    for name, tensor in ema_state_dict.items():
+        if name in merged:
+            merged[name] = tensor
+    return merged
 
 
 def load_model(model_path, device, prefer_ema=True):
@@ -48,31 +64,33 @@ def load_model(model_path, device, prefer_ema=True):
     返回:
         加载好权重的 YFFC 模型（已 .eval()）
     """
-    model = YFFC()
-
     checkpoint = torch.load(model_path, map_location=device, weights_only=False)
 
     if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+        base_state_dict = checkpoint['model_state_dict']
+        model = YFFC()
+        if _uses_group_norm_state_dict(base_state_dict):
+            replace_bn_with_gn(model, num_groups=8)
+
         # ── 训练保存的标准 checkpoint ──
         # 优先使用 EMA 权重（推理更稳定）
-        if prefer_ema and 'ema_shadow' in checkpoint:
-            # EMA shadow 的 key 与 model.named_parameters() 一致
-            ema_shadow = checkpoint['ema_shadow']
-            model_sd = model.state_dict()
-            for name, param in ema_shadow.items():
-                if name in model_sd:
-                    model_sd[name] = param
-            model.load_state_dict(model_sd)
+        ema_state_dict = checkpoint.get('ema_shadow') or checkpoint.get('ema')
+        if prefer_ema and ema_state_dict:
+            # EMA 只保存 model.named_parameters()，需要用完整 state_dict 补齐缓冲/非 EMA 项。
+            model.load_state_dict(_merge_ema_weights(base_state_dict, ema_state_dict))
             epoch = checkpoint.get('epoch', '?')
             best_ssim = checkpoint.get('best_ssim', '?')
             print(f"  ✓ 已加载 EMA 权重 (epoch={epoch}, best_ssim={best_ssim})")
         else:
-            model.load_state_dict(checkpoint['model_state_dict'])
+            model.load_state_dict(base_state_dict)
             epoch = checkpoint.get('epoch', '?')
             best_ssim = checkpoint.get('best_ssim', '?')
             print(f"  ✓ 已加载模型权重 (epoch={epoch}, best_ssim={best_ssim})")
     elif isinstance(checkpoint, dict):
         # ── 可能是纯 state_dict（key 为 layer 名称） ──
+        model = YFFC()
+        if _uses_group_norm_state_dict(checkpoint):
+            replace_bn_with_gn(model, num_groups=8)
         model.load_state_dict(checkpoint)
         print("  ✓ 已加载纯 state_dict 权重")
     else:
@@ -274,17 +292,19 @@ def process_folder(model, input_folder, output_folder, device, show_visualizatio
         supported_formats = ['.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif']
     
     # 获取所有支持格式的图像文件
-    image_files = []
-    for ext in supported_formats:
-        image_files.extend(glob.glob(os.path.join(input_folder, f'*{ext}')))
-        image_files.extend(glob.glob(os.path.join(input_folder, f'*{ext.upper()}')))
+    # Windows 的 glob 对大小写不敏感，分别搜 .png/.PNG 会重复命中同一文件。
+    supported_suffixes = {ext.lower() for ext in supported_formats}
+    image_files = sorted(
+        str(p) for p in Path(input_folder).iterdir()
+        if p.is_file() and p.suffix.lower() in supported_suffixes
+    )
     
     if not image_files:
         print(f"❌ 错误: 在目录 {input_folder} 中未找到支持的图像文件")
         print(f"支持的格式: {', '.join(supported_formats)}")
         return
     
-    print(f"\n找到 {len(image_files)/2} 对图像，开始批量处理...")
+    print(f"\n找到 {len(image_files)} 张图像，开始批量处理...")
     print("=" * 70)
     
     # 处理每张图像
@@ -323,7 +343,7 @@ def main():
     INPUT_PATH = r'E:\images\PSM_FSM\O1'  # 可以是单张图像路径或文件夹路径
     
     # 2. 模型配置
-    MODEL_PATH = r'experiments\original_yffc_20260224_110909\models\best_model.pth'  # 训练好的模型路径
+    MODEL_PATH = r'experiments\yffc_v2_20260426_225811\models\best_model_best_ssim.pth'  # 训练好的模型路径
     PREFER_EMA = True  # 若 checkpoint 含 EMA 权重则优先使用（推理更稳定）
     
     # 3. 输出配置

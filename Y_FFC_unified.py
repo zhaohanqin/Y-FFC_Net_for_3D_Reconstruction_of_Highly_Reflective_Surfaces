@@ -1695,7 +1695,7 @@ class FringeDataset(Dataset):
             if isinstance(self.resize, (int, float)):
                 resize_size = (int(self.resize), int(self.resize))
             elif isinstance(self.resize, (tuple, list)) and len(self.resize) == 2:
-                resize_size = (int(self.resize[0]), int(self.resize[1]))
+                resize_size = (int(self.resize[1]), int(self.resize[0]))
             else:
                 resize_size = None
             if resize_size:
@@ -1710,7 +1710,10 @@ class FringeDataset(Dataset):
             target_img = self.transform(target_img)
 
         if self.paired_transform is not None:
-            input_img, target_img = self.paired_transform(input_img, target_img)
+            transformed = self.paired_transform(input_img, target_img)
+            if len(transformed) == 4:
+                return transformed
+            input_img, target_img = transformed
 
         gt_specular = input_img - target_img
 
@@ -2173,6 +2176,9 @@ class DynamicLossWeightScheduler:
             'lambda_spec':       0.5,
             'lambda_stat':       0.0,     # 移除冗余 stat
             'lambda_grad':       max(0.3, 0.5 - 0.2 * p),
+            'lambda_focal':      min(0.8, 0.3 + 0.5 * p),
+            'lambda_dice':       min(0.3, 0.1 + 0.2 * p),
+            'lambda_gc':         min(0.2, 0.05 + 0.15 * p),
         }
         return weights
 
@@ -2187,12 +2193,16 @@ def build_optimizer(model, base_lr=2e-4, weight_decay=1e-4):
     encoder_pretrained = []
     ffc_params = []
     decoder_params = []
+    new_module_params = []
     other_params = []
 
     for name, param in model.named_parameters():
         if not param.requires_grad:
             continue
-        if ('encoder.vit_branch.vit' in name or
+        if ('sa1' in name or 'sa2' in name or 'sa3' in name or
+            'sa4' in name or 'hf_enhance' in name):
+            new_module_params.append(param)
+        elif ('encoder.vit_branch.vit' in name or
             'encoder.stem' in name or
             'encoder.layer' in name):
             encoder_pretrained.append(param)
@@ -2210,6 +2220,7 @@ def build_optimizer(model, base_lr=2e-4, weight_decay=1e-4):
         {'params': other_params, 'lr': base_lr * 0.5, 'name': 'fusion_layers'},
         {'params': decoder_params, 'lr': base_lr, 'name': 'decoders'},
         {'params': ffc_params, 'lr': base_lr * 0.5, 'name': 'ffc_modules'},
+        {'params': new_module_params, 'lr': base_lr, 'name': 'new_modules'},
     ]
     param_groups = [g for g in param_groups if len(g['params']) > 0]
 
@@ -2328,11 +2339,10 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scheduler,
                 optimizer.step()
 
             optimizer.zero_grad()
+            if scheduler is not None:
+                scheduler.step()
             if ema is not None:
                 ema.update()
-
-        if scheduler is not None:
-            scheduler.step()
 
         running_loss += loss_dict['total']
         running_ssim += (1.0 - loss_dict['ssim'])
@@ -2390,33 +2400,69 @@ def train(args):
     print(f"模型参数: 总计 {total_params:,}, 可训练 {trainable_params:,}")
 
     # 数据集
-    paired_aug = PairedTransform() if args.use_augmentation else None
-    train_dataset = FringeDataset(args.input_dir, args.target_dir,
-                                  resize=args.image_size, paired_transform=paired_aug)
+    if args.use_augmentation:
+        img_size = args.image_size
+        if isinstance(img_size, (tuple, list)):
+            min_side = min(int(img_size[0]), int(img_size[1]))
+        else:
+            min_side = int(img_size)
+        hl_aug = HighlightAugmentation(
+            p=0.4, num_range=(1, 6),
+            radius_range=(3, max(5, min_side // 20)),
+            intensity_range=(0.2, 0.7))
+        paired_aug = EnhancedPairedTransform(highlight_aug=hl_aug)
+        print("[Aug] 已启用 EnhancedPairedTransform + HighlightAugmentation(p=0.4)")
+    else:
+        paired_aug = None
+    full_train_dataset = FringeDataset(args.input_dir, args.target_dir,
+                                       resize=args.image_size, paired_transform=paired_aug)
+    if args.val_input_dir and args.val_target_dir:
+        train_dataset = full_train_dataset
+        val_dataset = FringeDataset(args.val_input_dir, args.val_target_dir,
+                                    resize=args.image_size, paired_transform=None)
+    else:
+        full_val_dataset = FringeDataset(args.input_dir, args.target_dir,
+                                         resize=args.image_size, paired_transform=None)
+        total_size = len(full_train_dataset)
+        if total_size < 2:
+            raise ValueError("自动划分训练/验证至少需要 2 张图像；请增加数据或提供独立验证集。")
+        train_size = int(args.train_split_ratio * total_size)
+        train_size = max(1, min(train_size, total_size - 1))
+        val_size = total_size - train_size
+        generator = torch.Generator().manual_seed(42)
+        indices = torch.randperm(total_size, generator=generator).tolist()
+        train_dataset = torch.utils.data.Subset(full_train_dataset, indices[:train_size])
+        val_dataset = torch.utils.data.Subset(full_val_dataset, indices[train_size:])
+        print(f"[Dataset] 自动划分训练/验证: train={train_size}, val={val_size}, seed=42")
+
+    if len(train_dataset) < args.batch_size:
+        raise ValueError(
+            f"训练样本数({len(train_dataset)}) 小于 batch_size({args.batch_size})，"
+            "drop_last=True 会导致没有可训练 batch；请调小 batch_size 或增加数据。")
+
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size,
                               shuffle=True, num_workers=args.num_workers,
                               pin_memory=(device.type == 'cuda'), drop_last=True)
-
-    val_loader = None
-    if args.val_input_dir and args.val_target_dir:
-        val_dataset = FringeDataset(args.val_input_dir, args.val_target_dir,
-                                    resize=args.image_size, paired_transform=None)
-        val_loader = DataLoader(val_dataset, batch_size=args.batch_size,
-                                shuffle=False, num_workers=args.num_workers,
-                                pin_memory=(device.type == 'cuda'))
+    val_loader = DataLoader(val_dataset, batch_size=args.batch_size,
+                            shuffle=False, num_workers=args.num_workers,
+                            pin_memory=(device.type == 'cuda'))
 
     # 损失函数
-    criterion = CompositeLoss(use_perceptual=True).to(device)
+    criterion = EnhancedCompositeLoss(
+        use_perceptual=True, use_ohem=args.use_ohem).to(device)
     loss_weight_scheduler = DynamicLossWeightScheduler(total_epochs=args.epochs)
+    print(f"[Loss] 已启用 EnhancedCompositeLoss(use_ohem={args.use_ohem})")
 
     # 优化器 + 调度器
-    optimizer = build_optimizer(model, base_lr=args.base_lr, weight_decay=1e-4)
+    optimizer = build_optimizer(model, base_lr=args.base_lr, weight_decay=args.weight_decay)
     iters_per_epoch = len(train_loader)
+    if iters_per_epoch == 0:
+        raise ValueError("训练 DataLoader 为空，请检查数据量、batch_size 和 drop_last 设置。")
     scheduler = build_scheduler(optimizer, warmup_iters=min(500, iters_per_epoch * 3),
                                 total_epochs=args.epochs, iters_per_epoch=iters_per_epoch)
 
     scaler = torch.amp.GradScaler(device='cuda', enabled=(device.type == 'cuda'))
-    ema = EMA(model, decay=0.999) if args.use_ema else None
+    ema = EMA(model, decay=args.ema_decay) if args.use_ema else None
 
     best_val_ssim = 0.0
     print(f"\n开始训练: {args.epochs} epochs, batch_size={args.batch_size}")
@@ -2541,13 +2587,18 @@ def main():
     train_parser.add_argument("--epochs", type=int, default=200)
     train_parser.add_argument("--batch_size", type=int, default=2)
     train_parser.add_argument("--image_size", type=int, default=512)
+    train_parser.add_argument("--train_split_ratio", type=float, default=0.8)
     train_parser.add_argument("--base_lr", type=float, default=2e-4)
+    train_parser.add_argument("--weight_decay", type=float, default=1e-4)
     train_parser.add_argument("--accumulation_steps", type=int, default=4)
     train_parser.add_argument("--num_workers", type=int, default=4)
     train_parser.add_argument("--save_dir", type=str, default="./checkpoints")
     train_parser.add_argument("--save_interval", type=int, default=10)
     train_parser.add_argument("--use_gn", action="store_true")
     train_parser.add_argument("--use_ema", action="store_true")
+    train_parser.add_argument("--ema_decay", type=float, default=0.9995)
+    train_parser.add_argument("--use_ohem", action="store_true", default=True)
+    train_parser.add_argument("--no_ohem", action="store_true")
     train_parser.add_argument("--use_augmentation", action="store_true", default=True)
     train_parser.add_argument("--no_augmentation", action="store_true")
 
@@ -2646,6 +2697,8 @@ def main():
     elif args.command == 'train':
         if hasattr(args, 'no_augmentation') and args.no_augmentation:
             args.use_augmentation = False
+        if hasattr(args, 'no_ohem') and args.no_ohem:
+            args.use_ohem = False
         train(args)
 
 

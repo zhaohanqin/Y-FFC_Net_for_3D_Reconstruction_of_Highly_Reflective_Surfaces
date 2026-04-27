@@ -4,6 +4,8 @@
 
 # ---- 数据集 ----
 data/
+data2/
+data3/
 datasets/
 *.zip
 *.tar.gz
@@ -79,3 +81,9 @@ desktop.ini
 experiments/
 *.png
 processed_results/
+*.png
+*.jpg
+*.jpeg
+*.bmp
+*.gif
+*.webp
