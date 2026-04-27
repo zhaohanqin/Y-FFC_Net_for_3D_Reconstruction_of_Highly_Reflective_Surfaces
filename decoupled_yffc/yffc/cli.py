@@ -73,13 +73,18 @@ def main():
     train_parser.add_argument("--epochs", type=int, default=200)
     train_parser.add_argument("--batch_size", type=int, default=2)
     train_parser.add_argument("--image_size", type=int, default=512)
+    train_parser.add_argument("--train_split_ratio", type=float, default=0.8)
     train_parser.add_argument("--base_lr", type=float, default=2e-4)
+    train_parser.add_argument("--weight_decay", type=float, default=1e-4)
     train_parser.add_argument("--accumulation_steps", type=int, default=4)
     train_parser.add_argument("--num_workers", type=int, default=4)
     train_parser.add_argument("--save_dir", type=str, default="./checkpoints")
     train_parser.add_argument("--save_interval", type=int, default=10)
     train_parser.add_argument("--use_gn", action="store_true")
     train_parser.add_argument("--use_ema", action="store_true")
+    train_parser.add_argument("--ema_decay", type=float, default=0.9995)
+    train_parser.add_argument("--use_ohem", action="store_true", default=True)
+    train_parser.add_argument("--no_ohem", action="store_true")
     train_parser.add_argument("--use_augmentation", action="store_true", default=True)
     train_parser.add_argument("--no_augmentation", action="store_true")
 
@@ -178,4 +183,6 @@ def main():
     elif args.command == 'train':
         if hasattr(args, 'no_augmentation') and args.no_augmentation:
             args.use_augmentation = False
+        if hasattr(args, 'no_ohem') and args.no_ohem:
+            args.use_ohem = False
         train(args)

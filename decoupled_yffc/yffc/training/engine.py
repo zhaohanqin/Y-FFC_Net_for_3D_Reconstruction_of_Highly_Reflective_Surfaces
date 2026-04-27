@@ -18,6 +18,7 @@ from .optimization import ImprovedWeightScheduler, build_optimizer_v2
 from .reporting import print_epoch_log, save_training_summary
 from .utils import EMA, build_scheduler, replace_bn_with_gn
 from .visualization import (
+    build_fixed_visualization_loader,
     plot_individual_curves,
     plot_sub_loss_history,
     plot_training_curves_realtime,
@@ -103,12 +104,21 @@ def train_model(cfg):
         full_ds_no_aug = ImprovedFringeDataset(
             cfg['INPUT_DIR'], cfg['TARGET_DIR'],
             resize=img_hw, paired_transform=None)
-        train_size = int(cfg['TRAIN_SPLIT_RATIO'] * len(full_ds))
-        val_size = len(full_ds) - train_size
+        total_size = len(full_ds)
+        if total_size < 2:
+            raise ValueError("自动划分训练/验证至少需要 2 张图像；请增加数据或提供独立验证集。")
+        train_size = int(cfg['TRAIN_SPLIT_RATIO'] * total_size)
+        train_size = max(1, min(train_size, total_size - 1))
+        val_size = total_size - train_size
         g = torch.Generator().manual_seed(42)
-        rand_idx = torch.randperm(len(full_ds), generator=g).tolist()
+        rand_idx = torch.randperm(total_size, generator=g).tolist()
         train_ds = torch.utils.data.Subset(full_ds, rand_idx[:train_size])
         val_ds = torch.utils.data.Subset(full_ds_no_aug, rand_idx[train_size:])
+
+    if len(train_ds) < cfg['BATCH_SIZE']:
+        raise ValueError(
+            f"训练样本数({len(train_ds)}) 小于 batch_size({cfg['BATCH_SIZE']})，"
+            "drop_last=True 会导致没有可训练 batch；请调小 batch_size 或增加数据。")
 
     train_loader = DataLoader(
         train_ds, batch_size=cfg['BATCH_SIZE'], shuffle=True,
@@ -118,6 +128,25 @@ def train_model(cfg):
         val_ds, batch_size=cfg['BATCH_SIZE'], shuffle=False,
         num_workers=cfg['NUM_WORKERS'],
         pin_memory=(device.type == 'cuda'))
+
+    vis_interval = int(cfg.get('VIS_EVERY_N_EPOCHS', 10))
+    vis_num_samples = int(cfg.get('VIS_NUM_SAMPLES', 2))
+    vis_loader = None
+    if vis_interval > 0 and vis_num_samples > 0:
+        vis_loader, vis_indices, vis_seed = build_fixed_visualization_loader(
+            val_ds,
+            num_samples=vis_num_samples,
+            num_workers=cfg['NUM_WORKERS'],
+            pin_memory=(device.type == 'cuda'),
+            seed=cfg.get('VIS_SAMPLE_SEED'))
+        cfg['VIS_SAMPLE_SEED_USED'] = vis_seed
+        cfg['VIS_SAMPLE_INDICES'] = vis_indices
+        print(f"可视化样本: 本次训练固定抽取 {len(vis_indices)} 张 "
+              f"(seed={vis_seed}, val_indices={vis_indices})")
+    else:
+        cfg['VIS_SAMPLE_SEED_USED'] = None
+        cfg['VIS_SAMPLE_INDICES'] = []
+        print("可视化样本: 已禁用")
 
     print(f"数据集: 训练={len(train_ds)}, 验证={len(val_ds)}")
     print(f"批次大小: {cfg['BATCH_SIZE']} × 累积{cfg['ACCUMULATION_STEPS']}"
@@ -136,6 +165,8 @@ def train_model(cfg):
     # ══════════ 4. 优化器 + 调度器 ══════════
     print("\n分层学习率配置:")
     optimizer = build_optimizer_v2(model, cfg['BASE_LR'], cfg['WEIGHT_DECAY'])
+    if len(train_loader) == 0:
+        raise ValueError("训练 DataLoader 为空，请检查数据量、batch_size 和 drop_last 设置。")
     scheduler = build_scheduler(
         optimizer,
         warmup_iters=min(500, len(train_loader) * 3),
@@ -342,12 +373,12 @@ def train_model(cfg):
             plot_training_curves_realtime(history, output_folder, ep + 1)
 
         # ── 验证样本可视化 ──
-        if (ep + 1) % vis_interval == 0 or ep == 0:
+        if vis_loader is not None and ((ep + 1) % vis_interval == 0 or ep == 0):
             if ema:
                 ema.apply_shadow()
             vis_path = visualize_sample_during_training(
-                model, val_loader, device, output_folder,
-                current_epoch=ep + 1, num_samples=2)
+                model, vis_loader, device, output_folder,
+                current_epoch=ep + 1, num_samples=vis_num_samples)
             if ema:
                 ema.restore()
             print(f"  样本可视化已保存: {vis_path}")

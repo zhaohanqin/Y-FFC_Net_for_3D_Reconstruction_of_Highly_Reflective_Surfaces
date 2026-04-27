@@ -22,6 +22,7 @@ Y-FFC Net 图像处理脚本 - 去除高反光
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 from PIL import Image
 import matplotlib.pyplot as plt
@@ -147,6 +148,117 @@ def load_image(image_path, target_size=None):
     return image_tensor, original_size
 
 
+def _normalize_hw(size):
+    """将训练尺寸规范化为 (H, W)，注意不是 PIL 使用的 (W, H)。"""
+    if isinstance(size, int):
+        return int(size), int(size)
+    if isinstance(size, (tuple, list)) and len(size) == 2:
+        return int(size[0]), int(size[1])
+    raise ValueError(f"patch_size 格式错误: {size}，应为 int 或 (H, W)")
+
+
+def _sliding_positions(length, patch_length, stride):
+    """生成一维滑窗起点；调用前 length 已按 stride 补齐。"""
+    if length <= patch_length:
+        return [0]
+    return list(range(0, length - patch_length + 1, stride))
+
+
+def _padded_length(length, patch_length, stride):
+    """计算 padding 后的长度，确保所有滑窗都按固定 stride 落在完整 patch 上。"""
+    if length <= patch_length:
+        return patch_length
+    n_steps = int(np.ceil((length - patch_length) / stride))
+    return patch_length + n_steps * stride
+
+
+def _build_blend_window(patch_h, patch_w, device, dtype):
+    """
+    构造 patch 融合权重。
+    使用 Hann 窗让重叠区域平滑过渡；最小值钳到正数，避免边缘权重为 0。
+    """
+    if patch_h <= 1:
+        wy = torch.ones(patch_h, device=device, dtype=dtype)
+    else:
+        wy = torch.hann_window(patch_h, periodic=False, device=device, dtype=dtype)
+    if patch_w <= 1:
+        wx = torch.ones(patch_w, device=device, dtype=dtype)
+    else:
+        wx = torch.hann_window(patch_w, periodic=False, device=device, dtype=dtype)
+
+    weight = (wy[:, None] * wx[None, :]).clamp_min(1e-3)
+    return weight.view(1, 1, patch_h, patch_w)
+
+
+def sliding_window_inference(model, input_tensor, device, patch_size, overlap=32):
+    """
+    按训练尺寸进行滑窗 patch 推理，并融合回原图大小。
+
+    参数:
+        model: 已加载并 eval 的模型
+        input_tensor: [1, 1, image_h, image_w]，灰度且已归一化到 [0, 1]
+        device: torch.device
+        patch_size: 训练输入尺寸，格式为 (H, W)
+        overlap: patch 之间的重叠像素
+
+    返回:
+        {'r': full_diffuse, 'b': full_specular, 'g': full_gradient}
+        三个输出尺寸均为 [1, 1, image_h, image_w]
+    """
+    patch_h, patch_w = _normalize_hw(patch_size)
+    if patch_h <= 0 or patch_w <= 0:
+        raise ValueError(f"patch_size 必须为正数，当前为: {patch_size}")
+
+    max_overlap = min(patch_h, patch_w) - 1
+    overlap = int(max(0, min(overlap, max_overlap)))
+    stride_h = max(1, patch_h - overlap)
+    stride_w = max(1, patch_w - overlap)
+
+    model.eval()
+    input_tensor = input_tensor.to(device)
+    _, _, image_h, image_w = input_tensor.shape
+
+    # 先补齐到滑窗网格尺寸：不 resize 原图，只在右/下边界 padding，推理后再裁回原图。
+    padded_h_target = _padded_length(image_h, patch_h, stride_h)
+    padded_w_target = _padded_length(image_w, patch_w, stride_w)
+    pad_bottom = padded_h_target - image_h
+    pad_right = padded_w_target - image_w
+    if pad_bottom > 0 or pad_right > 0:
+        # reflect padding 对极小图像有限制；不满足时退回 replicate padding。
+        can_reflect = pad_bottom < image_h and pad_right < image_w and image_h > 1 and image_w > 1
+        pad_mode = 'reflect' if can_reflect else 'replicate'
+        input_padded = F.pad(input_tensor, (0, pad_right, 0, pad_bottom), mode=pad_mode)
+    else:
+        input_padded = input_tensor
+
+    _, _, padded_h, padded_w = input_padded.shape
+    ys = _sliding_positions(padded_h, patch_h, stride_h)
+    xs = _sliding_positions(padded_w, patch_w, stride_w)
+
+    accum = {
+        'r': torch.zeros(1, 1, padded_h, padded_w, device=device, dtype=input_padded.dtype),
+        'b': torch.zeros(1, 1, padded_h, padded_w, device=device, dtype=input_padded.dtype),
+        'g': torch.zeros(1, 1, padded_h, padded_w, device=device, dtype=input_padded.dtype),
+    }
+    weight_sum = torch.zeros(1, 1, padded_h, padded_w, device=device, dtype=input_padded.dtype)
+    blend = _build_blend_window(patch_h, patch_w, device=device, dtype=input_padded.dtype)
+
+    with torch.no_grad():
+        for y in ys:
+            for x in xs:
+                patch = input_padded[:, :, y:y + patch_h, x:x + patch_w]
+                out = model(patch)
+                for key in ('r', 'b', 'g'):
+                    accum[key][:, :, y:y + patch_h, x:x + patch_w] += out[key].clamp(0, 1) * blend
+                weight_sum[:, :, y:y + patch_h, x:x + patch_w] += blend
+
+    weight_sum = weight_sum.clamp_min(1e-6)
+    return {
+        key: (value / weight_sum)[:, :, :image_h, :image_w].clamp(0, 1)
+        for key, value in accum.items()
+    }
+
+
 def save_result(tensor, save_path):
     """
     保存tensor为图像文件
@@ -215,8 +327,8 @@ def visualize_results(input_img, output_dict, save_path):
     plt.close()
 
 
-def process_single_image(model, image_path, output_dir, device, show_visualization=True, 
-                         collect_diffuse_dir=None):
+def process_single_image(model, image_path, output_dir, device, show_visualization=True,
+                         collect_diffuse_dir=None, patch_size=None, overlap=32):
     """
     处理单张图像
     
@@ -239,8 +351,25 @@ def process_single_image(model, image_path, output_dir, device, show_visualizati
         input_tensor = input_tensor.to(device)
         
         # 执行推理
-        with torch.no_grad():
-            output = model(input_tensor)
+        model.eval()
+        if patch_size is None:
+            with torch.no_grad():
+                output = model(input_tensor)
+        else:
+            patch_h, patch_w = _normalize_hw(patch_size)
+            image_h, image_w = input_tensor.shape[-2:]
+            if (image_h, image_w) == (patch_h, patch_w):
+                print(f"  整图推理: 输入尺寸 {image_h}x{image_w} 与训练尺寸一致")
+                with torch.no_grad():
+                    output = model(input_tensor)
+            else:
+                print(
+                    f"  滑窗推理: 原图 {image_h}x{image_w}, "
+                    f"patch {patch_h}x{patch_w}, overlap={overlap}")
+                output = sliding_window_inference(
+                    model, input_tensor, device,
+                    patch_size=(patch_h, patch_w),
+                    overlap=overlap)
         
         # 提取输出
         diffuse_output = output['r']      # 漫反射（去除高反光后的结果）
@@ -275,8 +404,9 @@ def process_single_image(model, image_path, output_dir, device, show_visualizati
         return False
 
 
-def process_folder(model, input_folder, output_folder, device, show_visualization=True, 
-                   supported_formats=None, collect_diffuse_dir=None):
+def process_folder(model, input_folder, output_folder, device, show_visualization=True,
+                   supported_formats=None, collect_diffuse_dir=None,
+                   patch_size=None, overlap=32):
     """
     批量处理文件夹中的所有图像
     
@@ -317,7 +447,7 @@ def process_folder(model, input_folder, output_folder, device, show_visualizatio
         image_output_dir = os.path.join(output_folder, image_name)
         
         if process_single_image(model, image_path, image_output_dir, device, show_visualization,
-                                collect_diffuse_dir):
+                                collect_diffuse_dir, patch_size=patch_size, overlap=overlap):
             success_count += 1
         else:
             fail_count += 1
@@ -358,6 +488,10 @@ def main():
     
     # 6. 支持的图像格式
     SUPPORTED_FORMATS = ['.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif']
+
+    # 滑窗推理配置：必须与训练阶段 IMAGE_SIZE 一致，格式为 (H, W)。
+    TRAIN_IMAGE_SIZE = (128, 160)
+    PATCH_OVERLAP = 32
     
     # ====================================================================
     
@@ -407,7 +541,8 @@ def main():
         
         print(f"开始处理...")
         if process_single_image(model, INPUT_PATH, image_output_dir, device, SHOW_VISUALIZATION,
-                                DIFFUSE_COLLECTION_DIR):
+                                DIFFUSE_COLLECTION_DIR,
+                                patch_size=TRAIN_IMAGE_SIZE, overlap=PATCH_OVERLAP):
             print(f"✓ 处理完成!")
             print(f"\n输出文件位置:")
             print(f"  - {image_output_dir}/{image_name}_diffuse.png       (⭐ 去除高反光后的结果)")
@@ -423,7 +558,8 @@ def main():
         print("-" * 70)
         
         process_folder(model, INPUT_PATH, OUTPUT_DIR, device, SHOW_VISUALIZATION, SUPPORTED_FORMATS,
-                       DIFFUSE_COLLECTION_DIR)
+                       DIFFUSE_COLLECTION_DIR,
+                       patch_size=TRAIN_IMAGE_SIZE, overlap=PATCH_OVERLAP)
         
         print(f"\n所有结果已保存到: {OUTPUT_DIR}")
         print(f"\n输出文件说明:")

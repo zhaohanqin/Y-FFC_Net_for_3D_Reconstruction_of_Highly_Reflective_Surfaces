@@ -1,50 +1,107 @@
-# Decoupled Y-FFC Copy
+# decoupled_yffc 结构说明
 
-This directory contains a decoupled copy generated from the repository-root `Y_FFC_unified.py` and `train.py`.
+`decoupled_yffc` 是根目录 `Y_FFC_unified.py` 和 `train.py` 的拆分版副本。目标是把单文件里的模型、损失、数据集和训练逻辑拆成更清晰的包结构，方便阅读、维护和后续让 AI 精确定位代码。
 
-The original root files were not modified.
+当前拆分版已按根目录主实现对齐：
 
-## Layout
+- 模型结构与 `Y_FFC_unified.py` 对齐：`YFFC`、ResNet+ViT 编码器、FFC 模块、高频增强、梯度分支、主解码器、残差精修头等。
+- 训练主链路与 `train.py` 对齐：`EnhancedCompositeLoss`、OHEM、合成高光增强、BN->GN、EMA、分层学习率、warmup+cosine scheduler、自动训练/验证划分、固定验证可视化样本。
+- 图像尺寸语义统一为 `(H, W)`；传给 PIL resize 时内部转换为 `(W, H)`。
 
-- `Y_FFC_unified.py`: compatibility entrypoint for the split copy.
-- `train.py`: training entrypoint copy with the original configuration block.
-- `yffc/models/common.py`: small shared model helpers.
-- `yffc/models/ffc/`: Fast Fourier Convolution modules.
-- `yffc/models/blocks/`: reusable convolution, multiscale, and upsampling blocks.
-- `yffc/models/attention/`: attention gates, cross-modal fusion, and specular-aware attention.
-- `yffc/models/branches/`: auxiliary model branches such as the ViT encoder branch.
-- `yffc/models/heads/`: high-frequency enhancement and output refinement heads.
-- `yffc/models/architecture/`: Encoder, decoders, enhancement layers, and `YFFC`.
-- `yffc/models/network.py`: compatibility exports for code that imports from the old model file.
-- `yffc/losses/`: metrics, basic losses, specular losses, and composite losses.
-- `yffc/losses.py`: compatibility exports for old loss imports.
-- `yffc/data/`: datasets and paired augmentations.
-- `yffc/data.py`: compatibility exports for old data imports.
-- `yffc/training/`: training utilities, optimization, metrics, loops, visualization, reporting, and enhanced training orchestration.
-- `yffc/cli.py`: CLI compatible with the original unified script.
+## 顶层入口
 
-## Usage
+- `train.py`：推荐的增强训练入口，配置块风格与根目录 `train.py` 保持一致。
+- `Y_FFC_unified.py`：兼容入口，转发到拆分后的 `yffc.cli`，用于保留类似旧单文件的 `test/train` 子命令。
+- `README.md`：当前文件，说明拆分结构和使用方式。
 
-Run from this directory if you want to use the decoupled copy directly:
+## 包结构
+
+- `yffc/models/`：模型结构。
+- `yffc/models/architecture/`：`Encoder`、`GradientDecoder`、`MainDecoder`、`EnhancementLayers`、`YFFC` 主网络。
+- `yffc/models/attention/`：注意力模块，包括 cross-modal fusion 和 specular-aware attention。
+- `yffc/models/branches/`：ViT 分支与位置编码。
+- `yffc/models/blocks/`：卷积、上采样、多尺度卷积等通用块。
+- `yffc/models/ffc/`：Fast Fourier Convolution 相关模块。
+- `yffc/models/heads/`：高频增强和残差精修头。
+- `yffc/losses/`：SSIM/MS-SSIM、感知损失、频域损失、specular focal/dice、梯度一致性和复合损失。
+- `yffc/data/`：数据集和配对增强。
+- `yffc/training/`：训练循环、优化器、EMA、scheduler、指标记录、可视化、报告和增强训练编排。
+- `yffc/cli.py`：兼容 `Y_FFC_unified.py train/test` 的命令行入口。
+
+兼容导出文件：
+
+- `yffc/data.py`、`yffc/losses.py`、`yffc/models/network.py` 保留旧导入路径的兼容能力。
+- `yffc/__init__.py` 汇总常用类和函数，方便 `from yffc import YFFC` 这类导入。
+
+## 推荐训练方式
+
+在仓库根目录运行：
 
 ```powershell
 cd decoupled_yffc
 python train.py
 ```
 
+`train.py` 内部集中配置训练参数。当前默认值已与根目录 `train.py` 对齐，包括：
+
+- `IMAGE_SIZE = (128, 160)`
+- `INPUT_DIR = 'data2/inputs'`
+- `TARGET_DIR = 'data2/targets'`
+- `USE_GN = True`
+- `USE_EMA = True`
+- `USE_OHEM = True`
+- `EnhancedPairedTransform + HighlightAugmentation(p=0.4)`
+
+## 兼容 CLI
+
+测试模型前向：
+
 ```powershell
 cd decoupled_yffc
 python Y_FFC_unified.py test
 ```
 
-Or import it as a normal package from the repository root:
+使用 CLI 训练：
 
 ```powershell
-python -c "import decoupled_yffc; from decoupled_yffc.yffc.models import YFFC; print('ok')"
+cd decoupled_yffc
+python Y_FFC_unified.py train --input_dir data2/inputs --target_dir data2/targets --use_gn --use_ema
 ```
 
-Compatibility imports are still supported when `decoupled_yffc` is on `PYTHONPATH`:
+CLI 训练默认也会启用合成高光增强和 OHEM；如果需要关闭：
 
 ```powershell
-python -c "import sys; sys.path.insert(0, 'decoupled_yffc'); from yffc.models.network import YFFC; print('ok')"
+python Y_FFC_unified.py train --input_dir data2/inputs --target_dir data2/targets --no_augmentation --no_ohem
 ```
+
+## 训练链路说明
+
+增强训练入口 `yffc/training/engine.py` 的流程：
+
+1. 构建 `YFFC` 模型。
+2. 按配置执行 BN->GN。
+3. 使用 `ImprovedFringeDataset` 加载输入/目标图像，训练集使用 `EnhancedPairedTransform`。
+4. `HighlightAugmentation` 会随机叠加高斯 blob 高反光，并同步更新 `gt_specular`。
+5. 没有独立验证集时，使用固定 seed 自动划分训练/验证，验证集不做增强。
+6. 使用 `EnhancedCompositeLoss(use_ohem=USE_OHEM)`。
+7. 使用 `ImprovedWeightScheduler` 动态调度 `ssim/l1/freq/spec/grad/focal/dice/gc` 等损失权重。
+8. 使用 `build_optimizer_v2` 分层学习率，`sa1-sa4/hf_enhance` 作为 `new_modules` 使用 base LR。
+9. scheduler 只在真实 `optimizer.step()` 后推进，避免梯度累积时学习率走快。
+10. 验证和可视化时可临时切换 EMA 权重。
+
+## 数据命名匹配
+
+数据集会按以下顺序寻找目标图：
+
+- 输入文件同名目标图。
+- `input_xxx` -> `target_xxx`。
+- `inputxxx` -> `targetxxx`。
+- 从文件名提取数字后尝试 `target_{digits}{ext}`。
+
+如果无法匹配，会抛出 `FileNotFoundError`。
+
+## 注意
+
+- `comporison_model/` 是对比实验目录，不属于此拆分包。
+- 训练输出、权重、曲线和中间结果仍应放在 `experiments/`、`checkpoints/`、`outputs/` 等产物目录，不应作为源码提交。
+- 如果修改根目录 `Y_FFC_unified.py` 或 `train.py` 的核心逻辑，需要同步检查本目录对应模块。

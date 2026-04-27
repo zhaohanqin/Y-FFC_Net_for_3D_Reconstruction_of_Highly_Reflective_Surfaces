@@ -56,6 +56,9 @@ class DynamicLossWeightScheduler:
             'lambda_spec':       0.5,
             'lambda_stat':       0.0,     # 移除冗余 stat
             'lambda_grad':       max(0.3, 0.5 - 0.2 * p),
+            'lambda_focal':      min(0.8, 0.3 + 0.5 * p),
+            'lambda_dice':       min(0.3, 0.1 + 0.2 * p),
+            'lambda_gc':         min(0.2, 0.05 + 0.15 * p),
         }
         return weights
 
@@ -70,12 +73,16 @@ def build_optimizer(model, base_lr=2e-4, weight_decay=1e-4):
     encoder_pretrained = []
     ffc_params = []
     decoder_params = []
+    new_module_params = []
     other_params = []
 
     for name, param in model.named_parameters():
         if not param.requires_grad:
             continue
-        if ('encoder.vit_branch.vit' in name or
+        if ('sa1' in name or 'sa2' in name or 'sa3' in name or
+            'sa4' in name or 'hf_enhance' in name):
+            new_module_params.append(param)
+        elif ('encoder.vit_branch.vit' in name or
             'encoder.stem' in name or
             'encoder.layer' in name):
             encoder_pretrained.append(param)
@@ -93,6 +100,7 @@ def build_optimizer(model, base_lr=2e-4, weight_decay=1e-4):
         {'params': other_params, 'lr': base_lr * 0.5, 'name': 'fusion_layers'},
         {'params': decoder_params, 'lr': base_lr, 'name': 'decoders'},
         {'params': ffc_params, 'lr': base_lr * 0.5, 'name': 'ffc_modules'},
+        {'params': new_module_params, 'lr': base_lr, 'name': 'new_modules'},
     ]
     param_groups = [g for g in param_groups if len(g['params']) > 0]
 

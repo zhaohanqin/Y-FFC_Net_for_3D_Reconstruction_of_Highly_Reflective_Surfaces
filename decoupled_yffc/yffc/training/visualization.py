@@ -1,12 +1,14 @@
 """Training visualization helpers."""
 
 import os
+import time
 
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from torch.utils.data import DataLoader
 
 from .metrics import SUB_LOSS_DISPLAY_NAMES
 
@@ -97,6 +99,35 @@ def visualize_sample_during_training(model, val_loader, device, output_folder,
 
     model.train()
     return vis_dir
+
+
+def build_fixed_visualization_loader(val_dataset, num_samples, num_workers,
+                                     pin_memory=False, seed=None):
+    """
+    为本次训练固定抽取一批验证样本。
+
+    seed=None 时使用当前时间生成种子；训练开始后样本索引固定，
+    便于同一次训练中跨 epoch 对比可视化结果。
+    """
+    dataset_size = len(val_dataset)
+    if dataset_size <= 0:
+        raise ValueError("验证集为空，无法抽取可视化样本。")
+
+    sample_count = min(max(int(num_samples), 1), dataset_size)
+    if seed is None:
+        seed = time.time_ns() % (2**63 - 1)
+    seed = int(seed)
+
+    generator = torch.Generator().manual_seed(seed)
+    vis_indices = torch.randperm(dataset_size, generator=generator)[:sample_count].tolist()
+    vis_dataset = torch.utils.data.Subset(val_dataset, vis_indices)
+    vis_loader = DataLoader(
+        vis_dataset,
+        batch_size=sample_count,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=pin_memory)
+    return vis_loader, vis_indices, seed
 
 
 def plot_training_history(history, output_folder, total_epochs):

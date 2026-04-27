@@ -105,7 +105,9 @@ def save_training_summary(output_folder, cfg, history, best_info, total_time_str
         f.write(f'  Use GN            : {cfg["USE_GN"]}\n')
         f.write(f'  Use EMA           : {cfg["USE_EMA"]}\n')
         f.write(f'  Use OHEM          : {cfg["USE_OHEM"]}\n')
-        f.write(f'  Mixed Precision   : Enabled (AMP)\n\n')
+        f.write(f'  Mixed Precision   : Enabled (AMP)\n')
+        f.write(f'  Val Vis Seed Used : {cfg.get("VIS_SAMPLE_SEED_USED")}\n')
+        f.write(f'  Val Vis Indices   : {cfg.get("VIS_SAMPLE_INDICES", [])}\n\n')
 
         # ② 最优模型
         f.write(sep)
