@@ -7,24 +7,36 @@ from torchvision import models
 
 from ..attention import CrossModalFusion
 from ..blocks import Conv2D_BN_activa
-from ..branches import EnhancedViTEncoderBranch
+from ..branches import AdaptiveSkipFusion, SwinEncoderBranch
 from ..ffc import FFC_BN_ACT
 from ..heads import HighFrequencyEnhancement
 
 
 class Encoder(nn.Module):
     """
-    编码器：ResNet50（dilated）+ 增强版 ViT-B/16 双分支，末尾接 FFC bottleneck
-    和 HighFrequencyEnhancement。
+    编码器：ResNet50 局部纹理分支 + Swin-Tiny 多尺度上下文分支。
 
-    改进点（相比原始版本）：
-      - ViT 分支升级为 EnhancedViTEncoderBranch（多层特征 + CPE + 自适应融合）
-      - CNN-ViT 融合升级为 CrossModalFusion（双向交叉注意力）
-    输出 5 级特征用于后续 Decoder 的 skip connection。
+    结构流程：
+      1. ResNet50 分支提取多尺度局部纹理特征：
+         x_bb_1: [B, 64,  H/2,  W/2]
+         x_bb_2: [B, 128, H/4,  W/4]
+         x_bb_3: [B, 256, H/8,  W/8]
+         x_bb_4: [B, 512, H/16, W/16]
+      2. SwinEncoderBranch 从同一灰度输入提取 H/4、H/8、H/16 三个层级特征：
+         swin_4:  [B, 96,  H/4,  W/4]
+         swin_8:  [B, 192, H/8,  W/8]
+         swin_16: [B, 384, H/16, W/16]
+      3. H/4 和 H/8 使用 AdaptiveSkipFusion 做内容自适应 skip 融合，增强 x_bb_2 / x_bb_3。
+      4. H/16 使用 CrossModalFusion(x_bb_4, swin_feat_16) 做瓶颈层融合。
+      5. 融合结果进入 cba_after_backbone、FFC bottleneck 和 HighFrequencyEnhancement。
+
+    不改 Decoder 接口，不引入 H/32 特征，不做多尺度 CrossModalFusion。
+    返回 5 级特征，保持后续 Decoder 的 skip connection 约定不变。
     """
 
-    def __init__(self, vit_image_size=224):
+    def __init__(self, swin_pretrained=True, debug_shapes=False):
         super().__init__()
+        self.debug_shapes = debug_shapes
 
         try:
             backbone = models.resnet50(
@@ -56,45 +68,93 @@ class Encoder(nn.Module):
         self.reduce_l4 = Conv2D_BN_activa(2048, 512, 1, 1, 0)
         self.fuse_l34 = Conv2D_BN_activa(1024, 512, 3, 1, 1)
 
-        self.vit_branch = EnhancedViTEncoderBranch(vit_image_size=vit_image_size)
-        # [V5] 交叉注意力融合替代简单拼接
+        self.swin_branch = SwinEncoderBranch(pretrained=swin_pretrained)
+
+        # H/4 和 H/8 使用 AdaptiveSkipFusion，根据内容、位置和通道动态控制 Swin 注入比例。
+        # beta 初始为 0，模型初始行为接近纯 ResNet skip，训练中再逐步学习 Swin skip 的整体强度。
+        self.fuse_h4 = AdaptiveSkipFusion(
+            res_channels=128,
+            swin_channels=self.swin_branch.channels_4,
+            init_beta=0.0)
+        self.fuse_h8 = AdaptiveSkipFusion(
+            res_channels=256,
+            swin_channels=self.swin_branch.channels_8,
+            init_beta=0.0)
+        self.swin16_proj = nn.Sequential(
+            nn.Conv2d(self.swin_branch.channels_16, 512, kernel_size=1, stride=1, padding=0, bias=False),
+            nn.BatchNorm2d(512),
+            nn.GELU(),
+            nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.BatchNorm2d(512),
+            nn.GELU(),
+        )
+
+        # H/16 仍使用 CrossModalFusion，不额外 residual add，避免重复注入上下文。
         self.cross_modal_fusion = CrossModalFusion(
-            cnn_dim=512, vit_dim=self.vit_branch.embed_dim,
+            cnn_dim=512, context_dim=512,
             out_dim=512, num_heads=4, sr_ratio=2)
         self.cba_after_backbone = Conv2D_BN_activa(512, 256, 3, 1, 1)
         self.ffc_bottleneck = FFC_BN_ACT(256, 256, 3, 0.5, 0.5, padding=1)
-
-        # 高频增强
         self.hf_enhance = HighFrequencyEnhancement(channels=256)
 
     def forward(self, x):
         x_in = x
-        x = self.stem_conv(x); x = self.stem_bn(x)
+        x = self.stem_conv(x)
+        x = self.stem_bn(x)
         x_bb_1 = self.stem_relu(x)
 
         x = self.stem_pool(x_bb_1)
-        x_l1 = self.layer1(x); x_bb_2 = self.reduce_l1(x_l1)
-        x_l2 = self.layer2(x_l1); x_bb_3 = self.reduce_l2(x_l2)
-        x_l3 = self.layer3(x_l2); x_l4 = self.layer4(x_l3)
+        x_l1 = self.layer1(x)
+        x_bb_2 = self.reduce_l1(x_l1)
+        x_l2 = self.layer2(x_l1)
+        x_bb_3 = self.reduce_l2(x_l2)
+        x_l3 = self.layer3(x_l2)
+        x_l4 = self.layer4(x_l3)
 
         x_l3_512 = self.reduce_l3(x_l3)
         x_l4_512 = self.reduce_l4(x_l4)
         x_bb_4 = self.fuse_l34(torch.cat([x_l3_512, x_l4_512], 1))
 
-        vit_feat = self.vit_branch(x_in)
-        if vit_feat.shape[-2:] != x_bb_4.shape[-2:]:
-            vit_feat = F.interpolate(vit_feat, size=x_bb_4.shape[-2:],
-                                     mode='bilinear', align_corners=False)
+        swin_feats = self.swin_branch(x_in)
+        swin_4 = swin_feats["swin_4"]
+        swin_8 = swin_feats["swin_8"]
+        swin_16 = swin_feats["swin_16"]
 
-        # [V5] 交叉注意力融合
-        fused = self.cross_modal_fusion(x_bb_4, vit_feat)
+        if self.debug_shapes:
+            print(
+                f"[Swin debug] x_bb_2={tuple(x_bb_2.shape)}, swin_4={tuple(swin_4.shape)}, "
+                f"x_bb_3={tuple(x_bb_3.shape)}, swin_8={tuple(swin_8.shape)}, "
+                f"x_bb_4={tuple(x_bb_4.shape)}, swin_16={tuple(swin_16.shape)}"
+            )
+
+        # H/4 自适应融合：保留细条纹和浅层边缘，同时按内容注入 Swin 局部窗口上下文。
+        x_bb_2 = self.fuse_h4(x_bb_2, swin_4)
+
+        # H/8 自适应融合：对高光边界、局部反射区域和弱高光结构进行内容自适应增强。
+        x_bb_3 = self.fuse_h8(x_bb_3, swin_8)
+
+        if self.debug_shapes:
+            gate4 = self.fuse_h4.last_gate_mean
+            gate8 = self.fuse_h8.last_gate_mean
+            gate4_str = f"{gate4.item():.6f}" if gate4 is not None else "n/a"
+            gate8_str = f"{gate8.item():.6f}" if gate8 is not None else "n/a"
+            print(
+                f"[Adaptive skip debug] beta_h4={self.fuse_h4.beta.item():.6f}, "
+                f"gate_h4_mean={gate4_str}, beta_h8={self.fuse_h8.beta.item():.6f}, "
+                f"gate_h8_mean={gate8_str}"
+            )
+
+        # H/16 瓶颈融合：投影到 512 后与 ResNet x_bb_4 做 CrossModalFusion。
+        if swin_16.shape[-2:] != x_bb_4.shape[-2:]:
+            swin_16 = F.interpolate(swin_16, size=x_bb_4.shape[-2:], mode='bilinear', align_corners=False)
+        swin_feat_16 = self.swin16_proj(swin_16)
+
+        fused = self.cross_modal_fusion(x_bb_4, swin_feat_16)
         x_c = self.cba_after_backbone(fused)
 
         nl = 256 - int(256 * 0.5)
         out = self.ffc_bottleneck((x_c[:, :nl], x_c[:, nl:]))
         x_c = torch.cat([out[0], out[1]], 1) + x_c
-
-        # 高频增强
         x_c = self.hf_enhance(x_c)
 
         return x_bb_1, x_bb_2, x_bb_3, x_bb_4, x_c

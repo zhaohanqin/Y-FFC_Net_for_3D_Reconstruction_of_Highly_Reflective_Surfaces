@@ -71,6 +71,7 @@ class DynamicLossWeightScheduler:
 def build_optimizer(model, base_lr=2e-4, weight_decay=1e-4):
     """为 YFFC 模型构建分层学习率 AdamW 优化器。"""
     encoder_pretrained = []
+    swin_skip_params = []
     ffc_params = []
     decoder_params = []
     new_module_params = []
@@ -82,7 +83,10 @@ def build_optimizer(model, base_lr=2e-4, weight_decay=1e-4):
         if ('sa1' in name or 'sa2' in name or 'sa3' in name or
             'sa4' in name or 'hf_enhance' in name):
             new_module_params.append(param)
-        elif ('encoder.vit_branch.vit' in name or
+        elif ('fuse_h4' in name or 'fuse_h8' in name or
+              'swin16_proj' in name):
+            swin_skip_params.append(param)
+        elif ('encoder.swin_branch.swin' in name or
             'encoder.stem' in name or
             'encoder.layer' in name):
             encoder_pretrained.append(param)
@@ -97,6 +101,7 @@ def build_optimizer(model, base_lr=2e-4, weight_decay=1e-4):
 
     param_groups = [
         {'params': encoder_pretrained, 'lr': base_lr * 0.1, 'name': 'encoder_pretrained'},
+        {'params': swin_skip_params, 'lr': base_lr, 'name': 'adaptive_skip_fusion'},
         {'params': other_params, 'lr': base_lr * 0.5, 'name': 'fusion_layers'},
         {'params': decoder_params, 'lr': base_lr, 'name': 'decoders'},
         {'params': ffc_params, 'lr': base_lr * 0.5, 'name': 'ffc_modules'},

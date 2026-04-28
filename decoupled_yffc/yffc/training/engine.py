@@ -312,6 +312,14 @@ def train_model(cfg):
             vl, vs, vm, val_mse, val_psnr,
             train_subs, val_subs, w, current_lr, device,
             composite, best_val_ssim, best_val_loss)
+        if hasattr(model, 'encoder') and hasattr(model.encoder, 'fuse_h4') and hasattr(model.encoder, 'fuse_h8'):
+            gate4 = model.encoder.fuse_h4.last_gate_mean
+            gate8 = model.encoder.fuse_h8.last_gate_mean
+            gate4_str = f"{gate4.item():.6f}" if gate4 is not None else "n/a"
+            gate8_str = f"{gate8.item():.6f}" if gate8 is not None else "n/a"
+            print(f"  [Adaptive skip] beta_h4={model.encoder.fuse_h4.beta.item():.6f}, "
+                  f"beta_h8={model.encoder.fuse_h8.beta.item():.6f}, "
+                  f"gate_h4_mean={gate4_str}, gate_h8_mean={gate8_str}")
 
         # ── 模型保存逻辑 ──
         improved_flags = []

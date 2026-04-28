@@ -654,7 +654,7 @@ class SwinEncoderBranch(nn.Module):
         H/4 用于增强 x_bb_2，H/8 用于增强 x_bb_3，H/16 用于瓶颈层 CrossModalFusion。
 
     训练/推理建议：
-        第二阶段加入 H/4、H/8 skip 后显存会高于第一阶段。
+        第三阶段加入 AdaptiveSkipFusion 后显存会高于第一阶段。
         推荐输入 320x256、384x384、512x512 等 patch，尽量让 H/W 被 32 整除。
         大图不建议直接整图训练，推理时建议 sliding-window + overlap 融合。
     """
@@ -736,6 +736,56 @@ class SwinEncoderBranch(nn.Module):
             "swin_8": swin_8,
             "swin_16": swin_16,
         }
+
+
+class AdaptiveSkipFusion(nn.Module):
+    """
+    轻量级自适应 Swin skip 融合模块。
+
+    作用：
+      - 先把 Swin skip 投影到 ResNet skip 的通道数；
+      - 根据 concat([res_feat, swin_proj]) 生成逐位置、逐通道 gate；
+      - 使用 fused = res_feat + beta * gate * swin_proj 做内容自适应残差注入。
+
+    beta 是整体强度控制参数，初始为 0.0，让模型初始时接近纯 ResNet skip，
+    避免突然改变 Decoder 已经适配的 skip 特征分布。gate 负责控制不同空间位置、
+    不同通道上 Swin 上下文注入多少。H/4、H/8 分辨率较高，因此这里使用轻量门控，
+    不直接使用重型 CrossModalFusion；H/16 仍保留 CrossModalFusion 做瓶颈强交互。
+    """
+
+    def __init__(self, res_channels, swin_channels, init_beta=0.0, gate_reduction=2):
+        super().__init__()
+        hidden_channels = max(res_channels // gate_reduction, 16)
+        self.beta = nn.Parameter(torch.tensor(float(init_beta)))
+        self.last_gate_mean = None
+
+        self.swin_proj = nn.Sequential(
+            nn.Conv2d(swin_channels, res_channels, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.BatchNorm2d(res_channels),
+            nn.GELU(),
+        )
+        self.gate_net = nn.Sequential(
+            nn.Conv2d(res_channels * 2, hidden_channels, kernel_size=1, stride=1, padding=0, bias=True),
+            nn.GELU(),
+            nn.Conv2d(hidden_channels, res_channels, kernel_size=1, stride=1, padding=0, bias=True),
+            nn.Sigmoid(),
+        )
+
+        # 初始 gate 偏小，配合 beta=0.0，使训练初期尽量保持 ResNet skip 分布稳定。
+        final_gate_conv = self.gate_net[-2]
+        if isinstance(final_gate_conv, nn.Conv2d) and final_gate_conv.bias is not None:
+            nn.init.constant_(final_gate_conv.bias, -2.0)
+
+    def forward(self, res_feat, swin_feat):
+        if swin_feat.shape[-2:] != res_feat.shape[-2:]:
+            swin_feat = F.interpolate(
+                swin_feat, size=res_feat.shape[-2:],
+                mode='bilinear', align_corners=False)
+
+        swin_proj = self.swin_proj(swin_feat)
+        gate = self.gate_net(torch.cat([res_feat, swin_proj], dim=1))
+        self.last_gate_mean = gate.detach().mean()
+        return res_feat + self.beta * gate * swin_proj
 
 
 class CrossModalFusion(nn.Module):
@@ -1667,7 +1717,7 @@ class Encoder(nn.Module):
          swin_4:  [B, 96,  H/4,  W/4]
          swin_8:  [B, 192, H/8,  W/8]
          swin_16: [B, 384, H/16, W/16]
-      3. H/4 和 H/8 使用 projection + learnable alpha residual add 增强 x_bb_2 / x_bb_3。
+      3. H/4 和 H/8 使用 AdaptiveSkipFusion 做内容自适应 skip 融合，增强 x_bb_2 / x_bb_3。
       4. H/16 仍沿用第一阶段 CrossModalFusion(x_bb_4, swin_feat_16) 做瓶颈层融合。
       5. 融合结果进入 cba_after_backbone、FFC bottleneck 和 HighFrequencyEnhancement。
 
@@ -1711,19 +1761,17 @@ class Encoder(nn.Module):
 
         self.swin_branch = SwinEncoderBranch(pretrained=swin_pretrained)
 
-        # 第二阶段多尺度 skip 增强：
-        # H/4 的 Swin 特征增强 ResNet x_bb_2，H/8 的 Swin 特征增强 ResNet x_bb_3。
-        # alpha 初始为 0，模型初始行为等价于第一阶段，训练中再逐步学习 Swin skip 的贡献。
-        self.swin4_proj = nn.Sequential(
-            nn.Conv2d(self.swin_branch.channels_4, 128, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(128),
-            nn.GELU(),
-        )
-        self.swin8_proj = nn.Sequential(
-            nn.Conv2d(self.swin_branch.channels_8, 256, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(256),
-            nn.GELU(),
-        )
+        # 第三阶段自适应多尺度 skip 融合：
+        # H/4 和 H/8 使用 AdaptiveSkipFusion，根据内容、位置和通道动态控制 Swin 注入比例。
+        # beta 初始为 0，模型初始行为接近纯 ResNet skip，训练中再逐步学习 Swin skip 的整体强度。
+        self.fuse_h4 = AdaptiveSkipFusion(
+            res_channels=128,
+            swin_channels=self.swin_branch.channels_4,
+            init_beta=0.0)
+        self.fuse_h8 = AdaptiveSkipFusion(
+            res_channels=256,
+            swin_channels=self.swin_branch.channels_8,
+            init_beta=0.0)
         self.swin16_proj = nn.Sequential(
             nn.Conv2d(self.swin_branch.channels_16, 512, kernel_size=1, stride=1, padding=0, bias=False),
             nn.BatchNorm2d(512),
@@ -1732,8 +1780,6 @@ class Encoder(nn.Module):
             nn.BatchNorm2d(512),
             nn.GELU(),
         )
-        self.alpha_4 = nn.Parameter(torch.tensor(0.0))
-        self.alpha_8 = nn.Parameter(torch.tensor(0.0))
 
         # H/16 仍沿用第一阶段 CrossModalFusion，不额外 residual add，避免重复注入上下文。
         self.cross_modal_fusion = CrossModalFusion(
@@ -1773,15 +1819,22 @@ class Encoder(nn.Module):
                 f"x_bb_4={tuple(x_bb_4.shape)}, swin_16={tuple(swin_16.shape)}"
             )
 
-        # H/4 skip 增强：Swin 浅层窗口特征补充细条纹、浅层边缘和局部纹理。
-        if swin_4.shape[-2:] != x_bb_2.shape[-2:]:
-            swin_4 = F.interpolate(swin_4, size=x_bb_2.shape[-2:], mode='bilinear', align_corners=False)
-        x_bb_2 = x_bb_2 + self.alpha_4 * self.swin4_proj(swin_4)
+        # H/4 自适应融合：保留细条纹和浅层边缘，同时按内容注入 Swin 局部窗口上下文。
+        x_bb_2 = self.fuse_h4(x_bb_2, swin_4)
 
-        # H/8 skip 增强：Swin 中层窗口特征补充高光边界、反射区域轮廓和局部结构。
-        if swin_8.shape[-2:] != x_bb_3.shape[-2:]:
-            swin_8 = F.interpolate(swin_8, size=x_bb_3.shape[-2:], mode='bilinear', align_corners=False)
-        x_bb_3 = x_bb_3 + self.alpha_8 * self.swin8_proj(swin_8)
+        # H/8 自适应融合：对高光边界、局部反射区域和弱高光结构进行内容自适应增强。
+        x_bb_3 = self.fuse_h8(x_bb_3, swin_8)
+
+        if self.debug_shapes:
+            gate4 = self.fuse_h4.last_gate_mean
+            gate8 = self.fuse_h8.last_gate_mean
+            gate4_str = f"{gate4.item():.6f}" if gate4 is not None else "n/a"
+            gate8_str = f"{gate8.item():.6f}" if gate8 is not None else "n/a"
+            print(
+                f"[Adaptive skip debug] beta_h4={self.fuse_h4.beta.item():.6f}, "
+                f"gate_h4_mean={gate4_str}, beta_h8={self.fuse_h8.beta.item():.6f}, "
+                f"gate_h8_mean={gate8_str}"
+            )
 
         # H/16 瓶颈融合保持第一阶段设计：投影到 512 后与 ResNet x_bb_4 做 CrossModalFusion。
         if swin_16.shape[-2:] != x_bb_4.shape[-2:]:
@@ -2195,9 +2248,9 @@ def build_optimizer(model, base_lr=2e-4, weight_decay=1e-4):
         if ('sa1' in name or 'sa2' in name or 'sa3' in name or
             'sa4' in name or 'hf_enhance' in name):
             new_module_params.append(param)
-        elif ('swin4_proj' in name or 'swin8_proj' in name or
-              'swin16_proj' in name or 'alpha_4' in name or 'alpha_8' in name):
-            # 第二阶段新增 Swin skip 投影层和 alpha 门控使用 base_lr。
+        elif ('fuse_h4' in name or 'fuse_h8' in name or
+              'swin16_proj' in name):
+            # 第三阶段 AdaptiveSkipFusion 与 H/16 投影层使用 base_lr，避免 beta 初始为 0 后学习过慢。
             swin_skip_params.append(param)
         elif ('encoder.swin_branch.swin' in name or
             'encoder.stem' in name or
@@ -2214,7 +2267,7 @@ def build_optimizer(model, base_lr=2e-4, weight_decay=1e-4):
 
     param_groups = [
         {'params': encoder_pretrained, 'lr': base_lr * 0.1, 'name': 'encoder_pretrained'},
-        {'params': swin_skip_params, 'lr': base_lr, 'name': 'swin_skip_fusion'},
+        {'params': swin_skip_params, 'lr': base_lr, 'name': 'adaptive_skip_fusion'},
         {'params': other_params, 'lr': base_lr * 0.5, 'name': 'fusion_layers'},
         {'params': decoder_params, 'lr': base_lr, 'name': 'decoders'},
         {'params': ffc_params, 'lr': base_lr * 0.5, 'name': 'ffc_modules'},

@@ -7,9 +7,24 @@
 本文档是对 **X-FFC（X-shaped Fast Fourier Convolutional Network）** 模型的完整技术说明，基于 `Y_FFC_unified.py`（模型定义）与 `train.py`（训练脚本）的源代码逐行分析而成。相比先前版本的总结文档，本文档：
 
 - 完全忠于当前代码实现，所有模块描述均可溯源至具体代码行
-- 增加了 V3 版本引入的全部改进点（交叉注意力融合、增强版 ViT 编码器、残差精修头、梯度门控注入等）
-- 详细标注了每个改进点的编号标签（如 \[P1\]、\[V5\]、\[F6\] 等），便于与代码注释对照
+- 增加了当前 X-FFC-Swin 版本引入的全部改进点（Swin-Tiny 编码器、AdaptiveSkipFusion、H/16 CrossModalFusion、残差精修头、梯度门控注入等）
+- 详细标注了每个改进点的编号标签（如 \[P1\]、\[S5\]、\[F6\] 等），便于与代码注释对照
 - 新增了训练系统的完整说明（损失调度、优化器配置、数据增强流水线等）
+
+### 1.1 当前模型整体模块流
+
+当前代码实现可以按模块划分为以下数据流：
+
+1. **输入层**：输入为单通道灰度条纹图像 `x`，形状为 `[B, 1, H, W]`，归一化到 `[0, 1]`。
+2. **编码层 EncoderSwin**：
+   - **ResNet50 局部纹理分支**输出 `x_bb_1/x_bb_2/x_bb_3/x_bb_4`，分别对应 H/2、H/4、H/8、H/16，用作解码器 skip connection。
+   - **Swin-Tiny 窗口上下文分支**直接处理原始 patch，不强制 resize 到 224×224，输出 `swin_4/swin_8/swin_16`。
+   - **多尺度 skip 融合**：`swin_4` 与 `x_bb_2`、`swin_8` 与 `x_bb_3` 通过 `AdaptiveSkipFusion` 做内容自适应残差注入。
+3. **瓶颈层数据流**：`swin_16` 先经 `swin16_proj` 投影到 512 通道，再与 ResNet 深层特征 `x_bb_4` 通过 `CrossModalFusion` 双向交叉注意力融合；融合结果依次经过 `cba_after_backbone -> FFC bottleneck -> HighFrequencyEnhancement`，得到瓶颈特征 `x_c`。
+4. **高反光/结构识别辅助分支**：`GradientDecoder` 接收 `x_c` 与编码器 skip，逐级上采样预测梯度图 `g`，同时输出 4 级中间特征。
+5. **增强桥接模块**：`EnhancementLayers` 对梯度分支的中间特征做频域分解和增强，为主解码器提供结构化上下文。
+6. **主解码层**：`MainDecoder` 结合 `x_c`、编码器 skip、增强特征和梯度图，通过注意力门控、SpecularAwareAttention、FFC 与梯度门控逐级恢复，预测镜面反射分量 `b`。
+7. **漫反射恢复与精修**：先执行物理减法 `coarse = clamp(x - b, 0, 1)`，再由 `ResidualRefinementHead` 对粗漫反射结果做小幅像素级修正，得到最终漫反射输出 `r`。
 
 ---
 
@@ -19,7 +34,7 @@
 
 模型命名为 **X-FFC**，其中 **X** 代表双编码器分支在瓶颈层交汇的拓扑形态。具体而言：
 
-- **上方两条编码路径**：ResNet50（空洞卷积版）与 EnhancedViT-B/16 并行提取特征，在瓶颈层通过 CrossModalFusion 交叉注意力模块汇聚
+- **上方两条编码路径**：ResNet50（空洞卷积版）与 Swin-Tiny 并行提取特征；H/4、H/8 通过 AdaptiveSkipFusion 增强 skip connection，H/16 在瓶颈层通过 CrossModalFusion 交叉注意力模块汇聚
 - **下方两条解码路径**：GradientDecoder（辅助梯度预测）与 MainDecoder（主任务镜面反射重建）分叉执行各自任务，通过 EnhancementLayers 桥梁进行信息交互
 
 这一拓扑结构整体呈"X"形，故以此命名。
@@ -31,7 +46,7 @@
 | 标签前缀 | 含义 | 示例 |
 |---------|------|------|
 | \[P\*\] | 流水线/训练/输出头改进 | \[P1\] 残差精修头、\[P2\] 扩展输出头 |
-| \[V\*\] | ViT 编码器分支改进 | \[V1\] 多层特征提取、\[V5\] 交叉注意力融合 |
+| \[S\*\] | Swin 编码器分支改进 | \[S1\] 单通道 Swin、\[S5\] 自适应 skip 融合 |
 | \[F\*\] | FFC 模块优化 | \[F1\] GELU 激活、\[F6\] Tukey 窗 |
 
 ---
@@ -59,9 +74,9 @@ X-FFC 是一个专为**图像高光分解任务**设计的深度学习模型。�
 
 ### 3.3 整体架构概览
 
-X-FFC V3 的整体架构可概括为 **"双编码 → 交叉融合 → 双解码 → 残差精修"** 的设计范式：
+X-FFC V3 / X-FFC-Swin 的整体架构可概括为 **"双编码 → 多尺度自适应融合 → 频域瓶颈增强 → 双解码 → 残差精修"** 的设计范式：
 
-1. **双编码器主干（Encoder）**：ResNet50（空洞卷积版）与 EnhancedViT-B/16 并行提取特征。ViT 分支升级为多层特征提取 + 卷积位置编码 + 自适应层融合 \[V1-V4\]；双分支通过 CrossModalFusion 双向交叉注意力融合 \[V5\]（替代原始的简单拼接）。融合特征经 FFC 瓶颈层和 HighFrequencyEnhancement 高频增强后输出 5 级编码特征。
+1. **双编码器主干（EncoderSwin）**：ResNet50（空洞卷积版）负责局部纹理与条纹边界，Swin-Tiny 负责窗口上下文和层级特征。Swin 分支输出 H/4、H/8、H/16；H/4/H/8 通过 AdaptiveSkipFusion 增强中层 skip，H/16 通过 CrossModalFusion 与 `x_bb_4` 做瓶颈层双向交互。融合特征经 FFC 瓶颈层和 HighFrequencyEnhancement 高频增强后输出 5 级编码特征。
 
 2. **梯度解码分支（GradientDecoder + EnhancementLayers）**：执行辅助任务——预测梯度图，并输出 4 级中间特征经 EnhancementLayers 频域精炼后供主解码器使用。
 
@@ -176,69 +191,74 @@ FFC（Fast Fourier Convolution）是 X-FFC 的频域处理基础，由三层嵌�
 | layer2 | 512 | 256 | \(x\_bb\_3\) | H/8 × W/8 |
 | layer3 + layer4 | 1024+2048 → 融合 | 512 | \(x\_bb\_4\) | H/16 × W/16 |
 
-#### 4.2.2 EnhancedViT-B/16 分支（增强版 Vision Transformer）
+#### 4.2.2 SwinEncoderBranch（Swin-Tiny 多尺度上下文分支）
 
-- **模块名称**：`EnhancedViTEncoderBranch`
-- **模块作用**：并行于 ResNet50 提取全局语义特征。相比原始的简单 ViT 分支，引入了 5 项关键改进。
+- **模块名称**：`SwinEncoderBranch`
+- **模块作用**：并行于 ResNet50 提取窗口上下文特征，并提供 H/4、H/8、H/16 三个层级输出。
 
-**\[V1\] 多层特征提取**：
+**\[S1\] 单通道 Swin patch embedding**：
 
-标准做法仅使用 ViT 最后一层的输出，丢失了中间层的丰富信息。X-FFC 手动遍历 ViT 的 12 个 Transformer 层，从第 3/6/9/12 层（即 `extract_layers=(2, 5, 8, 11)`，0-indexed）提取中间特征。这样获得了从浅层纹理/边缘信息到深层全局语义的完整特征梯度：
-
-- 第 3 层（浅层）：保留了纹理和低级边缘信息，对高光边界检测至关重要
-- 第 6 层（中层）：包含中级特征如局部模式和重复结构
-- 第 9 层（深层）：包含高级语义和物体级别的理解
-- 第 12 层（最深层）：提供全局语义和场景级别的照明理解
-
-**\[V2\] 卷积位置编码（CPE）**：
-
-标准 ViT 使用固定或可学习的位置编码，这类位置编码是全局的、与内容无关的。X-FFC 引入了 ConvPosEncoding 模块（参考 CPVT，ICLR 2023），在 patch embedding 之后、进入 Transformer 之前注入局部空间先验：
+当前实现使用 `torchvision.models.swin_t` 作为默认骨干。原始 Swin patch embedding 是 `Conv2d(3, 96, kernel_size=4, stride=4)`，代码中将其改为 `Conv2d(1, 96, kernel_size=4, stride=4)`。若加载 ImageNet 预训练权重，则用 RGB 卷积核均值初始化灰度卷积核：
 
 ```python
-class ConvPosEncoding(nn.Module):
-    def __init__(self, dim, k=3):
-        self.proj = nn.Conv2d(dim, dim, k, 1, k//2, groups=dim, bias=True)
-    def forward(self, x, H, W):
-        feat = x.transpose(1,2).reshape(B, C, H, W)
-        feat = self.proj(feat)  # 深度可分离 3×3 卷积
-        return x + feat
+new_weight = old_weight.mean(dim=1, keepdim=True)
 ```
 
-深度可分离 3×3 卷积为每个 token 注入其 3×3 邻域的局部结构信息，弥补了标准 ViT 对局部空间关系感知不足的缺陷。这对精确定位高光边界（需要亚像素级的局部空间精度）尤为重要。
+这样既适配单通道灰度输入，又保留预训练低层滤波器能力。
 
-**\[V3\] 自适应层注意力融合**：
+**\[S2\] 不再强制 224×224 resize**：
 
-4 个提取层的特征不是简单拼接或平均，而是通过通道注意力机制（SE-style）自适应加权：
+Swin 分支直接处理训练/推理 patch。若输入 H/W 不能被 32 整除，先在右侧和下侧 padding，保证 Swin 分层下采样可以正常前向；后续在 Encoder 中插值对齐到 ResNet 对应尺度。推荐 patch 为 `320×256`、`384×384`、`512×512`，不建议直接整图训练 `2448×2048`。
 
-1. 每层特征经各自的 LayerNorm 归一化后 reshape 为 2D 特征图
-2. 4 层特征沿通道拼接，经 `AdaptiveAvgPool2d(1) → Flatten → Linear(4C, se_mid) → GELU → Linear(se_mid, 4) → Softmax` 生成 4 个权重标量
-3. 加权求和得到融合特征
+**\[S3\] 多尺度层级输出**：
 
-训练过程中模型会自动学习各层的贡献权重——在强高光边界区域，浅层特征权重更高；在大面积高光区域，深层特征权重更高。
+torchvision Swin 的中间特征为 NHWC 格式，返回前统一转换为 NCHW：
 
-**\[V4\] 残差特征精炼**：
+```python
+feat = feat.permute(0, 3, 1, 2).contiguous()
+```
 
-融合后的特征通过两层 3×3 Conv + BN + GELU 进行任务相关的精炼，加残差连接避免信息丢失：`fused = fused + refine(fused)`。
+输出对应关系如下：
 
-**输入处理**：单通道灰度图先 repeat 为 3 通道，再插值至 224×224 送入 ViT。ViT 输出的 patch embedding（形状为 \([B, N, 768]\)）被 reshape 为 2D 特征图（形状为 \([B, 768, 14, 14]\)）。
+| Swin 输出 | 通道数 | 空间尺度 | 用途 |
+|----------|--------|----------|------|
+| `swin_4` | 96 | H/4 × W/4 | 增强 `x_bb_2` |
+| `swin_8` | 192 | H/8 × W/8 | 增强 `x_bb_3` |
+| `swin_16` | 384 | H/16 × W/16 | 瓶颈层 CrossModalFusion |
 
-#### 4.2.3 CrossModalFusion（交叉注意力融合模块）\[V5\]
+**\[S4\] AdaptiveSkipFusion 自适应 skip 融合**：
+
+H/4、H/8 分辨率较高，不直接使用重型 CrossModalFusion，而是使用轻量内容自适应融合：
+
+```python
+swin_proj = Conv3x3_BN_GELU(swin_feat)
+gate = sigmoid(gate_net(concat(res_feat, swin_proj)))
+fused = res_feat + beta * gate * swin_proj
+```
+
+其中 `gate` 是逐空间位置、逐通道的融合权重，`beta` 是可学习标量，初始为 `0.0`。这种初始化让模型初始时接近纯 ResNet skip，避免突然破坏 Decoder 已适配的特征分布；训练过程中模型再自动学习 Swin skip 的注入强度。
+
+**\[S5\] H/16 瓶颈上下文融合**：
+
+`swin_16` 先经过 `swin16_proj` 投影到 512 通道，再与 ResNet 深层特征 `x_bb_4` 进入 `CrossModalFusion`。H/16 空间分辨率较低，适合做更强的双向交叉注意力交互。
+
+#### 4.2.3 CrossModalFusion（交叉注意力融合模块）\[S6\]
 
 - **模块名称**：`CrossModalFusion`
-- **模块作用**：替代原始的简单 `concat + 1×1 Conv` 融合方式，实现 CNN 与 ViT 特征之间的双向信息交互。
-- **在模型中的位置**：Encoder 中，位于 ResNet50 输出 \(x\_bb\_4\) 与 ViT 输出 `vit_feat` 空间对齐之后。
+- **模块作用**：实现 ResNet 深层局部纹理特征与 Swin H/16 窗口上下文特征之间的双向信息交互。
+- **在模型中的位置**：Encoder 中，位于 ResNet50 输出 \(x\_bb\_4\) 与 Swin 输出 `swin_16` 投影对齐之后。
 
 **双向交叉注意力机制**：
 
-**方向一：CNN → ViT（获取全局上下文）**
-CNN 特征作为 Query，ViT 特征作为 Key/Value。语义解读：对于 CNN 检测到的每个局部高亮区域，去查询 ViT 的全局语义——判断该高亮是局部反射还是全局照明效果，从而为局部细节注入全局上下文。
+**方向一：CNN → Swin（获取窗口上下文）**
+CNN 特征作为 Query，Swin 特征作为 Key/Value。语义解读：对于 CNN 检测到的每个局部高亮区域，去查询 Swin 的窗口上下文——判断该高亮与周围条纹结构、反射区域形态之间的关系。
 
-**方向二：ViT → CNN（获取局部细节）**
-ViT 特征作为 Query，CNN 特征作为 Key/Value。语义解读：对于 ViT 理解到的全局高光分布模式，去查询 CNN 的局部特征——获取高光边界的精确空间位置和纹理细节。
+**方向二：Swin → CNN（获取局部细节）**
+Swin 特征作为 Query，CNN 特征作为 Key/Value。语义解读：对于 Swin 建模到的中大范围高光上下文，去查询 CNN 的局部特征——获取高光边界的精确空间位置和细条纹纹理。
 
 **计算效率优化**：使用 `sr_ratio=2` 对 Key/Value 进行空间降采样（AvgPool2d），将注意力计算的复杂度从 \(O(H^2W^2)\) 降低到 \(O(H^2W^2/4)\)。
 
-**门控融合**：两个方向的输出通过 `gate = Sigmoid(Conv2d(2×out_dim → out_dim))` 自适应融合：`fused = gate * c2v_out + (1 - gate) * v2c_out`，再经 `3×3 Conv + BN + GELU` 最终投影。
+**门控融合**：两个方向的输出通过 `gate = Sigmoid(Conv2d(2×out_dim → out_dim))` 自适应融合：`fused = gate * c2ctx_out + (1 - gate) * ctx2c_out`，再经 `3×3 Conv + BN + GELU` 最终投影。
 
 #### 4.2.4 FFC 瓶颈层
 
@@ -275,7 +295,7 @@ ViT 特征作为 Query，CNN 特征作为 Key/Value。语义解读：对于 ViT 
 | \(x\_bb\_2\) | \([B, 128, H/4, W/4]\) | ResNet50 layer1 降维 | 跳跃连接至两个解码器 Level 3 |
 | \(x\_bb\_3\) | \([B, 256, H/8, W/8]\) | ResNet50 layer2 降维 | 跳跃连接至两个解码器 Level 2 |
 | \(x\_bb\_4\) | \([B, 512, H/16, W/16]\) | ResNet50 layer3+4 融合 | 跳跃连接至两个解码器 Level 1 |
-| \(x\_c\) | \([B, 256, H/16, W/16]\) | CNN-ViT 交叉融合 + FFC + HFE | MainDecoder 起始输入 + GradientDecoder 全局上下文 |
+| \(x\_c\) | \([B, 256, H/16, W/16]\) | CNN-Swin 交叉融合 + FFC + HFE | MainDecoder 起始输入 + GradientDecoder 全局上下文 |
 
 ---
 
@@ -565,7 +585,7 @@ class YFFC(nn.Module):
         coarse = clamp(x - est_b, 0, 1)
         pred_diffuse = self.refinement_head(coarse, x)
 
-        return {"r": pred_diffuse, "g": g_feat[-1], "b": est_b}
+        return {"r": pred_diffuse, "g": g_map, "b": est_b}
 ```
 
 ---
@@ -574,7 +594,7 @@ class YFFC(nn.Module):
 
 以 128×160 单通道输入（即 H=128, W=160）为例：
 
-### 第一阶段：双编码器特征提取（Encoder）
+### 第一阶段：双编码器特征提取（EncoderSwin）
 
 ```
 ➡️ 初始输入: x [B, 1, 128, 160]
@@ -594,20 +614,29 @@ class YFFC(nn.Module):
     │   └─ fuse_l34: cat([l3_512, l4_512]) → Conv(1024→512)
     │      └─ x_bb_4: [B, 512, 8, 10]               ==> (保存)
     │
-    ├─> EnhancedViT-B/16 分支 (并行):
-    │   ├─ 输入 repeat 为 3 通道, 插值至 224×224
-    │   ├─ conv_proj → patch embedding [B, 196, 768]
-    │   ├─ [V2] CPE 注入局部空间先验
-    │   ├─ 添加 class_token + 原始位置编码
-    │   ├─ [V1] 遍历 12 层 Transformer, 从第 3/6/9/12 层提取特征
-    │   ├─ [V3] 各层 LayerNorm → reshape 为 2D → 通道注意力加权融合
-    │   ├─ [V4] 残差精炼 → vit_feat: [B, 768, 14, 14]
-    │   └─ 插值至 [B, 768, 8, 10] 与 x_bb_4 空间对齐
+    ├─> Swin-Tiny 分支 (并行):
+    │   ├─ 输入保持 [B, 1, 128, 160]，不 resize 到 224×224
+    │   ├─ 单通道 patch embedding: Conv2d(1→96, kernel=4, stride=4)
+    │   ├─ torchvision Swin 内部为 NHWC，取出后统一转 NCHW
+    │   ├─ stage H/4  → swin_4:  [B, 96,  32, 40]
+    │   ├─ stage H/8  → swin_8:  [B, 192, 16, 20]
+    │   └─ stage H/16 → swin_16: [B, 384, 8, 10]
     │
-    ├─> [V5] CrossModalFusion（双向交叉注意力）:
-    │   ├─ CNN→ViT: CNN 查询 ViT 全局语义 (with sr_ratio=2 降采样)
-    │   ├─ ViT→CNN: ViT 查询 CNN 局部细节
-    │   ├─ 门控融合: gate * c2v + (1-gate) * v2c
+    ├─> H/4 AdaptiveSkipFusion:
+    │   ├─ swin_4 经 Conv3×3+BN+GELU 投影到 128 通道
+    │   ├─ gate = sigmoid(gate_net(cat[x_bb_2, swin_4_proj]))
+    │   └─ x_bb_2 = x_bb_2 + beta_h4 * gate * swin_4_proj
+    │
+    ├─> H/8 AdaptiveSkipFusion:
+    │   ├─ swin_8 经 Conv3×3+BN+GELU 投影到 256 通道
+    │   ├─ gate = sigmoid(gate_net(cat[x_bb_3, swin_8_proj]))
+    │   └─ x_bb_3 = x_bb_3 + beta_h8 * gate * swin_8_proj
+    │
+    ├─> H/16 CrossModalFusion（双向交叉注意力）:
+    │   ├─ swin_16_proj: Conv1×1+BN+GELU+Conv3×3+BN+GELU → [B, 512, 8, 10]
+    │   ├─ CNN→Swin: x_bb_4 查询 Swin 窗口上下文 (sr_ratio=2)
+    │   ├─ Swin→CNN: Swin 查询 ResNet 局部细节
+    │   ├─ 门控融合: gate * c2ctx + (1-gate) * ctx2c
     │   └─ 最终投影: 3×3 Conv + BN + GELU → [B, 512, 8, 10]
     │
     ├─> cba_after_backbone: Conv(512→256) + BN + ReLU
@@ -837,7 +866,7 @@ MS-SSIM 在 3 个尺度上评估结构相似性，对多尺度结构变化更敏
 
 | 参数组 | 包含模块 | 学习率倍率 | 设计理由 |
 |--------|---------|-----------|---------|
-| encoder\_pretrained | ResNet50 stem/layers, ViT backbone | 0.1× | 预训练权重已包含良好特征，微调即可 |
+| encoder\_pretrained | ResNet50 stem/layers, Swin backbone | 0.1× | 预训练权重已包含良好特征，微调即可 |
 | fusion | 编码器融合层等其他参数 | 0.5× | 融合层需要适度调整 |
 | decoders | GradientDecoder, MainDecoder, EnhancementLayers | 1.0× | 解码器从头训练，需要最大学习率 |
 | ffc | 所有 FFC 模块 | 0.5× | FFC 含频域操作，过大 LR 易不稳定 |
@@ -910,19 +939,24 @@ shadow[name] = decay * shadow[name] + (1 - decay) * param.data
 ```
 YFFC (X-FFC V3)
   │
-  ├─ (encoder): Encoder                               // 双编码器主干
+  ├─ (encoder): Encoder                               // ResNet50 + Swin-Tiny 双编码器主干
   │   ├─ (stem_conv / stem_bn / stem_relu / stem_pool)    // ResNet50 stem (1→64ch)
   │   ├─ (layer1 ... layer4): ResNet50 Stages              // 含空洞卷积
   │   ├─ (reduce_l1 ... reduce_l4, fuse_l34)               // 通道降维
-  │   ├─ (vit_branch): EnhancedViTEncoderBranch            // ★ 增强版 ViT
-  │   │   ├─ (vit): ViT-B/16                               //   [V1] 多层提取
-  │   │   ├─ (cpe): ConvPosEncoding                        //   [V2] 卷积位置编码
-  │   │   ├─ (layer_norms): 4 × LayerNorm                  //   [V3] 层归一化
-  │   │   ├─ (layer_attention): SE-style 注意力             //   [V3] 自适应融合
-  │   │   └─ (refine): 2 × Conv3x3+BN+GELU                //   [V4] 残差精炼
-  │   ├─ (cross_modal_fusion): CrossModalFusion            // ★ [V5] 交叉注意力融合
-  │   │   ├─ (q_c2v / k_c2v / v_c2v / proj_c2v)           //   CNN→ViT 方向
-  │   │   ├─ (q_v2c / k_v2c / v_v2c / proj_v2c)           //   ViT→CNN 方向
+  │   ├─ (swin_branch): SwinEncoderBranch                  // ★ Swin-Tiny H/4,H/8,H/16
+  │   │   └─ (swin): torchvision swin_t                    //   单通道 patch embedding
+  │   ├─ (fuse_h4): AdaptiveSkipFusion                     // ★ H/4 skip 自适应融合
+  │   │   ├─ (swin_proj): Conv3x3+BN+GELU                  //   96→128
+  │   │   ├─ (gate_net): 1×1 gate                          //   逐位置/逐通道权重
+  │   │   └─ (beta): learnable scalar                      //   初始 0
+  │   ├─ (fuse_h8): AdaptiveSkipFusion                     // ★ H/8 skip 自适应融合
+  │   │   ├─ (swin_proj): Conv3x3+BN+GELU                  //   192→256
+  │   │   ├─ (gate_net): 1×1 gate
+  │   │   └─ (beta): learnable scalar
+  │   ├─ (swin16_proj): Conv1x1+BN+GELU+Conv3x3+BN+GELU    // 384→512
+  │   ├─ (cross_modal_fusion): CrossModalFusion            // ★ H/16 交叉注意力融合
+  │   │   ├─ (q_c2ctx / k_c2ctx / v_c2ctx / proj_c2ctx)    //   CNN→Swin 方向
+  │   │   ├─ (q_ctx2c / k_ctx2c / v_ctx2c / proj_ctx2c)    //   Swin→CNN 方向
   │   │   ├─ (gate): 门控融合                               //   自适应平衡
   │   │   └─ (final_proj): 最终投影                         //   3×3 Conv
   │   ├─ (cba_after_backbone): Conv(512→256)               // 瓶颈降维
@@ -985,15 +1019,15 @@ YFFC (X-FFC V3)
 | \[F5\] | 跨域门控融合 | FFC\_BN\_ACT | 防止频域噪声污染 |
 | \[F6\]\[P11\] | Tukey 窗 | FourierUnit | 减少频谱泄漏 |
 
-### ViT 编码器增强
+### Swin 编码器增强
 
 | 编号 | 改进 | 位置 | 说明 |
 |------|------|------|------|
-| \[V1\] | 多层特征提取 | EnhancedViTEncoderBranch | 第 3/6/9/12 层 |
-| \[V2\] | 卷积位置编码 | ConvPosEncoding | 局部空间先验 |
-| \[V3\] | 自适应层融合 | EnhancedViTEncoderBranch | SE 注意力加权 |
-| \[V4\] | 残差特征精炼 | EnhancedViTEncoderBranch | 任务相关精炼 |
-| \[V5\] | 交叉注意力融合 | CrossModalFusion | 双向信息交互 |
+| \[S1\] | 单通道 Swin-Tiny | SwinEncoderBranch | patch embedding 由 3 通道改为 1 通道 |
+| \[S2\] | 取消 224×224 强制 resize | SwinEncoderBranch | 直接处理训练/推理 patch |
+| \[S3\] | H/4、H/8、H/16 层级输出 | SwinEncoderBranch | NCHW 多尺度特征 |
+| \[S4\] | 自适应 skip 融合 | AdaptiveSkipFusion | gate + beta 控制 Swin 注入 |
+| \[S5\] | H/16 交叉注意力融合 | CrossModalFusion | ResNet 与 Swin 双向信息交互 |
 
 ### 流水线与训练改进
 
@@ -1017,7 +1051,7 @@ YFFC (X-FFC V3)
 
 ## 11. 设计优势总结
 
-1. **双编码器 + 交叉注意力**：CNN 保留局部纹理细节，增强版 ViT 提供全局语义，CrossModalFusion 实现双向信息互补，突破单一骨干网络的信息瓶颈。
+1. **双编码器 + 多尺度 Swin 融合**：CNN 保留局部纹理细节，Swin-Tiny 提供窗口上下文和层级特征；H/4、H/8 通过 AdaptiveSkipFusion 温和增强 skip，H/16 通过 CrossModalFusion 实现强上下文交互，突破单一骨干网络的信息瓶颈。
 
 2. **全链路频域处理**：优化的 FFC 模块（6 项改进）贯穿编码器瓶颈、两个解码器和增强层，在多个尺度上捕获全局频率信息，尤其适合处理具有周期性的条纹图案。
 

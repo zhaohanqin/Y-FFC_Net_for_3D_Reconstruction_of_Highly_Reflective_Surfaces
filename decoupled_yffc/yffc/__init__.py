@@ -24,12 +24,11 @@ from .losses import (
 )
 from .models import (
     Attention_block,
+    AdaptiveSkipFusion,
     Conv2D_BN_activa,
-    ConvPosEncoding,
     CrossModalFusion,
     Encoder,
     EnhancementLayers,
-    EnhancedViTEncoderBranch,
     FFCResnetBlock,
     FFC_BN_ACT,
     FeatureExtrationLayersB,
@@ -41,6 +40,7 @@ from .models import (
     ResidualRefinementHead,
     SpecularAwareAttention,
     SpectralTransform,
+    SwinEncoderBranch,
     TransposedConvBlock,
     TransposedConvBlock_same,
     YFFC,

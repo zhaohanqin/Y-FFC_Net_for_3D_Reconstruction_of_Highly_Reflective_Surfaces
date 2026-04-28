@@ -203,9 +203,9 @@ def build_optimizer_v2(model, base_lr=2e-4, weight_decay=1e-4):
             continue
         if 'sa1' in name or 'sa2' in name or 'sa3' in name or 'sa4' in name or 'hf_enhance' in name:
             new_p.append(param)
-        elif ('swin4_proj' in name or 'swin8_proj' in name or
-              'swin16_proj' in name or 'alpha_4' in name or 'alpha_8' in name):
-            # 第二阶段新增 Swin skip 投影层和 alpha 门控使用 base_lr，避免 alpha 初始为 0 后学习过慢。
+        elif ('fuse_h4' in name or 'fuse_h8' in name or
+              'swin16_proj' in name):
+            # 第三阶段 AdaptiveSkipFusion 与 H/16 投影层使用 base_lr，避免 beta 初始为 0 后学习过慢。
             swin_skip_p.append(param)
         elif 'encoder.swin_branch.swin' in name or 'encoder.stem' in name or 'encoder.layer' in name:
             enc_pre.append(param)
@@ -218,7 +218,7 @@ def build_optimizer_v2(model, base_lr=2e-4, weight_decay=1e-4):
 
     groups = [
         {'params': enc_pre, 'lr': base_lr * 0.1, 'name': 'encoder_pretrained'},
-        {'params': swin_skip_p, 'lr': base_lr, 'name': 'swin_skip_fusion'},
+        {'params': swin_skip_p, 'lr': base_lr, 'name': 'adaptive_skip_fusion'},
         {'params': other_p, 'lr': base_lr * 0.5, 'name': 'fusion'},
         {'params': dec_p,   'lr': base_lr,        'name': 'decoders'},
         {'params': ffc_p,   'lr': base_lr * 0.5, 'name': 'ffc'},
@@ -1300,9 +1300,14 @@ def train_model(cfg):
             vl, vs, vm, val_mse, val_psnr,
             train_subs, val_subs, w, current_lr, device,
             composite, best_val_ssim, best_val_loss)
-        if hasattr(model, 'encoder') and hasattr(model.encoder, 'alpha_4') and hasattr(model.encoder, 'alpha_8'):
-            print(f"  [Swin skip alpha] alpha_4={model.encoder.alpha_4.item():.6f}, "
-                  f"alpha_8={model.encoder.alpha_8.item():.6f}")
+        if hasattr(model, 'encoder') and hasattr(model.encoder, 'fuse_h4') and hasattr(model.encoder, 'fuse_h8'):
+            gate4 = model.encoder.fuse_h4.last_gate_mean
+            gate8 = model.encoder.fuse_h8.last_gate_mean
+            gate4_str = f"{gate4.item():.6f}" if gate4 is not None else "n/a"
+            gate8_str = f"{gate8.item():.6f}" if gate8 is not None else "n/a"
+            print(f"  [Adaptive skip] beta_h4={model.encoder.fuse_h4.beta.item():.6f}, "
+                  f"beta_h8={model.encoder.fuse_h8.beta.item():.6f}, "
+                  f"gate_h4_mean={gate4_str}, gate_h8_mean={gate8_str}")
 
         # ── 模型保存逻辑 ──
         improved_flags = []

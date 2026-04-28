@@ -1,6 +1,10 @@
 """Reusable convolution and upsampling blocks."""
 
+import torch
 import torch.nn as nn
+import torch.nn.functional as F
+
+from ..common import truncated_normal_
 
 
 class Conv2D_BN_activa(nn.Module):

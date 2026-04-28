@@ -63,6 +63,10 @@ class GradientDecoder(nn.Module):
         x = torch.cat([_ffc_h16_out[0], _ffc_h16_out[1]], dim=1) + x
 
         x_to_be_enhanced_1 = self.block_1_conv_transpose(x)
+        if x_bb_4.shape[-2:] != x_to_be_enhanced_1.shape[-2:]:
+            x_bb_4 = F.interpolate(
+                x_bb_4, size=x_to_be_enhanced_1.shape[-2:],
+                mode='bilinear', align_corners=False)
         x = torch.cat([x_to_be_enhanced_1, x_bb_4], dim=1)
 
         x = self.block_2_conv(x)
@@ -71,6 +75,10 @@ class GradientDecoder(nn.Module):
         x = torch.cat([_ffc_h8_out[0], _ffc_h8_out[1]], dim=1) + x
 
         x_to_be_enhanced_2 = self.block_2_conv_transpose(x)
+        if x_bb_3.shape[-2:] != x_to_be_enhanced_2.shape[-2:]:
+            x_bb_3 = F.interpolate(
+                x_bb_3, size=x_to_be_enhanced_2.shape[-2:],
+                mode='bilinear', align_corners=False)
         x = torch.cat([x_to_be_enhanced_2, x_bb_3], dim=1)
 
         x = self.block_3_conv(x)
@@ -79,10 +87,18 @@ class GradientDecoder(nn.Module):
         x = torch.cat([_ffc_h4_out[0], _ffc_h4_out[1]], dim=1) + x
 
         x_to_be_enhanced_3 = self.block_3_conv_transpose(x)
+        if x_bb_2.shape[-2:] != x_to_be_enhanced_3.shape[-2:]:
+            x_bb_2 = F.interpolate(
+                x_bb_2, size=x_to_be_enhanced_3.shape[-2:],
+                mode='bilinear', align_corners=False)
         x = torch.cat([x_to_be_enhanced_3, x_bb_2], dim=1)
 
         x = self.block_4_conv(x)
         x_to_be_enhanced_4 = self.block_4_conv_transpose(x)
+        if x_bb_1.shape[-2:] != x_to_be_enhanced_4.shape[-2:]:
+            x_bb_1 = F.interpolate(
+                x_bb_1, size=x_to_be_enhanced_4.shape[-2:],
+                mode='bilinear', align_corners=False)
         x = torch.cat([x_to_be_enhanced_4, x_bb_1], dim=1)
 
         x = self.block_5_conv_1(x)

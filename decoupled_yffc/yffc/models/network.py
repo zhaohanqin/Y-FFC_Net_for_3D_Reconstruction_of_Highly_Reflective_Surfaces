@@ -13,7 +13,7 @@ from .blocks import (
     TransposedConvBlock,
     TransposedConvBlock_same,
 )
-from .branches import ConvPosEncoding, EnhancedViTEncoderBranch
+from .branches import AdaptiveSkipFusion, SwinEncoderBranch
 from .ffc import FourierUnit, FFCResnetBlock, FFC_BN_ACT, SpectralTransform
 from .heads import HighFrequencyEnhancement, ResidualRefinementHead
 from .architecture import (
