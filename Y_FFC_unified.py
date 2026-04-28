@@ -643,23 +643,23 @@ class TransposedConvBlock_same(nn.Module):
 
 class SwinEncoderBranch(nn.Module):
     """
-    Swin-Tiny 单通道上下文分支，只输出 H/16 特征。
+    Swin-Tiny 单通道多尺度上下文分支，输出 H/4、H/8、H/16 三个层级特征。
 
     输入为 [B, 1, H, W]，不再 resize 到 224x224。
-    如果 H/W 不能被 32 整除，先在右侧和下侧 padding，最终在 Encoder 中对齐到 ResNet x_bb_4。
-    torchvision Swin 中间特征为 NHWC，这里转回 NCHW 并投影到 512 通道。
+    如果 H/W 不能被 32 整除，先在右侧和下侧 padding，后续在 Encoder 中插值对齐到 ResNet 对应尺度。
+    torchvision Swin 中间特征为 NHWC，这里统一转回 NCHW。
 
     在整个模型中的位置：
         被 Encoder 调用，与 ResNet50 并行提取窗口上下文特征。
-        当前第一阶段只使用 H/16 stage 输出，不接入 H/4、H/8 多尺度 skip。
-        输出通过 CrossModalFusion 与 ResNet x_bb_4 做瓶颈层融合。
+        H/4 用于增强 x_bb_2，H/8 用于增强 x_bb_3，H/16 用于瓶颈层 CrossModalFusion。
 
     训练/推理建议：
+        第二阶段加入 H/4、H/8 skip 后显存会高于第一阶段。
         推荐输入 320x256、384x384、512x512 等 patch，尽量让 H/W 被 32 整除。
         大图不建议直接整图训练，推理时建议 sliding-window + overlap 融合。
     """
 
-    def __init__(self, pretrained=True, out_channels=512):
+    def __init__(self, pretrained=True):
         super().__init__()
         if not hasattr(models, "swin_t"):
             raise RuntimeError("当前 torchvision 版本不包含 swin_t，请升级 torchvision。")
@@ -695,15 +695,11 @@ class SwinEncoderBranch(nn.Module):
                 new_patch_embed.bias.copy_(old_bias)
         self.swin.features[0][0] = new_patch_embed
 
-        self.out_channels = out_channels
-        self.proj_16 = nn.Sequential(
-            nn.Conv2d(384, out_channels, kernel_size=1, stride=1, padding=0, bias=False),
-            nn.BatchNorm2d(out_channels),
-            nn.GELU(),
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(out_channels),
-            nn.GELU(),
-        )
+        # Swin-Tiny 三个层级的原始输出通道数。
+        # H/4=96、H/8=192、H/16=384，具体投影和融合在 Encoder 中完成。
+        self.channels_4 = 96
+        self.channels_8 = 192
+        self.channels_16 = 384
 
     @staticmethod
     def _pad_to_multiple(x, multiple=32):
@@ -720,13 +716,26 @@ class SwinEncoderBranch(nn.Module):
         x = self._pad_to_multiple(x, multiple=32)
 
         feat = x
-        # torchvision Swin features: 0/1 -> H/4, 2/3 -> H/8, 4/5 -> H/16。
+        swin_4 = swin_8 = swin_16 = None
+        # torchvision Swin features:
+        #   0/1 -> H/4,  C=96
+        #   2/3 -> H/8,  C=192
+        #   4/5 -> H/16, C=384
+        # Swin 内部特征为 NHWC，返回前统一转换为 NCHW。
         for idx in range(6):
             feat = self.swin.features[idx](feat)
+            if idx == 1:
+                swin_4 = feat.permute(0, 3, 1, 2).contiguous()
+            elif idx == 3:
+                swin_8 = feat.permute(0, 3, 1, 2).contiguous()
+            elif idx == 5:
+                swin_16 = feat.permute(0, 3, 1, 2).contiguous()
 
-        # Swin 输出为 NHWC: [B, H/16, W/16, 384]，转换为 NCHW 后做通道投影。
-        feat = feat.permute(0, 3, 1, 2).contiguous()
-        return self.proj_16(feat)
+        return {
+            "swin_4": swin_4,
+            "swin_8": swin_8,
+            "swin_16": swin_16,
+        }
 
 
 class CrossModalFusion(nn.Module):
@@ -1646,7 +1655,7 @@ class FringeDataset(Dataset):
 
 class Encoder(nn.Module):
     """
-    编码器：ResNet50 局部纹理分支 + Swin-Tiny H/16 上下文分支。
+    编码器：ResNet50 局部纹理分支 + Swin-Tiny 多尺度上下文分支。
 
     结构流程：
       1. ResNet50 分支提取多尺度局部纹理特征：
@@ -1654,18 +1663,21 @@ class Encoder(nn.Module):
          x_bb_2: [B, 128, H/4,  W/4]
          x_bb_3: [B, 256, H/8,  W/8]
          x_bb_4: [B, 512, H/16, W/16]
-      2. SwinEncoderBranch 从同一灰度输入提取 H/16 窗口上下文特征：
-         swin_feat_16: [B, 512, H/16, W/16]
-      3. 如果 Swin padding 或输入尺寸导致空间尺寸不同，使用 bilinear 插值对齐到 x_bb_4。
-      4. 使用 CrossModalFusion(x_bb_4, swin_feat_16) 做瓶颈层融合。
+      2. SwinEncoderBranch 从同一灰度输入提取 H/4、H/8、H/16 三个层级特征：
+         swin_4:  [B, 96,  H/4,  W/4]
+         swin_8:  [B, 192, H/8,  W/8]
+         swin_16: [B, 384, H/16, W/16]
+      3. H/4 和 H/8 使用 projection + learnable alpha residual add 增强 x_bb_2 / x_bb_3。
+      4. H/16 仍沿用第一阶段 CrossModalFusion(x_bb_4, swin_feat_16) 做瓶颈层融合。
       5. 融合结果进入 cba_after_backbone、FFC bottleneck 和 HighFrequencyEnhancement。
 
-    本阶段只融合 Swin 的 H/16 特征，不做 H/4、H/8 多尺度 skip 融合。
-    返回 5 级特征，保持后续 Decoder 的接口不变。
+    本阶段不改 Decoder 接口，不引入 H/32 特征，不做多尺度 CrossModalFusion。
+    返回 5 级特征，保持后续 Decoder 的 skip connection 约定不变。
     """
 
-    def __init__(self, swin_pretrained=True):
+    def __init__(self, swin_pretrained=True, debug_shapes=False):
         super().__init__()
+        self.debug_shapes = debug_shapes
 
         try:
             backbone = models.resnet50(
@@ -1697,9 +1709,35 @@ class Encoder(nn.Module):
         self.reduce_l4 = Conv2D_BN_activa(2048, 512, 1, 1, 0)
         self.fuse_l34 = Conv2D_BN_activa(1024, 512, 3, 1, 1)
 
-        self.swin_branch = SwinEncoderBranch(pretrained=swin_pretrained, out_channels=512)
+        self.swin_branch = SwinEncoderBranch(pretrained=swin_pretrained)
+
+        # 第二阶段多尺度 skip 增强：
+        # H/4 的 Swin 特征增强 ResNet x_bb_2，H/8 的 Swin 特征增强 ResNet x_bb_3。
+        # alpha 初始为 0，模型初始行为等价于第一阶段，训练中再逐步学习 Swin skip 的贡献。
+        self.swin4_proj = nn.Sequential(
+            nn.Conv2d(self.swin_branch.channels_4, 128, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.BatchNorm2d(128),
+            nn.GELU(),
+        )
+        self.swin8_proj = nn.Sequential(
+            nn.Conv2d(self.swin_branch.channels_8, 256, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.BatchNorm2d(256),
+            nn.GELU(),
+        )
+        self.swin16_proj = nn.Sequential(
+            nn.Conv2d(self.swin_branch.channels_16, 512, kernel_size=1, stride=1, padding=0, bias=False),
+            nn.BatchNorm2d(512),
+            nn.GELU(),
+            nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.BatchNorm2d(512),
+            nn.GELU(),
+        )
+        self.alpha_4 = nn.Parameter(torch.tensor(0.0))
+        self.alpha_8 = nn.Parameter(torch.tensor(0.0))
+
+        # H/16 仍沿用第一阶段 CrossModalFusion，不额外 residual add，避免重复注入上下文。
         self.cross_modal_fusion = CrossModalFusion(
-            cnn_dim=512, context_dim=self.swin_branch.out_channels,
+            cnn_dim=512, context_dim=512,
             out_dim=512, num_heads=4, sr_ratio=2)
         self.cba_after_backbone = Conv2D_BN_activa(512, 256, 3, 1, 1)
         self.ffc_bottleneck = FFC_BN_ACT(256, 256, 3, 0.5, 0.5, padding=1)
@@ -1723,11 +1761,32 @@ class Encoder(nn.Module):
         x_l4_512 = self.reduce_l4(x_l4)
         x_bb_4 = self.fuse_l34(torch.cat([x_l3_512, x_l4_512], 1))
 
-        swin_feat_16 = self.swin_branch(x_in)
-        if swin_feat_16.shape[-2:] != x_bb_4.shape[-2:]:
-            swin_feat_16 = F.interpolate(
-                swin_feat_16, size=x_bb_4.shape[-2:],
-                mode='bilinear', align_corners=False)
+        swin_feats = self.swin_branch(x_in)
+        swin_4 = swin_feats["swin_4"]
+        swin_8 = swin_feats["swin_8"]
+        swin_16 = swin_feats["swin_16"]
+
+        if self.debug_shapes:
+            print(
+                f"[Swin debug] x_bb_2={tuple(x_bb_2.shape)}, swin_4={tuple(swin_4.shape)}, "
+                f"x_bb_3={tuple(x_bb_3.shape)}, swin_8={tuple(swin_8.shape)}, "
+                f"x_bb_4={tuple(x_bb_4.shape)}, swin_16={tuple(swin_16.shape)}"
+            )
+
+        # H/4 skip 增强：Swin 浅层窗口特征补充细条纹、浅层边缘和局部纹理。
+        if swin_4.shape[-2:] != x_bb_2.shape[-2:]:
+            swin_4 = F.interpolate(swin_4, size=x_bb_2.shape[-2:], mode='bilinear', align_corners=False)
+        x_bb_2 = x_bb_2 + self.alpha_4 * self.swin4_proj(swin_4)
+
+        # H/8 skip 增强：Swin 中层窗口特征补充高光边界、反射区域轮廓和局部结构。
+        if swin_8.shape[-2:] != x_bb_3.shape[-2:]:
+            swin_8 = F.interpolate(swin_8, size=x_bb_3.shape[-2:], mode='bilinear', align_corners=False)
+        x_bb_3 = x_bb_3 + self.alpha_8 * self.swin8_proj(swin_8)
+
+        # H/16 瓶颈融合保持第一阶段设计：投影到 512 后与 ResNet x_bb_4 做 CrossModalFusion。
+        if swin_16.shape[-2:] != x_bb_4.shape[-2:]:
+            swin_16 = F.interpolate(swin_16, size=x_bb_4.shape[-2:], mode='bilinear', align_corners=False)
+        swin_feat_16 = self.swin16_proj(swin_16)
 
         fused = self.cross_modal_fusion(x_bb_4, swin_feat_16)
         x_c = self.cba_after_backbone(fused)
@@ -2026,9 +2085,10 @@ class ResidualRefinementHead(nn.Module):
 class YFFC(nn.Module):
     """Y-FFC 主网络（V3 优化版）。含 P1 残差精修头。"""
 
-    def __init__(self, swin_pretrained=True):
+    def __init__(self, swin_pretrained=True, debug_shapes=False):
         super().__init__()
-        self.encoder = Encoder(swin_pretrained=swin_pretrained)
+        self.debug_shapes = debug_shapes
+        self.encoder = Encoder(swin_pretrained=swin_pretrained, debug_shapes=debug_shapes)
         self.gradient_decoder = GradientDecoder()
         self.enhancement_layers = EnhancementLayers()
         self.main_decoder = MainDecoder(in_channels=256)
@@ -2123,6 +2183,7 @@ class DynamicLossWeightScheduler:
 def build_optimizer(model, base_lr=2e-4, weight_decay=1e-4):
     """为 YFFC 模型构建分层学习率 AdamW 优化器。"""
     encoder_pretrained = []
+    swin_skip_params = []
     ffc_params = []
     decoder_params = []
     new_module_params = []
@@ -2134,6 +2195,10 @@ def build_optimizer(model, base_lr=2e-4, weight_decay=1e-4):
         if ('sa1' in name or 'sa2' in name or 'sa3' in name or
             'sa4' in name or 'hf_enhance' in name):
             new_module_params.append(param)
+        elif ('swin4_proj' in name or 'swin8_proj' in name or
+              'swin16_proj' in name or 'alpha_4' in name or 'alpha_8' in name):
+            # 第二阶段新增 Swin skip 投影层和 alpha 门控使用 base_lr。
+            swin_skip_params.append(param)
         elif ('encoder.swin_branch.swin' in name or
             'encoder.stem' in name or
             'encoder.layer' in name):
@@ -2149,6 +2214,7 @@ def build_optimizer(model, base_lr=2e-4, weight_decay=1e-4):
 
     param_groups = [
         {'params': encoder_pretrained, 'lr': base_lr * 0.1, 'name': 'encoder_pretrained'},
+        {'params': swin_skip_params, 'lr': base_lr, 'name': 'swin_skip_fusion'},
         {'params': other_params, 'lr': base_lr * 0.5, 'name': 'fusion_layers'},
         {'params': decoder_params, 'lr': base_lr, 'name': 'decoders'},
         {'params': ffc_params, 'lr': base_lr * 0.5, 'name': 'ffc_modules'},

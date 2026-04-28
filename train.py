@@ -197,12 +197,16 @@ class ImprovedWeightScheduler:
 
 def build_optimizer_v2(model, base_lr=2e-4, weight_decay=1e-4):
     """分层学习率：预训练编码器 0.1×, FFC/融合 0.5×, 解码器/新模块 1.0×"""
-    enc_pre, ffc_p, dec_p, new_p, other_p = [], [], [], [], []
+    enc_pre, swin_skip_p, ffc_p, dec_p, new_p, other_p = [], [], [], [], [], []
     for name, param in model.named_parameters():
         if not param.requires_grad:
             continue
         if 'sa1' in name or 'sa2' in name or 'sa3' in name or 'sa4' in name or 'hf_enhance' in name:
             new_p.append(param)
+        elif ('swin4_proj' in name or 'swin8_proj' in name or
+              'swin16_proj' in name or 'alpha_4' in name or 'alpha_8' in name):
+            # 第二阶段新增 Swin skip 投影层和 alpha 门控使用 base_lr，避免 alpha 初始为 0 后学习过慢。
+            swin_skip_p.append(param)
         elif 'encoder.swin_branch.swin' in name or 'encoder.stem' in name or 'encoder.layer' in name:
             enc_pre.append(param)
         elif 'ffc' in name.lower():
@@ -214,6 +218,7 @@ def build_optimizer_v2(model, base_lr=2e-4, weight_decay=1e-4):
 
     groups = [
         {'params': enc_pre, 'lr': base_lr * 0.1, 'name': 'encoder_pretrained'},
+        {'params': swin_skip_p, 'lr': base_lr, 'name': 'swin_skip_fusion'},
         {'params': other_p, 'lr': base_lr * 0.5, 'name': 'fusion'},
         {'params': dec_p,   'lr': base_lr,        'name': 'decoders'},
         {'params': ffc_p,   'lr': base_lr * 0.5, 'name': 'ffc'},
@@ -1295,6 +1300,9 @@ def train_model(cfg):
             vl, vs, vm, val_mse, val_psnr,
             train_subs, val_subs, w, current_lr, device,
             composite, best_val_ssim, best_val_loss)
+        if hasattr(model, 'encoder') and hasattr(model.encoder, 'alpha_4') and hasattr(model.encoder, 'alpha_8'):
+            print(f"  [Swin skip alpha] alpha_4={model.encoder.alpha_4.item():.6f}, "
+                  f"alpha_8={model.encoder.alpha_8.item():.6f}")
 
         # ── 模型保存逻辑 ──
         improved_flags = []
