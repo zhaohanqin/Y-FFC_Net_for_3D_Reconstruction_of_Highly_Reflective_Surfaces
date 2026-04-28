@@ -203,7 +203,7 @@ def build_optimizer_v2(model, base_lr=2e-4, weight_decay=1e-4):
             continue
         if 'sa1' in name or 'sa2' in name or 'sa3' in name or 'sa4' in name or 'hf_enhance' in name:
             new_p.append(param)
-        elif 'encoder.vit_branch.vit' in name or 'encoder.stem' in name or 'encoder.layer' in name:
+        elif 'encoder.swin_branch.swin' in name or 'encoder.stem' in name or 'encoder.layer' in name:
             enc_pre.append(param)
         elif 'ffc' in name.lower():
             ffc_p.append(param)
@@ -1072,13 +1072,18 @@ def train_model(cfg):
     print(f"  可训练: {trainable_params:,}  冻结: {total_params - trainable_params:,}")
 
     # ══════════ 2. 数据集 ══════════
+    # 默认开启合成高反光增强：只作用于训练集，验证集保持原图，避免评估被增强扰动。
     min_side = min(img_hw)  # 取短边计算高光半径
-    hl_aug = HighlightAugmentation(
-        p=0.4, num_range=(1, 6),
-        radius_range=(3, max(5, min_side // 20)),
-        intensity_range=(0.2, 0.7))
-    aug = EnhancedPairedTransform(highlight_aug=hl_aug)
-    print("[Aug] 训练集已启用 EnhancedPairedTransform + HighlightAugmentation(p=0.4)")
+    if cfg.get('USE_HIGHLIGHT_AUG', True):
+        hl_aug = HighlightAugmentation(
+            p=float(cfg.get('HIGHLIGHT_AUG_P', 1.0)), num_range=(1, 6),
+            radius_range=(3, max(5, min_side // 20)),
+            intensity_range=(0.2, 0.7))
+        aug = EnhancedPairedTransform(highlight_aug=hl_aug)
+        print(f"[Aug] 训练集已启用 EnhancedPairedTransform + HighlightAugmentation(p={hl_aug.p})")
+    else:
+        aug = EnhancedPairedTransform(highlight_aug=HighlightAugmentation(p=0.0))
+        print("[Aug] 训练集已启用几何/亮度增强，高反光合成已关闭")
 
     full_ds = ImprovedFringeDataset(
         cfg['INPUT_DIR'], cfg['TARGET_DIR'],
@@ -1507,6 +1512,8 @@ def main():
     USE_EMA               = True     # 指数移动平均
     EMA_DECAY             = 0.9995   # [P16] EMA 衰减系数（调高增加平滑力度）
     USE_OHEM              = True     # 在线难样本挖掘
+    USE_HIGHLIGHT_AUG     = True     # 默认开启训练集高反光合成增强
+    HIGHLIGHT_AUG_P       = 1.0      # 每个训练样本都叠加合成高反光；验证集不增强
 
     # ========== 数据目录 ==========
     INPUT_DIR             = 'data2/inputs'
@@ -1518,7 +1525,7 @@ def main():
     SAVE_EVERY_N_EPOCHS   = 20       # 每 N 轮保存检查点（0=不保存）
 
     # ========== 可视化间隔 ==========
-    VIS_EVERY_N_EPOCHS    = 10       # 每 N 轮保存验证样本可视化（0=不保存）
+    VIS_EVERY_N_EPOCHS    = 1       # 每 N 轮保存验证样本可视化（0=不保存）
     VIS_NUM_SAMPLES       = 2        # 每次保存几张固定验证样本
     VIS_SAMPLE_SEED       = None     # None=每次训练随机抽样；填整数可复现同一批图像
 
@@ -1549,6 +1556,8 @@ def main():
         'USE_EMA':                USE_EMA,
         'EMA_DECAY':              EMA_DECAY,
         'USE_OHEM':               USE_OHEM,
+        'USE_HIGHLIGHT_AUG':      USE_HIGHLIGHT_AUG,
+        'HIGHLIGHT_AUG_P':        HIGHLIGHT_AUG_P,
         'INPUT_DIR':              INPUT_DIR,
         'TARGET_DIR':             TARGET_DIR,
         'VAL_INPUT_DIR':          VAL_INPUT_DIR,

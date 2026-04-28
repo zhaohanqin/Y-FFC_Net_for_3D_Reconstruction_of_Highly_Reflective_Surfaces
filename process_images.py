@@ -69,7 +69,8 @@ def load_model(model_path, device, prefer_ema=True):
 
     if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
         base_state_dict = checkpoint['model_state_dict']
-        model = YFFC()
+        # 推理 checkpoint 已包含训练后的 Swin 权重，禁用 ImageNet 预训练加载以避免离线推理时下载权重。
+        model = YFFC(swin_pretrained=False)
         if _uses_group_norm_state_dict(base_state_dict):
             replace_bn_with_gn(model, num_groups=8)
 
@@ -89,7 +90,8 @@ def load_model(model_path, device, prefer_ema=True):
             print(f"  ✓ 已加载模型权重 (epoch={epoch}, best_ssim={best_ssim})")
     elif isinstance(checkpoint, dict):
         # ── 可能是纯 state_dict（key 为 layer 名称） ──
-        model = YFFC()
+        # 推理 checkpoint 已包含训练后的 Swin 权重，禁用 ImageNet 预训练加载以避免离线推理时下载权重。
+        model = YFFC(swin_pretrained=False)
         if _uses_group_norm_state_dict(checkpoint):
             replace_bn_with_gn(model, num_groups=8)
         model.load_state_dict(checkpoint)
@@ -491,7 +493,8 @@ def main():
 
     # 滑窗推理配置：必须与训练阶段 IMAGE_SIZE 一致，格式为 (H, W)。
     TRAIN_IMAGE_SIZE = (128, 160)
-    PATCH_OVERLAP = 32
+    # Swin 版建议 sliding-window 推理，并让 patch 尺寸与训练 IMAGE_SIZE 保持一致；推荐 overlap=64。
+    PATCH_OVERLAP = 64
     
     # ====================================================================
     

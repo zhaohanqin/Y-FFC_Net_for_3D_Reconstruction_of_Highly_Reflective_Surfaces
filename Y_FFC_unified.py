@@ -1,32 +1,33 @@
 """
-Y_FFC_unified.py — Y-FFC 去高反光网络
+Y_FFC_unified.py - Y-FFC / X-FFC-Swin 去高反光网络
 =====================================================
 
-本文件包含 Y-FFC 网络的完整实现，包括以下核心组件：
+本文件包含 Y-FFC / X-FFC-Swin 网络的完整实现，包括以下核心组件：
 
   • FFC 核心模块（FourierUnit / SpectralTransform / FFC_BN_ACT / FFCResnetBlock）
   • 网络基础构件（Conv2D_BN_activa / Attention_block / MultiscaleConvBlock 等）
-  • 增强版 ViT 编码器（EnhancedViTEncoderBranch / ConvPosEncoding / CrossModalFusion）
+  • Swin-Tiny 编码器分支（SwinEncoderBranch）与 CrossModalFusion 融合模块
   • 高反光专用模块（SpecularAwareAttention / HighFrequencyEnhancement）
   • 损失函数与评价指标（SSIM / PerceptualLoss / CompositeLoss / Specular 损失等）
   • 数据集与数据增强（FringeDataset / PairedTransform / EnhancedPairedTransform 等）
   • 模型结构（Encoder / GradientDecoder / MainDecoder / EnhancementLayers / YFFC）
   • 训练工具（EMA / build_optimizer / build_scheduler / train_one_epoch 等）
 
-V4 ViT 编码器增强改进：
+第一阶段 Swin 编码器改造：
 ─────────────────────────────────────────────────
-  V1  多层特征提取：从 ViT 第 3/6/9/12 层提取中间特征，获得纹理→语义完整梯度
-  V2  卷积位置编码（CPE）：注入局部空间先验，弥补 ViT 局部感知不足
-  V3  自适应层注意力融合：通道注意力加权不同 Transformer 层的贡献
-  V4  残差特征精炼：融合后的特征经任务相关卷积精炼
-  V5  CNN-ViT 交叉注意力融合：替代简单拼接，实现双向信息交互
+  S1  使用 torchvision.models.swin_t 作为窗口上下文分支，默认加载 ImageNet 预训练权重
+  S2  将 Swin patch embedding 改为单通道输入，用 RGB 预训练权重均值初始化灰度卷积核
+  S3  Swin 分支直接处理训练/推理 patch，不再强制 resize 到 224x224
+  S4  对不能被 32 整除的输入做右/下 padding，保证 Swin 分层下采样可以正常前向
+  S5  只取 Swin H/16 stage 特征，NHWC 转 NCHW 后投影到 512 通道
+  S6  ResNet x_bb_4 与 Swin H/16 特征通过 CrossModalFusion 做瓶颈层融合
 ─────────────────────────────────────────────────
 
 文件组织结构（自上而下）：
 ─────────────────────────────────────────────────
   第 0 层  外部依赖导入 + 通用工具函数
   第 1 层  FFC 核心模块（FourierUnit / SpectralTransform / FFC_BN_ACT / FFCResnetBlock）
-  第 2 层  网络基础构件（Conv2D_BN_activa / Attention_block / EnhancedViTEncoderBranch / ...）
+  第 2 层  网络基础构件（Conv2D_BN_activa / Attention_block / SwinEncoderBranch / ...）
   第 3 层  损失函数与评价指标（SSIM / PerceptualLoss / CompositeLoss / Specular 损失 ...）
   第 4 层  高反光专用模块（SpecularAwareAttention / HighFrequencyEnhancement）
   第 5 层  数据集与数据增强（FringeDataset / PairedTransform / EnhancedPairedTransform / ...）
@@ -34,6 +35,9 @@ V4 ViT 编码器增强改进：
   第 7 层  训练工具（EMA / build_optimizer / build_scheduler / train_one_epoch / ...）
   第 8 层  主入口（main）
 ─────────────────────────────────────────────────
+
+输入保持灰度图 [B, 1, H, W]，输出保持：
+{"r": pred_diffuse, "g": gradient_map, "b": est_specular}
 """
 
 # ╔════════════════════════════════════════════════════════════════════════════╗
@@ -476,7 +480,7 @@ class FFCResnetBlock(nn.Module):
 # ║                                                                          ║
 # ║  这些是构成 Encoder / Decoder 的基础 building block，                      ║
 # ║  包括卷积块、注意力块、多尺度卷积块、转置卷积块、                            ║
-# ║  增强版 ViT 编码器分支、交叉注意力融合模块等。                              ║
+# ║  Swin 编码器分支、交叉注意力融合模块等。                                    ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
 
@@ -637,243 +641,148 @@ class TransposedConvBlock_same(nn.Module):
         return torch.cat([self.branch_1(x), self.branch_2(x), self.branch_3(x)], dim=1)
 
 
-class ConvPosEncoding(nn.Module):
+class SwinEncoderBranch(nn.Module):
     """
-    [V2] 卷积位置编码（Convolutional Position Encoding）。
+    Swin-Tiny 单通道上下文分支，只输出 H/16 特征。
 
-    用深度可分离卷积为 Transformer token 序列注入局部空间结构信息。
-    相比标准 ViT 的固定/可学习位置编码：
-      - 能感知局部邻域关系（3×3 卷积窗口）
-      - 对不同分辨率输入具有天然的泛化能力
-      - 保留了平移等变性
-    参考：CPVT（Conditional Position encoding for Vision Transformers, ICLR 2023）
-    """
-
-    def __init__(self, dim, k=3):
-        super().__init__()
-        self.proj = nn.Conv2d(dim, dim, k, 1, k // 2, groups=dim, bias=True)
-
-    def forward(self, x, H, W):
-        """
-        Args:
-            x: (B, N, C) — token 序列
-            H, W: patch grid 的空间尺寸
-        Returns:
-            (B, N, C) — 加入局部位置信息后的 token 序列
-        """
-        B, N, C = x.shape
-        feat = x.transpose(1, 2).reshape(B, C, H, W)
-        feat = self.proj(feat)
-        feat = feat.flatten(2).transpose(1, 2)
-        return x + feat
-
-
-class EnhancedViTEncoderBranch(nn.Module):
-    """
-    增强版 ViT-B/16 编码器分支（多层特征提取 + CPE + 自适应层融合）。
-
-    相比原始 ViTEncoderBranch 的改进：
-    ─────────────────────────────────────────────
-      V1  多层特征提取：手动遍历 Transformer 的各层，从第 3/6/9/12 层
-          提取中间特征。浅层保留纹理/边缘信息（对高光边界至关重要），
-          深层提供全局语义（对大面积高光区域识别至关重要）。
-
-      V2  卷积位置编码（CPE）：在 patch embedding 之后、进入 Transformer
-          之前注入局部空间先验。弥补标准 ViT 对局部结构感知不足的缺陷，
-          使模型能更精确地定位高光边界。
-
-      V3  自适应层注意力融合：使用通道注意力机制（SE-style）自适应加权
-          不同 Transformer 层的特征贡献。训练过程中模型会自动学习：
-          浅层特征在强高光边界区域的权重更高，深层特征在大面积高光
-          区域的权重更高。
-
-      V4  残差特征精炼：融合后通过两层 3×3 Conv + BN + GELU 进行
-          任务相关的特征精炼，加残差连接避免信息丢失。
-    ─────────────────────────────────────────────
+    输入为 [B, 1, H, W]，不再 resize 到 224x224。
+    如果 H/W 不能被 32 整除，先在右侧和下侧 padding，最终在 Encoder 中对齐到 ResNet x_bb_4。
+    torchvision Swin 中间特征为 NHWC，这里转回 NCHW 并投影到 512 通道。
 
     在整个模型中的位置：
-        被 Encoder 调用，与 ResNet50 并行提取全局语义特征。
-        输出通过 CrossModalFusion 与 CNN 特征进行交叉注意力融合。
+        被 Encoder 调用，与 ResNet50 并行提取窗口上下文特征。
+        当前第一阶段只使用 H/16 stage 输出，不接入 H/4、H/8 多尺度 skip。
+        输出通过 CrossModalFusion 与 ResNet x_bb_4 做瓶颈层融合。
+
+    训练/推理建议：
+        推荐输入 320x256、384x384、512x512 等 patch，尽量让 H/W 被 32 整除。
+        大图不建议直接整图训练，推理时建议 sliding-window + overlap 融合。
     """
 
-    def __init__(self, vit_image_size=224, extract_layers=(2, 5, 8, 11)):
-        super(EnhancedViTEncoderBranch, self).__init__()
-        self.vit_image_size = vit_image_size
-        self.extract_layers = list(extract_layers)
+    def __init__(self, pretrained=True, out_channels=512):
+        super().__init__()
+        if not hasattr(models, "swin_t"):
+            raise RuntimeError("当前 torchvision 版本不包含 swin_t，请升级 torchvision。")
 
-        # ---------- 加载 ViT-B/16 ----------
-        vit_weights = None
-        try:
-            vit_weights = models.ViT_B_16_Weights.IMAGENET1K_V1
-        except Exception:
-            vit_weights = None
-
-        if not hasattr(models, "vit_b_16"):
-            raise RuntimeError("当前 torchvision 版本不包含 vit_b_16")
+        weights = None
+        if pretrained:
+            try:
+                weights = models.Swin_T_Weights.IMAGENET1K_V1
+            except Exception:
+                weights = None
 
         try:
-            self.vit = models.vit_b_16(weights=vit_weights)
+            self.swin = models.swin_t(weights=weights)
         except Exception:
-            self.vit = models.vit_b_16(weights=None)
+            self.swin = models.swin_t(weights=None)
 
-        if hasattr(self.vit, "heads"):
-            self.vit.heads = nn.Identity()
-        elif hasattr(self.vit, "head"):
-            self.vit.head = nn.Identity()
+        # 将 Swin patch embedding 从 RGB 输入改为单通道输入。
+        # 若加载了 ImageNet 预训练权重，用 RGB 卷积核的通道均值初始化灰度卷积核。
+        patch_embed = self.swin.features[0][0]
+        old_weight = patch_embed.weight.detach().clone()
+        old_bias = patch_embed.bias.detach().clone() if patch_embed.bias is not None else None
+        new_patch_embed = nn.Conv2d(
+            1,
+            patch_embed.out_channels,
+            kernel_size=patch_embed.kernel_size,
+            stride=patch_embed.stride,
+            padding=patch_embed.padding,
+            bias=patch_embed.bias is not None,
+        )
+        with torch.no_grad():
+            new_patch_embed.weight.copy_(old_weight.mean(dim=1, keepdim=True))
+            if old_bias is not None:
+                new_patch_embed.bias.copy_(old_bias)
+        self.swin.features[0][0] = new_patch_embed
 
-        self.embed_dim = getattr(self.vit, "hidden_dim", self.vit.conv_proj.out_channels)
-
-        # [V2] 卷积位置编码
-        self.cpe = ConvPosEncoding(self.embed_dim, k=3)
-
-        # [V3] 多层特征的层归一化 + 自适应注意力融合
-        n_layers = len(self.extract_layers)
-        self.layer_norms = nn.ModuleList([
-            nn.LayerNorm(self.embed_dim) for _ in range(n_layers)
-        ])
-
-        fused_dim = self.embed_dim * n_layers
-        se_mid = max(n_layers * 2, 4)
-        self.layer_attention = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),
-            nn.Flatten(),
-            nn.Linear(fused_dim, se_mid),
+        self.out_channels = out_channels
+        self.proj_16 = nn.Sequential(
+            nn.Conv2d(384, out_channels, kernel_size=1, stride=1, padding=0, bias=False),
+            nn.BatchNorm2d(out_channels),
             nn.GELU(),
-            nn.Linear(se_mid, n_layers),
-            nn.Softmax(dim=-1),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.GELU(),
         )
 
-        # [V4] 残差特征精炼
-        self.refine = nn.Sequential(
-            nn.Conv2d(self.embed_dim, self.embed_dim, 3, 1, 1, bias=False),
-            nn.BatchNorm2d(self.embed_dim),
-            nn.GELU(),
-            nn.Conv2d(self.embed_dim, self.embed_dim, 3, 1, 1, bias=False),
-            nn.BatchNorm2d(self.embed_dim),
-        )
+    @staticmethod
+    def _pad_to_multiple(x, multiple=32):
+        h, w = x.shape[-2:]
+        pad_h = (multiple - h % multiple) % multiple
+        pad_w = (multiple - w % multiple) % multiple
+        if pad_h == 0 and pad_w == 0:
+            return x
+        return F.pad(x, (0, pad_w, 0, pad_h), mode="constant", value=0.0)
 
     def forward(self, x):
-        if x.size(1) == 1:
-            x = x.repeat(1, 3, 1, 1)
+        # 推荐训练/推理使用 320x256、384x384、512x512 等 patch。
+        # 不建议直接整图训练 2448x2048；大图推理建议 sliding-window + overlap 融合。
+        x = self._pad_to_multiple(x, multiple=32)
 
-        x = F.interpolate(x, size=(self.vit_image_size, self.vit_image_size),
-                          mode="bilinear", align_corners=False)
-        B = x.size(0)
+        feat = x
+        # torchvision Swin features: 0/1 -> H/4, 2/3 -> H/8, 4/5 -> H/16。
+        for idx in range(6):
+            feat = self.swin.features[idx](feat)
 
-        # Patch embedding
-        x = self.vit.conv_proj(x)
-        grid_h, grid_w = x.shape[-2], x.shape[-1]
-        x = x.flatten(2).transpose(1, 2)  # (B, N, C)
-
-        # [V2] 注入局部空间位置先验
-        x = self.cpe(x, grid_h, grid_w)
-
-        # 添加 class token
-        has_cls = hasattr(self.vit, "class_token")
-        if has_cls:
-            cls_token = self.vit.class_token.expand(B, -1, -1)
-            x = torch.cat((cls_token, x), dim=1)
-
-        # 添加 ViT 原始位置编码 + dropout
-        if hasattr(self.vit.encoder, "pos_embedding"):
-            x = x + self.vit.encoder.pos_embedding
-        x = self.vit.encoder.dropout(x)
-
-        # [V1] 手动遍历 Transformer 层，收集中间特征
-        multi_feats = []
-        for i, layer in enumerate(self.vit.encoder.layers):
-            x = layer(x)
-            if i in self.extract_layers:
-                multi_feats.append(x)
-
-        # 确保收集到足够的特征（如果 ViT 层数不够则用最后的输出补齐）
-        while len(multi_feats) < len(self.extract_layers):
-            multi_feats.append(x)
-
-        # [V3] 多层特征处理 + 自适应加权融合
-        layer_feats_2d = []
-        for i, feat in enumerate(multi_feats):
-            feat = self.layer_norms[i](feat)
-            # 移除 class token
-            if has_cls and feat.shape[1] == grid_h * grid_w + 1:
-                feat = feat[:, 1:, :]
-            elif feat.shape[1] > grid_h * grid_w:
-                feat = feat[:, 1:, :]
-            feat_2d = feat.transpose(1, 2).reshape(B, self.embed_dim, grid_h, grid_w)
-            layer_feats_2d.append(feat_2d)
-
-        # 通道注意力加权：自适应选择各层贡献
-        concat_feats = torch.cat(layer_feats_2d, dim=1)  # (B, embed_dim*n, H, W)
-        attn_weights = self.layer_attention(concat_feats)  # (B, n_layers)
-
-        fused = torch.zeros_like(layer_feats_2d[0])
-        for i, feat in enumerate(layer_feats_2d):
-            w = attn_weights[:, i].view(B, 1, 1, 1)
-            fused = fused + w * feat
-
-        # [V4] 残差精炼
-        fused = fused + self.refine(fused)
-
-        return fused
+        # Swin 输出为 NHWC: [B, H/16, W/16, 384]，转换为 NCHW 后做通道投影。
+        feat = feat.permute(0, 3, 1, 2).contiguous()
+        return self.proj_16(feat)
 
 
 class CrossModalFusion(nn.Module):
     """
-    [V5] 轻量级 CNN-ViT 交叉注意力融合模块。
+    轻量级 CNN-Transformer 双向交叉注意力融合模块。
 
-    替代原始的简单 concat + 1×1 Conv 融合方式。
     核心思想：
-      - CNN → ViT 方向：CNN 特征作为 Query 去查询 ViT 的全局语义 Key/Value，
-        为局部细节注入全局上下文（例如：判断某个高亮区域是局部反射还是全局照明）
-      - ViT → CNN 方向：ViT 特征作为 Query 去查询 CNN 的局部细节 Key/Value，
-        为全局语义补充精确的空间结构信息（例如：高光边界的精确位置）
-      - 双向交叉后通过门控机制融合，输出维度为 out_dim
+      - CNN → Swin 方向：ResNet 深层特征作为 Query，查询 Swin 的窗口上下文 Key/Value，
+        为局部纹理注入更大范围的反射区域和条纹结构上下文。
+      - Swin → CNN 方向：Swin H/16 特征作为 Query，查询 ResNet 的局部细节 Key/Value，
+        为窗口上下文补充高光边界、细条纹和局部反射形态。
+      - 双向交叉后通过门控机制融合，输出维度为 out_dim。
 
-    使用降采样键值对减少计算量（sr_ratio），适合高分辨率特征图。
+    使用 sr_ratio 对键值对做空间降采样，降低高分辨率特征上的注意力开销。
+    本阶段只用于瓶颈层 H/16 融合，不用于 H/4、H/8 skip 融合。
 
-    在整个模型中的位置：
-        Encoder 中，在 ResNet50 backbone 输出 x_bb_4 和 ViT 输出 vit_feat
-        之后进行融合，替代原来的 cat + 1×1 Conv。
+    输入含义：
+      - cnn_feat: ResNet 深层局部纹理特征
+      - context_feat: Swin H/16 窗口上下文特征
     """
 
-    def __init__(self, cnn_dim, vit_dim, out_dim, num_heads=4, sr_ratio=2):
+    def __init__(self, cnn_dim, context_dim, out_dim, num_heads=4, sr_ratio=2):
         super(CrossModalFusion, self).__init__()
         self.num_heads = num_heads
         self.head_dim = out_dim // num_heads
         self.scale = self.head_dim ** -0.5
         self.out_dim = out_dim
 
-        # CNN 关注 ViT（获取全局上下文）
-        self.q_c2v = nn.Conv2d(cnn_dim, out_dim, 1, bias=False)
-        self.k_c2v = nn.Conv2d(vit_dim, out_dim, 1, bias=False)
-        self.v_c2v = nn.Conv2d(vit_dim, out_dim, 1, bias=False)
-        self.proj_c2v = nn.Sequential(
+        self.q_c2ctx = nn.Conv2d(cnn_dim, out_dim, 1, bias=False)
+        self.k_c2ctx = nn.Conv2d(context_dim, out_dim, 1, bias=False)
+        self.v_c2ctx = nn.Conv2d(context_dim, out_dim, 1, bias=False)
+        self.proj_c2ctx = nn.Sequential(
             nn.Conv2d(out_dim, out_dim, 1, bias=False),
             nn.BatchNorm2d(out_dim),
         )
 
-        # ViT 关注 CNN（获取局部细节）
-        self.q_v2c = nn.Conv2d(vit_dim, out_dim, 1, bias=False)
-        self.k_v2c = nn.Conv2d(cnn_dim, out_dim, 1, bias=False)
-        self.v_v2c = nn.Conv2d(cnn_dim, out_dim, 1, bias=False)
-        self.proj_v2c = nn.Sequential(
+        self.q_ctx2c = nn.Conv2d(context_dim, out_dim, 1, bias=False)
+        self.k_ctx2c = nn.Conv2d(cnn_dim, out_dim, 1, bias=False)
+        self.v_ctx2c = nn.Conv2d(cnn_dim, out_dim, 1, bias=False)
+        self.proj_ctx2c = nn.Sequential(
             nn.Conv2d(out_dim, out_dim, 1, bias=False),
             nn.BatchNorm2d(out_dim),
         )
 
-        # 键值对空间降采样（减少计算量）
         self.sr_ratio = sr_ratio
         if sr_ratio > 1:
             self.sr_pool = nn.AvgPool2d(kernel_size=sr_ratio, stride=sr_ratio)
 
-        # 门控融合：自适应平衡两个方向的贡献
+        # 门控融合：自适应平衡 CNN 查询 Swin 与 Swin 查询 CNN 两个方向的贡献。
         self.gate = nn.Sequential(
             nn.Conv2d(out_dim * 2, out_dim, 1, bias=False),
             nn.BatchNorm2d(out_dim),
             nn.Sigmoid(),
         )
 
-        # 最终投影
+        # 最终投影：融合后再做一次局部卷积精炼。
         self.final_proj = nn.Sequential(
             nn.Conv2d(out_dim, out_dim, 3, 1, 1, bias=False),
             nn.BatchNorm2d(out_dim),
@@ -887,53 +796,46 @@ class CrossModalFusion(nn.Module):
         nh = self.num_heads
         hd = self.head_dim
 
-        q = q.reshape(B, nh, hd, H * W).permute(0, 1, 3, 2)   # (B, nh, HW, hd)
-        k = k.reshape(B, nh, hd, Hk * Wk).permute(0, 1, 3, 2) # (B, nh, HkWk, hd)
-        v = v.reshape(B, nh, hd, Hk * Wk).permute(0, 1, 3, 2) # (B, nh, HkWk, hd)
+        q = q.reshape(B, nh, hd, H * W).permute(0, 1, 3, 2)
+        k = k.reshape(B, nh, hd, Hk * Wk).permute(0, 1, 3, 2)
+        v = v.reshape(B, nh, hd, Hk * Wk).permute(0, 1, 3, 2)
 
-        attn = (q @ k.transpose(-2, -1)) * self.scale           # (B, nh, HW, HkWk)
+        attn = (q @ k.transpose(-2, -1)) * self.scale
         attn = attn.softmax(dim=-1)
         out = (attn @ v).permute(0, 1, 3, 2).reshape(B, C, H, W)
         return proj(out)
 
-    def forward(self, cnn_feat, vit_feat):
+    def forward(self, cnn_feat, context_feat):
         """
         Args:
-            cnn_feat: (B, cnn_dim, H, W) — ResNet50 输出
-            vit_feat: (B, vit_dim, H, W) — ViT 输出（已对齐到相同空间尺寸）
+            cnn_feat: (B, cnn_dim, H, W) — ResNet50 深层输出 x_bb_4
+            context_feat: (B, context_dim, H, W) — Swin H/16 输出，已对齐到 x_bb_4
         Returns:
-            (B, out_dim, H, W) — 融合后的特征
+            (B, out_dim, H, W) — 融合后的瓶颈输入特征
         """
-        # 降采样键值对以减少计算量
         if self.sr_ratio > 1:
-            vit_kv = self.sr_pool(vit_feat)
+            context_kv = self.sr_pool(context_feat)
             cnn_kv = self.sr_pool(cnn_feat)
         else:
-            vit_kv = vit_feat
+            context_kv = context_feat
             cnn_kv = cnn_feat
 
-        # CNN → ViT 方向：CNN 查询 ViT 的全局语义
-        q_c = self.q_c2v(cnn_feat)
-        k_v = self.k_c2v(vit_kv)
-        v_v = self.v_c2v(vit_kv)
-        c2v_out = self._cross_attn(q_c, k_v, v_v, self.proj_c2v)
+        # CNN 查询 Swin：为 ResNet 局部纹理补充窗口上下文。
+        q_c = self.q_c2ctx(cnn_feat)
+        k_ctx = self.k_c2ctx(context_kv)
+        v_ctx = self.v_c2ctx(context_kv)
+        c2ctx_out = self._cross_attn(q_c, k_ctx, v_ctx, self.proj_c2ctx)
 
-        # ViT → CNN 方向：ViT 查询 CNN 的局部细节
-        q_v = self.q_v2c(vit_feat)
-        k_c = self.k_v2c(cnn_kv)
-        v_c = self.v_v2c(cnn_kv)
-        v2c_out = self._cross_attn(q_v, k_c, v_c, self.proj_v2c)
+        # Swin 查询 CNN：为 Swin 上下文补充高光边界和细条纹局部细节。
+        q_ctx = self.q_ctx2c(context_feat)
+        k_c = self.k_ctx2c(cnn_kv)
+        v_c = self.v_ctx2c(cnn_kv)
+        ctx2c_out = self._cross_attn(q_ctx, k_c, v_c, self.proj_ctx2c)
 
-        # 门控融合
-        gate = self.gate(torch.cat([c2v_out, v2c_out], dim=1))
-        fused = gate * c2v_out + (1.0 - gate) * v2c_out
-
+        # 门控融合两个方向的结果。
+        gate = self.gate(torch.cat([c2ctx_out, ctx2c_out], dim=1))
+        fused = gate * c2ctx_out + (1.0 - gate) * ctx2c_out
         return self.final_proj(fused)
-
-
-# ╔════════════════════════════════════════════════════════════════════════════╗
-# ║          第 3 层：损失函数与评价指标                                         ║
-# ╚════════════════════════════════════════════════════════════════════════════╝
 
 
 class SSIM(nn.Module):
@@ -1545,7 +1447,7 @@ class HighlightAugmentation:
     在 input 上随机叠加合成高斯 blob 高反光，同步更新 gt_specular。
     """
 
-    def __init__(self, p=0.4, num_range=(1, 6),
+    def __init__(self, p=1.0, num_range=(1, 6),
                  radius_range=(3, 25), intensity_range=(0.2, 0.7)):
         self.p = p
         self.num_range = num_range
@@ -1731,7 +1633,7 @@ class FringeDataset(Dataset):
 # ║          第 6 层：模型结构                                                  ║
 # ║                                                                          ║
 # ║  网络总体架构（X 形结构）：                                                 ║
-# ║    Encoder（ResNet50 + EnhancedViT + CrossModalFusion +                   ║
+# ║    Encoder（ResNet50 + Swin-Tiny H/16 + CrossModalFusion +                ║
 # ║            FFC bottleneck + HighFrequencyEnhancement）                    ║
 # ║      ↓ 编码特征（5 级：x_bb_1~4, x_c）                                    ║
 # ║      ├── GradientDecoder → 梯度图 x_g + 4 级增强特征                      ║
@@ -1744,16 +1646,25 @@ class FringeDataset(Dataset):
 
 class Encoder(nn.Module):
     """
-    编码器：ResNet50（dilated）+ 增强版 ViT-B/16 双分支，末尾接 FFC bottleneck
-    和 HighFrequencyEnhancement。
+    编码器：ResNet50 局部纹理分支 + Swin-Tiny H/16 上下文分支。
 
-    改进点（相比原始版本）：
-      - ViT 分支升级为 EnhancedViTEncoderBranch（多层特征 + CPE + 自适应融合）
-      - CNN-ViT 融合升级为 CrossModalFusion（双向交叉注意力）
-    输出 5 级特征用于后续 Decoder 的 skip connection。
+    结构流程：
+      1. ResNet50 分支提取多尺度局部纹理特征：
+         x_bb_1: [B, 64,  H/2,  W/2]
+         x_bb_2: [B, 128, H/4,  W/4]
+         x_bb_3: [B, 256, H/8,  W/8]
+         x_bb_4: [B, 512, H/16, W/16]
+      2. SwinEncoderBranch 从同一灰度输入提取 H/16 窗口上下文特征：
+         swin_feat_16: [B, 512, H/16, W/16]
+      3. 如果 Swin padding 或输入尺寸导致空间尺寸不同，使用 bilinear 插值对齐到 x_bb_4。
+      4. 使用 CrossModalFusion(x_bb_4, swin_feat_16) 做瓶颈层融合。
+      5. 融合结果进入 cba_after_backbone、FFC bottleneck 和 HighFrequencyEnhancement。
+
+    本阶段只融合 Swin 的 H/16 特征，不做 H/4、H/8 多尺度 skip 融合。
+    返回 5 级特征，保持后续 Decoder 的接口不变。
     """
 
-    def __init__(self, vit_image_size=224):
+    def __init__(self, swin_pretrained=True):
         super().__init__()
 
         try:
@@ -1786,45 +1697,44 @@ class Encoder(nn.Module):
         self.reduce_l4 = Conv2D_BN_activa(2048, 512, 1, 1, 0)
         self.fuse_l34 = Conv2D_BN_activa(1024, 512, 3, 1, 1)
 
-        self.vit_branch = EnhancedViTEncoderBranch(vit_image_size=vit_image_size)
-        # [V5] 交叉注意力融合替代简单拼接
+        self.swin_branch = SwinEncoderBranch(pretrained=swin_pretrained, out_channels=512)
         self.cross_modal_fusion = CrossModalFusion(
-            cnn_dim=512, vit_dim=self.vit_branch.embed_dim,
+            cnn_dim=512, context_dim=self.swin_branch.out_channels,
             out_dim=512, num_heads=4, sr_ratio=2)
         self.cba_after_backbone = Conv2D_BN_activa(512, 256, 3, 1, 1)
         self.ffc_bottleneck = FFC_BN_ACT(256, 256, 3, 0.5, 0.5, padding=1)
-
-        # 高频增强
         self.hf_enhance = HighFrequencyEnhancement(channels=256)
 
     def forward(self, x):
         x_in = x
-        x = self.stem_conv(x); x = self.stem_bn(x)
+        x = self.stem_conv(x)
+        x = self.stem_bn(x)
         x_bb_1 = self.stem_relu(x)
 
         x = self.stem_pool(x_bb_1)
-        x_l1 = self.layer1(x); x_bb_2 = self.reduce_l1(x_l1)
-        x_l2 = self.layer2(x_l1); x_bb_3 = self.reduce_l2(x_l2)
-        x_l3 = self.layer3(x_l2); x_l4 = self.layer4(x_l3)
+        x_l1 = self.layer1(x)
+        x_bb_2 = self.reduce_l1(x_l1)
+        x_l2 = self.layer2(x_l1)
+        x_bb_3 = self.reduce_l2(x_l2)
+        x_l3 = self.layer3(x_l2)
+        x_l4 = self.layer4(x_l3)
 
         x_l3_512 = self.reduce_l3(x_l3)
         x_l4_512 = self.reduce_l4(x_l4)
         x_bb_4 = self.fuse_l34(torch.cat([x_l3_512, x_l4_512], 1))
 
-        vit_feat = self.vit_branch(x_in)
-        if vit_feat.shape[-2:] != x_bb_4.shape[-2:]:
-            vit_feat = F.interpolate(vit_feat, size=x_bb_4.shape[-2:],
-                                     mode='bilinear', align_corners=False)
+        swin_feat_16 = self.swin_branch(x_in)
+        if swin_feat_16.shape[-2:] != x_bb_4.shape[-2:]:
+            swin_feat_16 = F.interpolate(
+                swin_feat_16, size=x_bb_4.shape[-2:],
+                mode='bilinear', align_corners=False)
 
-        # [V5] 交叉注意力融合
-        fused = self.cross_modal_fusion(x_bb_4, vit_feat)
+        fused = self.cross_modal_fusion(x_bb_4, swin_feat_16)
         x_c = self.cba_after_backbone(fused)
 
         nl = 256 - int(256 * 0.5)
         out = self.ffc_bottleneck((x_c[:, :nl], x_c[:, nl:]))
         x_c = torch.cat([out[0], out[1]], 1) + x_c
-
-        # 高频增强
         x_c = self.hf_enhance(x_c)
 
         return x_bb_1, x_bb_2, x_bb_3, x_bb_4, x_c
@@ -1878,6 +1788,10 @@ class GradientDecoder(nn.Module):
         x = torch.cat([_ffc_h16_out[0], _ffc_h16_out[1]], dim=1) + x
 
         x_to_be_enhanced_1 = self.block_1_conv_transpose(x)
+        if x_bb_4.shape[-2:] != x_to_be_enhanced_1.shape[-2:]:
+            x_bb_4 = F.interpolate(
+                x_bb_4, size=x_to_be_enhanced_1.shape[-2:],
+                mode='bilinear', align_corners=False)
         x = torch.cat([x_to_be_enhanced_1, x_bb_4], dim=1)
 
         x = self.block_2_conv(x)
@@ -1886,6 +1800,10 @@ class GradientDecoder(nn.Module):
         x = torch.cat([_ffc_h8_out[0], _ffc_h8_out[1]], dim=1) + x
 
         x_to_be_enhanced_2 = self.block_2_conv_transpose(x)
+        if x_bb_3.shape[-2:] != x_to_be_enhanced_2.shape[-2:]:
+            x_bb_3 = F.interpolate(
+                x_bb_3, size=x_to_be_enhanced_2.shape[-2:],
+                mode='bilinear', align_corners=False)
         x = torch.cat([x_to_be_enhanced_2, x_bb_3], dim=1)
 
         x = self.block_3_conv(x)
@@ -1894,10 +1812,18 @@ class GradientDecoder(nn.Module):
         x = torch.cat([_ffc_h4_out[0], _ffc_h4_out[1]], dim=1) + x
 
         x_to_be_enhanced_3 = self.block_3_conv_transpose(x)
+        if x_bb_2.shape[-2:] != x_to_be_enhanced_3.shape[-2:]:
+            x_bb_2 = F.interpolate(
+                x_bb_2, size=x_to_be_enhanced_3.shape[-2:],
+                mode='bilinear', align_corners=False)
         x = torch.cat([x_to_be_enhanced_3, x_bb_2], dim=1)
 
         x = self.block_4_conv(x)
         x_to_be_enhanced_4 = self.block_4_conv_transpose(x)
+        if x_bb_1.shape[-2:] != x_to_be_enhanced_4.shape[-2:]:
+            x_bb_1 = F.interpolate(
+                x_bb_1, size=x_to_be_enhanced_4.shape[-2:],
+                mode='bilinear', align_corners=False)
         x = torch.cat([x_to_be_enhanced_4, x_bb_1], dim=1)
 
         x = self.block_5_conv_1(x)
@@ -2100,9 +2026,9 @@ class ResidualRefinementHead(nn.Module):
 class YFFC(nn.Module):
     """Y-FFC 主网络（V3 优化版）。含 P1 残差精修头。"""
 
-    def __init__(self):
+    def __init__(self, swin_pretrained=True):
         super().__init__()
-        self.encoder = Encoder()
+        self.encoder = Encoder(swin_pretrained=swin_pretrained)
         self.gradient_decoder = GradientDecoder()
         self.enhancement_layers = EnhancementLayers()
         self.main_decoder = MainDecoder(in_channels=256)
@@ -2113,9 +2039,15 @@ class YFFC(nn.Module):
         g_feat = self.gradient_decoder(c_feat[:-1], c_feat[-1])
         enh = self.enhancement_layers(g_feat[:-1])
         est_b = self.main_decoder(c_feat, enh, g_feat[-1], original_input=x)
+        if est_b.shape[-2:] != x.shape[-2:]:
+            est_b = F.interpolate(est_b, size=x.shape[-2:], mode='bilinear', align_corners=False)
+        if g_feat[-1].shape[-2:] != x.shape[-2:]:
+            g_map = F.interpolate(g_feat[-1], size=x.shape[-2:], mode='bilinear', align_corners=False)
+        else:
+            g_map = g_feat[-1]
         coarse = torch.clamp(x - est_b, 0.0, 1.0)
         pred_diffuse = self.refinement_head(coarse, x)  # [P1]
-        return {"r": pred_diffuse, "g": g_feat[-1], "b": est_b}
+        return {"r": pred_diffuse, "g": g_map, "b": est_b}
 
 
 # ╔════════════════════════════════════════════════════════════════════════════╗
@@ -2202,7 +2134,7 @@ def build_optimizer(model, base_lr=2e-4, weight_decay=1e-4):
         if ('sa1' in name or 'sa2' in name or 'sa3' in name or
             'sa4' in name or 'hf_enhance' in name):
             new_module_params.append(param)
-        elif ('encoder.vit_branch.vit' in name or
+        elif ('encoder.swin_branch.swin' in name or
             'encoder.stem' in name or
             'encoder.layer' in name):
             encoder_pretrained.append(param)
@@ -2407,11 +2339,11 @@ def train(args):
         else:
             min_side = int(img_size)
         hl_aug = HighlightAugmentation(
-            p=0.4, num_range=(1, 6),
+            p=1.0, num_range=(1, 6),
             radius_range=(3, max(5, min_side // 20)),
             intensity_range=(0.2, 0.7))
         paired_aug = EnhancedPairedTransform(highlight_aug=hl_aug)
-        print("[Aug] 已启用 EnhancedPairedTransform + HighlightAugmentation(p=0.4)")
+        print("[Aug] 已启用 EnhancedPairedTransform + HighlightAugmentation(p=1.0)")
     else:
         paired_aug = None
     full_train_dataset = FringeDataset(args.input_dir, args.target_dir,
