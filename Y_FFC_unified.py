@@ -645,9 +645,14 @@ class SwinEncoderBranch(nn.Module):
     """
     Swin-Tiny 单通道多尺度上下文分支，输出 H/4、H/8、H/16 三个层级特征。
 
-    输入为 [B, 1, H, W]，不再 resize 到 224x224。
-    如果 H/W 不能被 32 整除，先在右侧和下侧 padding，后续在 Encoder 中插值对齐到 ResNet 对应尺度。
+    输入为 [B, 1, H, W]，不再像旧 ViT 分支那样 resize 到 224x224。
+    Swin 直接在训练/推理 patch 的原始空间采样上建模；如果 H/W 不能被 32 整除，
+    只在右侧和下侧做必要 padding，后续在 Encoder 中插值对齐到 ResNet 对应尺度。
     torchvision Swin 中间特征为 NHWC，这里统一转回 NCHW。
+
+    对结构光条纹图像，这一点非常关键：强制 resize 会改变条纹频率、局部相位关系
+    和高光边界形态，可能破坏后续相位恢复所依赖的空间采样一致性。Swin 的窗口注意力
+    支持可变 patch 尺寸，因此可以保留原始 patch 内的相位、周期和细条纹位置关系。
 
     在整个模型中的位置：
         被 Encoder 调用，与 ResNet50 并行提取窗口上下文特征。
@@ -712,6 +717,7 @@ class SwinEncoderBranch(nn.Module):
 
     def forward(self, x):
         # 推荐训练/推理使用 320x256、384x384、512x512 等 patch。
+        # 这里不做 224x224 resize，只做右/下 padding 到 32 的倍数，保护结构光条纹相位关系。
         # 不建议直接整图训练 2448x2048；大图推理建议 sliding-window + overlap 融合。
         x = self._pad_to_multiple(x, multiple=32)
 

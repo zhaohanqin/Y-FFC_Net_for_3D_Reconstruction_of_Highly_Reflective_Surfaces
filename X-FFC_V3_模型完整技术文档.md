@@ -18,7 +18,7 @@
 1. **输入层**：输入为单通道灰度条纹图像 `x`，形状为 `[B, 1, H, W]`，归一化到 `[0, 1]`。
 2. **编码层 EncoderSwin**：
    - **ResNet50 局部纹理分支**输出 `x_bb_1/x_bb_2/x_bb_3/x_bb_4`，分别对应 H/2、H/4、H/8、H/16，用作解码器 skip connection。
-   - **Swin-Tiny 窗口上下文分支**直接处理原始 patch，不强制 resize 到 224×224，输出 `swin_4/swin_8/swin_16`。
+   - **Swin-Tiny 窗口上下文分支**直接处理原始 patch，不强制 resize 到 224×224，输出 `swin_4/swin_8/swin_16`。这会保留结构光条纹的空间采样、局部相位关系和条纹周期。
    - **多尺度 skip 融合**：`swin_4` 与 `x_bb_2`、`swin_8` 与 `x_bb_3` 通过 `AdaptiveSkipFusion` 做内容自适应残差注入。
 3. **瓶颈层数据流**：`swin_16` 先经 `swin16_proj` 投影到 512 通道，再与 ResNet 深层特征 `x_bb_4` 通过 `CrossModalFusion` 双向交叉注意力融合；融合结果依次经过 `cba_after_backbone -> FFC bottleneck -> HighFrequencyEnhancement`，得到瓶颈特征 `x_c`。
 4. **高反光/结构识别辅助分支**：`GradientDecoder` 接收 `x_c` 与编码器 skip，逐级上采样预测梯度图 `g`，同时输出 4 级中间特征。
@@ -206,9 +206,11 @@ new_weight = old_weight.mean(dim=1, keepdim=True)
 
 这样既适配单通道灰度输入，又保留预训练低层滤波器能力。
 
-**\[S2\] 不再强制 224×224 resize**：
+**\[S2\] 不再强制 224×224 resize，保护结构光相位信息**：
 
 Swin 分支直接处理训练/推理 patch。若输入 H/W 不能被 32 整除，先在右侧和下侧 padding，保证 Swin 分层下采样可以正常前向；后续在 Encoder 中插值对齐到 ResNet 对应尺度。推荐 patch 为 `320×256`、`384×384`、`512×512`，不建议直接整图训练 `2448×2048`。
+
+这一点是 X-FFC-Swin 相比旧 ViT 路径的重要优势。结构光条纹图像的相位、周期和条纹边界都与空间采样强相关；强制 resize 到 `224×224` 会压缩或拉伸条纹，改变局部频率与相位关系，也会改变高光边界形态。当前 Swin 分支只做必要 padding，不做固定尺寸缩放，因此可以在原始 patch 尺度上保留相位恢复所需的条纹几何关系。
 
 **\[S3\] 多尺度层级输出**：
 
@@ -615,7 +617,7 @@ class YFFC(nn.Module):
     │      └─ x_bb_4: [B, 512, 8, 10]               ==> (保存)
     │
     ├─> Swin-Tiny 分支 (并行):
-    │   ├─ 输入保持 [B, 1, 128, 160]，不 resize 到 224×224
+    │   ├─ 输入保持 [B, 1, 128, 160]，不 resize 到 224×224，保留条纹相位与周期关系
     │   ├─ 单通道 patch embedding: Conv2d(1→96, kernel=4, stride=4)
     │   ├─ torchvision Swin 内部为 NHWC，取出后统一转 NCHW
     │   ├─ stage H/4  → swin_4:  [B, 96,  32, 40]
@@ -1024,7 +1026,7 @@ YFFC (X-FFC V3)
 | 编号 | 改进 | 位置 | 说明 |
 |------|------|------|------|
 | \[S1\] | 单通道 Swin-Tiny | SwinEncoderBranch | patch embedding 由 3 通道改为 1 通道 |
-| \[S2\] | 取消 224×224 强制 resize | SwinEncoderBranch | 直接处理训练/推理 patch |
+| \[S2\] | 取消 224×224 强制 resize | SwinEncoderBranch | 直接处理训练/推理 patch，保护结构光条纹相位关系 |
 | \[S3\] | H/4、H/8、H/16 层级输出 | SwinEncoderBranch | NCHW 多尺度特征 |
 | \[S4\] | 自适应 skip 融合 | AdaptiveSkipFusion | gate + beta 控制 Swin 注入 |
 | \[S5\] | H/16 交叉注意力融合 | CrossModalFusion | ResNet 与 Swin 双向信息交互 |
