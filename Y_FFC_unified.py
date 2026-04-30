@@ -2050,6 +2050,14 @@ class MainDecoder(nn.Module):
         self.grad_gate_3 = nn.Sequential(nn.Conv2d(1, 1, 3, 1, 1, bias=True), nn.Tanh())
         self.grad_gate_4 = nn.Sequential(nn.Conv2d(1, 1, 3, 1, 1, bias=True), nn.Tanh())
 
+        self.xg_proj = nn.Sequential(
+            nn.Conv2d(1, 16, 3, 1, 1, bias=False),
+            nn.GroupNorm(4, 16),
+            nn.GELU(),
+            nn.Conv2d(16, 1, 1, 1, 0, bias=True),
+            nn.Tanh(),
+        )
+
     def forward(self, c_features, enhanced_features, x_g, original_input):
         x_bb_1, x_bb_2, x_bb_3, x_bb_4, x_c = c_features
         xe1, xe2, xe3, xe4 = enhanced_features
@@ -2120,6 +2128,7 @@ class MainDecoder(nn.Module):
         x = self.transposed_block_5(x)
         if x_g.shape[-2:] != x.shape[-2:]:
             x_g = F.interpolate(x_g, x.shape[-2:], mode='bilinear', align_corners=False)
+        x_g = self.xg_proj(x_g)
         x = x * (1.0 + self.final_grad_scale * self.final_grad_proj(x_g))
 
         # [P2] 扩展输出头 with skip connection

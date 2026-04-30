@@ -22,6 +22,7 @@ Y-FFC Net 图像处理脚本 - 去除高反光
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 from PIL import Image
 import matplotlib.pyplot as plt
@@ -29,7 +30,61 @@ import os
 from pathlib import Path
 import glob
 from tqdm import tqdm
-from Y_FFC_unified import YFFC
+from Y_FFC_unified import YFFC, replace_bn_with_gn
+
+
+def _extract_state_dict(checkpoint):
+    """从完整 checkpoint 或纯 state_dict 中取出模型权重。"""
+    if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+        return checkpoint['model_state_dict'], True
+    if isinstance(checkpoint, dict):
+        return checkpoint, False
+    raise ValueError(f"无法识别的 checkpoint 格式: {type(checkpoint)}")
+
+
+def _looks_like_gn_state_dict(state_dict):
+    """训练脚本启用 GN 后，state_dict 中不再包含 BN running stats。"""
+    running_keys = ('running_mean', 'running_var', 'num_batches_tracked')
+    has_running_stats = any(any(token in key for token in running_keys)
+                            for key in state_dict.keys())
+    has_norm_weights = any(key.endswith(('.bn.weight', '.bn.bias'))
+                           for key in state_dict.keys())
+    return has_norm_weights and not has_running_stats
+
+
+def _load_ema_shadow(model, ema_shadow):
+    """在完整模型权重基础上覆盖 EMA 参数，并跳过不匹配项。"""
+    model_sd = model.state_dict()
+    loaded = 0
+    skipped = 0
+
+    for name, value in ema_shadow.items():
+        if name not in model_sd:
+            skipped += 1
+            continue
+        if model_sd[name].shape != value.shape:
+            skipped += 1
+            continue
+        model_sd[name] = value.to(device=model_sd[name].device,
+                                  dtype=model_sd[name].dtype)
+        loaded += 1
+
+    model.load_state_dict(model_sd, strict=True)
+    return loaded, skipped
+
+
+def _adapt_model_for_checkpoint(model, state_dict):
+    """
+    兼容旧 checkpoint。
+    旧版 MainDecoder 没有 xg_proj，直接使用梯度图调制最终输出。
+    如果当前代码新增了 xg_proj 但 checkpoint 没有对应权重，推理时退回旧版路径，
+    避免随机初始化的新模块污染输出。
+    """
+    has_xg_proj_weight = any(key.startswith('main_decoder.xg_proj.')
+                             for key in state_dict.keys())
+    if not has_xg_proj_weight and hasattr(model.main_decoder, 'xg_proj'):
+        model.main_decoder.xg_proj = nn.Identity()
+        print("  [OK] checkpoint 不含 xg_proj，已切换为旧版梯度直通路径")
 
 
 def load_model(model_path, device, prefer_ema=True):
@@ -48,44 +103,38 @@ def load_model(model_path, device, prefer_ema=True):
     返回:
         加载好权重的 YFFC 模型（已 .eval()）
     """
-    model = YFFC()
-
     checkpoint = torch.load(model_path, map_location=device, weights_only=False)
+    state_dict, is_full_checkpoint = _extract_state_dict(checkpoint)
 
-    if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-        # ── 训练保存的标准 checkpoint ──
-        # 优先使用 EMA 权重（推理更稳定）
-        ema_key = None
-        if prefer_ema:
-            if 'ema_shadow' in checkpoint:
-                ema_key = 'ema_shadow'
-            elif 'ema' in checkpoint:
-                ema_key = 'ema'
-
-        if ema_key is not None:
-            # EMA shadow 的 key 与 model.named_parameters() 一致
-            ema_shadow = checkpoint[ema_key]
-            model_sd = model.state_dict()
-            for name, param in ema_shadow.items():
-                if name in model_sd:
-                    model_sd[name] = param
-            model.load_state_dict(model_sd)
-            epoch = checkpoint.get('epoch', '?')
-            best_ssim = checkpoint.get('best_ssim', '?')
-            print(f"  [OK] 已加载 EMA 权重 ({ema_key}, epoch={epoch}, best_ssim={best_ssim})")
-        else:
-            model.load_state_dict(checkpoint['model_state_dict'])
-            epoch = checkpoint.get('epoch', '?')
-            best_ssim = checkpoint.get('best_ssim', '?')
-            print(f"  [OK] 已加载模型权重 (epoch={epoch}, best_ssim={best_ssim})")
-    elif isinstance(checkpoint, dict):
-        # ── 可能是纯 state_dict（key 为 layer 名称） ──
-        model.load_state_dict(checkpoint)
-        print("  [OK] 已加载纯 state_dict 权重")
-    else:
-        raise ValueError(f"无法识别的 checkpoint 格式: {type(checkpoint)}")
+    model = YFFC()
+    if _looks_like_gn_state_dict(state_dict):
+        replace_bn_with_gn(model, 8)
+        print("  [OK] 检测到 GN checkpoint，已按训练结构执行 BN -> GN")
+    _adapt_model_for_checkpoint(model, state_dict)
 
     model.to(device)
+    model.load_state_dict(state_dict, strict=True)
+
+    epoch = checkpoint.get('epoch', '?') if is_full_checkpoint else '?'
+    best_ssim = checkpoint.get('best_ssim', '?') if is_full_checkpoint else '?'
+    print(f"  [OK] 已加载完整模型权重 (epoch={epoch}, best_ssim={best_ssim})")
+
+    ema_key = None
+    if is_full_checkpoint and prefer_ema:
+        if 'ema_shadow' in checkpoint:
+            ema_key = 'ema_shadow'
+        elif 'ema' in checkpoint:
+            ema_key = 'ema'
+
+    if ema_key is not None:
+        loaded, skipped = _load_ema_shadow(model, checkpoint[ema_key])
+        print(f"  [OK] 已在完整权重基础上覆盖 EMA ({ema_key}): "
+              f"loaded={loaded}, skipped={skipped}")
+    elif not is_full_checkpoint:
+        print("  [OK] 已加载纯 state_dict 权重")
+    elif prefer_ema:
+        print("  [WARN] checkpoint 不包含 EMA 权重，使用普通模型权重")
+
     model.eval()
     return model
 
@@ -136,7 +185,19 @@ def load_image(image_path, target_size=None):
     return image_tensor, original_size
 
 
-def save_result(tensor, save_path):
+def resize_tensor_to_size(tensor, target_size):
+    """
+    将 [B, C, H, W] tensor 调整到 PIL 尺寸 target_size=(width, height)。
+    如果尺寸已经一致，则原样返回。
+    """
+    target_w, target_h = target_size
+    if tensor.shape[-2:] == (target_h, target_w):
+        return tensor
+    return F.interpolate(tensor, size=(target_h, target_w),
+                         mode='bilinear', align_corners=False)
+
+
+def save_result(tensor, save_path, target_size=None):
     """
     保存tensor为图像文件
     
@@ -147,6 +208,9 @@ def save_result(tensor, save_path):
     注意:
         输出图像尺寸与输入tensor尺寸一致，不进行resize
     """
+    if target_size is not None:
+        tensor = resize_tensor_to_size(tensor, target_size)
+
     # 转换为numpy数组
     image_array = tensor.squeeze().cpu().numpy()
     
@@ -161,7 +225,7 @@ def save_result(tensor, save_path):
     image.save(save_path)
 
 
-def visualize_results(input_img, output_dict, save_path):
+def visualize_results(input_img, output_dict, save_path, target_size=None):
     """
     可视化输入和所有输出结果
     
@@ -172,30 +236,36 @@ def visualize_results(input_img, output_dict, save_path):
     """
     # 转换为numpy数组
     input_array = input_img.squeeze().cpu().numpy()
-    diffuse_array = output_dict['r'].squeeze().cpu().numpy()
-    gradient_array = output_dict['g'].squeeze().cpu().numpy()
-    specular_array = output_dict['b'].squeeze().cpu().numpy()
+    if target_size is not None:
+        output_dict = {
+            key: resize_tensor_to_size(value, target_size)
+            for key, value in output_dict.items()
+        }
+
+    diffuse_array = np.clip(output_dict['r'].squeeze().cpu().numpy(), 0, 1)
+    gradient_array = np.clip(output_dict['g'].squeeze().cpu().numpy(), 0, 1)
+    specular_array = np.clip(output_dict['b'].squeeze().cpu().numpy(), 0, 1)
     
     # 创建2x2子图
     fig, axes = plt.subplots(2, 2, figsize=(12, 12))
     
     # 输入图像（含高反光）
-    axes[0, 0].imshow(input_array, cmap='gray')
+    axes[0, 0].imshow(input_array, cmap='gray', vmin=0, vmax=1)
     axes[0, 0].set_title('Input (with Specular Highlights)', fontsize=14, fontweight='bold')
     axes[0, 0].axis('off')
     
     # 漫反射输出（去除高反光后的结果）
-    axes[0, 1].imshow(diffuse_array, cmap='gray')
+    axes[0, 1].imshow(diffuse_array, cmap='gray', vmin=0, vmax=1)
     axes[0, 1].set_title('Output (Diffuse - Highlights Removed)', fontsize=14, fontweight='bold')
     axes[0, 1].axis('off')
     
     # 镜面反射分量（提取的高反光部分）
-    axes[1, 0].imshow(specular_array, cmap='hot')
+    axes[1, 0].imshow(specular_array, cmap='hot', vmin=0, vmax=1)
     axes[1, 0].set_title('Specular Component (Highlights)', fontsize=14, fontweight='bold')
     axes[1, 0].axis('off')
     
     # 梯度输出
-    axes[1, 1].imshow(gradient_array, cmap='gray')
+    axes[1, 1].imshow(gradient_array, cmap='gray', vmin=0, vmax=1)
     axes[1, 1].set_title('Gradient Output', fontsize=14, fontweight='bold')
     axes[1, 1].axis('off')
     
@@ -241,22 +311,27 @@ def process_single_image(model, image_path, output_dir, device, show_visualizati
         
         # 保存结果（输出尺寸与输入一致）
         diffuse_filename = f'{base_name}_diffuse.png'
-        save_result(diffuse_output, os.path.join(output_dir, diffuse_filename))
+        save_result(diffuse_output, os.path.join(output_dir, diffuse_filename),
+                    target_size=original_size)
         save_result(specular_output, 
-                    os.path.join(output_dir, f'{base_name}_specular.png'))
+                    os.path.join(output_dir, f'{base_name}_specular.png'),
+                    target_size=original_size)
         save_result(gradient_output, 
-                    os.path.join(output_dir, f'{base_name}_gradient.png'))
+                    os.path.join(output_dir, f'{base_name}_gradient.png'),
+                    target_size=original_size)
         
         # 可选：额外保存一份漫反射结果到集中目录，方便统一处理
         if collect_diffuse_dir:
             os.makedirs(collect_diffuse_dir, exist_ok=True)
             original_filename = os.path.basename(image_path)
-            save_result(diffuse_output, os.path.join(collect_diffuse_dir, original_filename))
+            save_result(diffuse_output, os.path.join(collect_diffuse_dir, original_filename),
+                        target_size=original_size)
         
         # 可视化结果
         if show_visualization:
             visualize_results(input_tensor, output, 
-                             save_path=os.path.join(output_dir, f'{base_name}_visualization.png'))
+                             save_path=os.path.join(output_dir, f'{base_name}_visualization.png'),
+                             target_size=original_size)
         
         return True
     except Exception as e:
@@ -327,10 +402,10 @@ def main():
     # ==================== ⭐ 配置区 - 在这里修改参数 ⭐ ====================
     
     # 1. 输入配置（修改为你的图像路径或文件夹路径）
-    INPUT_PATH = r'E:\images\PSM_FSM\O1'  # 可以是单张图像路径或文件夹路径
+    INPUT_PATH = r'H:\images\before_2025_12_27\images_PSM_81_72_64\place2\11_luminance300_81'  # 可以是单张图像路径或文件夹路径
     
     # 2. 模型配置
-    MODEL_PATH = r'experiments\original_yffc_20260224_110909\models\best_model.pth'  # 训练好的模型路径
+    MODEL_PATH = r'experiments\yffc_v2_20260425_154101\models\best_model_best_ssim.pth'  # 训练好的模型路径
     PREFER_EMA = True  # 若 checkpoint 含 EMA 权重则优先使用（推理更稳定）
     
     # 3. 输出配置

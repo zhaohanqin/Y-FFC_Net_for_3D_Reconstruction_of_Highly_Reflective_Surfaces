@@ -489,6 +489,7 @@ def train_one_epoch(model, loader, criterion, optimizer, scheduler,
     optimizer.zero_grad()
     valid_accum = 0
     optimizer_steps = 0
+    scheduler_steps = 0
     spike_batches = 0
     nonfinite_batches = 0
 
@@ -541,6 +542,7 @@ def train_one_epoch(model, loader, criterion, optimizer, scheduler,
                 optimizer.step()
             if scheduler:
                 scheduler.step()
+                scheduler_steps += 1
             optimizer.zero_grad()
             if ema:
                 ema.update()
@@ -570,6 +572,7 @@ def train_one_epoch(model, loader, criterion, optimizer, scheduler,
             optimizer.step()
         if scheduler:
             scheduler.step()
+            scheduler_steps += 1
         optimizer.zero_grad()
         if ema:
             ema.update()
@@ -580,6 +583,7 @@ def train_one_epoch(model, loader, criterion, optimizer, scheduler,
         'spike_batches': spike_batches,
         'nonfinite_batches': nonfinite_batches,
         'optimizer_steps': optimizer_steps,
+        'scheduler_steps': scheduler_steps,
     }
     return avg_loss, avg_ssim, avg_mae, avg_mse, avg_psnr, avg_subs, region_metrics, train_info
 
@@ -587,6 +591,7 @@ def train_one_epoch(model, loader, criterion, optimizer, scheduler,
 def _tta_forward(model, inp):
     """[P15] Test-Time Augmentation：4 次翻转推理取平均。"""
     preds_b = []
+    preds_g = []
     for flip_h in [False, True]:
         for flip_v in [False, True]:
             x = inp
@@ -594,14 +599,19 @@ def _tta_forward(model, inp):
             if flip_v: x = torch.flip(x, [-2])
             out = model(x)
             b = out['b']
+            g = out['g']
             if flip_v: b = torch.flip(b, [-2])
             if flip_h: b = torch.flip(b, [-1])
+            if flip_v: g = torch.flip(g, [-2])
+            if flip_h: g = torch.flip(g, [-1])
             preds_b.append(b)
+            preds_g.append(g)
     avg_b = torch.stack(preds_b, dim=0).mean(0)
+    avg_g = torch.stack(preds_g, dim=0).mean(0)
     avg_r = torch.clamp(inp - avg_b, 0.0, 1.0)
     if hasattr(model, 'refinement_head'):
-        avg_r = model.refinement_head(avg_r, inp)
-    return {'r': avg_r, 'b': avg_b, 'g': out['g']}
+        avg_r = model.refinement_head(avg_r, inp, avg_b)
+    return {'r': avg_r, 'b': avg_b, 'g': avg_g}
 
 
 @torch.no_grad()
@@ -1041,6 +1051,7 @@ def print_epoch_log(ep, total_epochs, epoch_time, avg_epoch_time, eta,
     if train_info:
         print(f"  {sep2}")
         print(f"  Train steps: optimizer={train_info.get('optimizer_steps', 0)} | "
+              f"scheduler={train_info.get('scheduler_steps', 0)} | "
               f"spike_skip={train_info.get('spike_batches', 0)} | "
               f"nonfinite_skip={train_info.get('nonfinite_batches', 0)}")
 
@@ -1425,6 +1436,7 @@ def train_model(cfg):
         'spike_batches': [],
         'nonfinite_batches': [],
         'optimizer_steps': [],
+        'scheduler_steps': [],
         'ohem_ratios': [],
     }
     epoch_times = []
@@ -1559,6 +1571,7 @@ def train_model(cfg):
         history['spike_batches'].append(train_info.get('spike_batches', 0))
         history['nonfinite_batches'].append(train_info.get('nonfinite_batches', 0))
         history['optimizer_steps'].append(train_info.get('optimizer_steps', 0))
+        history['scheduler_steps'].append(train_info.get('scheduler_steps', 0))
         history['ohem_ratios'].append(w.get('ohem_ratio', float('nan')))
 
         # 记录子损失历史
@@ -1822,7 +1835,7 @@ def main():
     # ╚══════════════════════════════════════════════════════════════╝
 
     # ========== 基础训练参数 ==========
-    EPOCHS                = 100       # 训练总轮数
+    EPOCHS                = 400       # 训练总轮数
     BATCH_SIZE            = 4         # 384 分辨率推荐 2~4
     BASE_LR               = 2e-4     # 基础学习率（分层 LR 以此为基准）
     WEIGHT_DECAY          = 1e-4     # AdamW 权重衰减
@@ -1831,7 +1844,7 @@ def main():
     SEED                  = 42       # None=不固定随机性；整数=固定数据划分和随机增强
 
     # ========== 图像与数据参数 ==========
-    IMAGE_SIZE            = (160, 160)  # ⭐ 输入分辨率 (H, W)，支持任意矩形
+    IMAGE_SIZE            = (160, 128)  # ⭐ 输入分辨率 (H, W)，支持任意矩形
     TRAIN_SPLIT_RATIO     = 0.8      # 自动划分时训练集比例（有独立验证集时忽略）
     NUM_WORKERS           = 4        # DataLoader 工作进程数
 
@@ -1848,8 +1861,8 @@ def main():
     TUKEY_ALPHA           = 0.25     # Tukey 窗过渡比例
 
     # ========== 数据目录 ==========
-    INPUT_DIR             = 'data3/inputs'
-    TARGET_DIR            = 'data3/targets'
+    INPUT_DIR             = 'data2/inputs'
+    TARGET_DIR            = 'data2/targets'
     VAL_INPUT_DIR         = None     # 独立验证集输入目录（None 则自动划分）
     VAL_TARGET_DIR        = None     # 独立验证集目标目录
 
