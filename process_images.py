@@ -29,24 +29,7 @@ import matplotlib.pyplot as plt
 import os
 from pathlib import Path
 from tqdm import tqdm
-from Y_FFC_unified import YFFC, replace_bn_with_gn
-
-
-def _uses_group_norm_state_dict(state_dict):
-    """检测 checkpoint 是否来自 BN->GN 后的模型。"""
-    return not any(
-        key.endswith(('running_mean', 'running_var', 'num_batches_tracked'))
-        for key in state_dict
-    )
-
-
-def _merge_ema_weights(base_state_dict, ema_state_dict):
-    """将 EMA 参数覆盖到完整 state_dict 上，保留非 EMA 项。"""
-    merged = dict(base_state_dict)
-    for name, tensor in ema_state_dict.items():
-        if name in merged:
-            merged[name] = tensor
-    return merged
+from Y_FFC_unified import YFFC
 
 
 def load_model(model_path, device, prefer_ema=True):
@@ -68,38 +51,54 @@ def load_model(model_path, device, prefer_ema=True):
     checkpoint = torch.load(model_path, map_location=device, weights_only=False)
 
     if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-        base_state_dict = checkpoint['model_state_dict']
-        # 推理 checkpoint 已包含训练后的 Swin 权重，禁用 ImageNet 预训练加载以避免离线推理时下载权重。
-        model = YFFC(swin_pretrained=False)
-        if _uses_group_norm_state_dict(base_state_dict):
-            replace_bn_with_gn(model, num_groups=8)
-
         # ── 训练保存的标准 checkpoint ──
         # 优先使用 EMA 权重（推理更稳定）
-        ema_state_dict = checkpoint.get('ema_shadow') or checkpoint.get('ema')
-        if prefer_ema and ema_state_dict:
-            # EMA 只保存 model.named_parameters()，需要用完整 state_dict 补齐缓冲/非 EMA 项。
-            model.load_state_dict(_merge_ema_weights(base_state_dict, ema_state_dict))
+        if prefer_ema and 'ema_shadow' in checkpoint:
+            # EMA shadow 的 key 与 model.named_parameters() 一致
+            ema_shadow = checkpoint['ema_shadow']
+            model_sd = model.state_dict()
+            for name, param in ema_shadow.items():
+                if name in model_sd:
+                    model_sd[name] = param
+            model.load_state_dict(model_sd)
             epoch = checkpoint.get('epoch', '?')
             best_ssim = checkpoint.get('best_ssim', '?')
             print(f"  ✓ 已加载 EMA 权重 (epoch={epoch}, best_ssim={best_ssim})")
         else:
-            model.load_state_dict(base_state_dict)
+            model.load_state_dict(checkpoint['model_state_dict'])
             epoch = checkpoint.get('epoch', '?')
             best_ssim = checkpoint.get('best_ssim', '?')
             print(f"  ✓ 已加载模型权重 (epoch={epoch}, best_ssim={best_ssim})")
     elif isinstance(checkpoint, dict):
         # ── 可能是纯 state_dict（key 为 layer 名称） ──
-        # 推理 checkpoint 已包含训练后的 Swin 权重，禁用 ImageNet 预训练加载以避免离线推理时下载权重。
-        model = YFFC(swin_pretrained=False)
-        if _uses_group_norm_state_dict(checkpoint):
-            replace_bn_with_gn(model, num_groups=8)
         model.load_state_dict(checkpoint)
         print("  ✓ 已加载纯 state_dict 权重")
     else:
         raise ValueError(f"无法识别的 checkpoint 格式: {type(checkpoint)}")
 
     model.to(device)
+    model.load_state_dict(state_dict, strict=True)
+
+    epoch = checkpoint.get('epoch', '?') if is_full_checkpoint else '?'
+    best_ssim = checkpoint.get('best_ssim', '?') if is_full_checkpoint else '?'
+    print(f"  [OK] 已加载完整模型权重 (epoch={epoch}, best_ssim={best_ssim})")
+
+    ema_key = None
+    if is_full_checkpoint and prefer_ema:
+        if 'ema_shadow' in checkpoint:
+            ema_key = 'ema_shadow'
+        elif 'ema' in checkpoint:
+            ema_key = 'ema'
+
+    if ema_key is not None:
+        loaded, skipped = _load_ema_shadow(model, checkpoint[ema_key])
+        print(f"  [OK] 已在完整权重基础上覆盖 EMA ({ema_key}): "
+              f"loaded={loaded}, skipped={skipped}")
+    elif not is_full_checkpoint:
+        print("  [OK] 已加载纯 state_dict 权重")
+    elif prefer_ema:
+        print("  [WARN] checkpoint 不包含 EMA 权重，使用普通模型权重")
+
     model.eval()
     return model
 
@@ -261,7 +260,19 @@ def sliding_window_inference(model, input_tensor, device, patch_size, overlap=32
     }
 
 
-def save_result(tensor, save_path):
+def resize_tensor_to_size(tensor, target_size):
+    """
+    将 [B, C, H, W] tensor 调整到 PIL 尺寸 target_size=(width, height)。
+    如果尺寸已经一致，则原样返回。
+    """
+    target_w, target_h = target_size
+    if tensor.shape[-2:] == (target_h, target_w):
+        return tensor
+    return F.interpolate(tensor, size=(target_h, target_w),
+                         mode='bilinear', align_corners=False)
+
+
+def save_result(tensor, save_path, target_size=None):
     """
     保存tensor为图像文件
 
@@ -272,6 +283,9 @@ def save_result(tensor, save_path):
     注意:
         输出图像尺寸与输入tensor尺寸一致，不进行resize
     """
+    if target_size is not None:
+        tensor = resize_tensor_to_size(tensor, target_size)
+
     # 转换为numpy数组
     image_array = tensor.squeeze().cpu().numpy()
 
@@ -286,7 +300,7 @@ def save_result(tensor, save_path):
     image.save(save_path)
 
 
-def visualize_results(input_img, output_dict, save_path):
+def visualize_results(input_img, output_dict, save_path, target_size=None):
     """
     可视化输入和所有输出结果
 
@@ -300,27 +314,27 @@ def visualize_results(input_img, output_dict, save_path):
     diffuse_array = output_dict['r'].squeeze().cpu().numpy()
     gradient_array = output_dict['g'].squeeze().cpu().numpy()
     specular_array = output_dict['b'].squeeze().cpu().numpy()
-
+    
     # 创建2x2子图
     fig, axes = plt.subplots(2, 2, figsize=(12, 12))
 
     # 输入图像（含高反光）
-    axes[0, 0].imshow(input_array, cmap='gray')
+    axes[0, 0].imshow(input_array, cmap='gray', vmin=0, vmax=1)
     axes[0, 0].set_title('Input (with Specular Highlights)', fontsize=14, fontweight='bold')
     axes[0, 0].axis('off')
 
     # 漫反射输出（去除高反光后的结果）
-    axes[0, 1].imshow(diffuse_array, cmap='gray')
+    axes[0, 1].imshow(diffuse_array, cmap='gray', vmin=0, vmax=1)
     axes[0, 1].set_title('Output (Diffuse - Highlights Removed)', fontsize=14, fontweight='bold')
     axes[0, 1].axis('off')
 
     # 镜面反射分量（提取的高反光部分）
-    axes[1, 0].imshow(specular_array, cmap='hot')
+    axes[1, 0].imshow(specular_array, cmap='hot', vmin=0, vmax=1)
     axes[1, 0].set_title('Specular Component (Highlights)', fontsize=14, fontweight='bold')
     axes[1, 0].axis('off')
 
     # 梯度输出
-    axes[1, 1].imshow(gradient_array, cmap='gray')
+    axes[1, 1].imshow(gradient_array, cmap='gray', vmin=0, vmax=1)
     axes[1, 1].set_title('Gradient Output', fontsize=14, fontweight='bold')
     axes[1, 1].axis('off')
 
@@ -384,22 +398,22 @@ def process_single_image(model, image_path, output_dir, device, show_visualizati
         # 保存结果（输出尺寸与输入一致）
         diffuse_filename = f'{base_name}_diffuse.png'
         save_result(diffuse_output, os.path.join(output_dir, diffuse_filename))
-        save_result(specular_output,
+        save_result(specular_output, 
                     os.path.join(output_dir, f'{base_name}_specular.png'))
-        save_result(gradient_output,
+        save_result(gradient_output, 
                     os.path.join(output_dir, f'{base_name}_gradient.png'))
-
+        
         # 可选：额外保存一份漫反射结果到集中目录，方便统一处理
         if collect_diffuse_dir:
             os.makedirs(collect_diffuse_dir, exist_ok=True)
             original_filename = os.path.basename(image_path)
             save_result(diffuse_output, os.path.join(collect_diffuse_dir, original_filename))
-
+        
         # 可视化结果
         if show_visualization:
-            visualize_results(input_tensor, output,
+            visualize_results(input_tensor, output, 
                              save_path=os.path.join(output_dir, f'{base_name}_visualization.png'))
-
+        
         return True
     except Exception as e:
         print(f"  ❌ 处理失败: {e}")
@@ -458,7 +472,7 @@ def process_folder(model, input_folder, output_folder, device, show_visualizatio
     print("\n" + "=" * 70)
     print("批量处理完成！")
     print("=" * 70)
-    print(f"✓ 成功: {success_count} 张")
+    print(f"[OK] 成功: {success_count} 张")
     if fail_count > 0:
         print(f"❌ 失败: {fail_count} 张")
     print(f"输出目录: {output_folder}")
@@ -473,9 +487,9 @@ def main():
 
     # 1. 输入配置（修改为你的图像路径或文件夹路径）
     INPUT_PATH = r'E:\images\PSM_FSM\O1'  # 可以是单张图像路径或文件夹路径
-
+    
     # 2. 模型配置
-    MODEL_PATH = r'experiments\yffc_v2_20260426_225811\models\best_model_best_ssim.pth'  # 训练好的模型路径
+    MODEL_PATH = r'experiments\original_yffc_20260224_110909\models\best_model.pth'  # 训练好的模型路径
     PREFER_EMA = True  # 若 checkpoint 含 EMA 权重则优先使用（推理更稳定）
 
     # 3. 输出配置
@@ -528,7 +542,7 @@ def main():
     print(f"加载模型: {MODEL_PATH}")
     try:
         model = load_model(MODEL_PATH, device, prefer_ema=PREFER_EMA)
-        print("✓ 模型加载成功")
+        print("[OK] 模型加载成功")
     except Exception as e:
         print(f"❌ 模型加载失败: {e}")
         return
@@ -544,8 +558,7 @@ def main():
 
         print(f"开始处理...")
         if process_single_image(model, INPUT_PATH, image_output_dir, device, SHOW_VISUALIZATION,
-                                DIFFUSE_COLLECTION_DIR,
-                                patch_size=TRAIN_IMAGE_SIZE, overlap=PATCH_OVERLAP):
+                                DIFFUSE_COLLECTION_DIR):
             print(f"✓ 处理完成!")
             print(f"\n输出文件位置:")
             print(f"  - {image_output_dir}/{image_name}_diffuse.png       (⭐ 去除高反光后的结果)")

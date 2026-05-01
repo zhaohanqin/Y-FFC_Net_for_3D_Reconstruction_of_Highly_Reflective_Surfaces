@@ -22,8 +22,8 @@ import sys
 # ============================================================
 # 用户配置区域（根据实际情况修改）
 # ============================================================
-REFERENCE_PLY   = "pointCloud_hight2.ply"      # 基准点云文件路径
-COMPARE_PLY     = "pointCloud_hight.ply"        # 待比较点云文件路径
+REFERENCE_PLY   = "pointCloud_test.ply"      # 基准点云文件路径
+COMPARE_PLY     = "pointCloud.ply"        # 待比较点云文件路径
 OUTPUT_PLY      = "output_colored.ply" # 输出带颜色标注的点云文件路径
 THRESHOLD       = 1.5                 # 差异点判定阈值（单位与点云坐标单位一致）
 DEFAULT_COLOR   = (180, 180, 180)      # 非差异点的默认颜色 (R, G, B)
