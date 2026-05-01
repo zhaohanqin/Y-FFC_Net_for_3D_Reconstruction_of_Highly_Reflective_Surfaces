@@ -27,7 +27,6 @@ import matplotlib.pyplot as plt
 from matplotlib import rcParams
 from tqdm import tqdm
 from PIL import Image
-from torchvision import transforms
 
 from HDRNet import unet  # 导入模型
 
@@ -83,8 +82,8 @@ class SSIM(nn.Module):
                                           padding=pad, groups=self.channels) - mu1_mu2)
 
         ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / \
-                   ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
-        return ssim_map.mean()
+                   ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2) + 1e-8)
+        return ssim_map.clamp(0.0, 1.0).mean()
 
 
 # ==============================================================================
@@ -97,7 +96,8 @@ class FringeDataset(Dataset):
         input_dir  : 高反光输入图像目录
         target_dir : 去反光目标图像目录
 
-    目录下的文件按文件名排序后一一对应。
+    按 train.py 的规则匹配目标图：同名、input_ -> target_、input -> target、
+    以及数字后缀 target_xxx。
     图像均为灰度图，读取后归一化到 [0, 1]，输出 shape 为 (1, H, W)。
     """
 
@@ -107,31 +107,59 @@ class FringeDataset(Dataset):
         self.target_dir = target_dir
         self.resize     = resize
 
-        input_files  = sorted(os.listdir(input_dir))
-        target_files = sorted(os.listdir(target_dir))
-        assert len(input_files) == len(target_files), \
-            f"输入({len(input_files)})与目标({len(target_files)})文件数量不匹配"
-        self.input_files  = input_files
-        self.target_files = target_files
+        self.input_files = sorted([
+            f for f in os.listdir(input_dir)
+            if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff'))
+        ])
 
-        t_list = [transforms.Grayscale(num_output_channels=1)]
         if resize is not None:
-            if isinstance(resize, int):
-                t_list.append(transforms.Resize((resize, resize)))
+            if isinstance(resize, (int, float)):
+                self.resize_hw = (int(resize), int(resize))
+            elif isinstance(resize, (tuple, list)) and len(resize) == 2:
+                self.resize_hw = (int(resize[0]), int(resize[1]))
             else:
-                t_list.append(transforms.Resize((resize[0], resize[1])))
-        t_list.append(transforms.ToTensor())   # → [0,1], (1,H,W)
-        self.transform = transforms.Compose(t_list)
+                raise ValueError(f"resize 参数格式不正确: {resize}，应为 int / (H, W) / None")
+        else:
+            self.resize_hw = None
 
     def __len__(self):
         return len(self.input_files)
 
     def __getitem__(self, idx):
-        inp_img = Image.open(
-            os.path.join(self.input_dir,  self.input_files[idx])).convert('L')
-        tgt_img = Image.open(
-            os.path.join(self.target_dir, self.target_files[idx])).convert('L')
-        return self.transform(inp_img), self.transform(tgt_img)
+        name = self.input_files[idx]
+        inp_path = os.path.join(self.input_dir, name)
+        candidates = [
+            name,
+            name.replace("input_", "target_", 1) if name.startswith("input_") else name,
+            name.replace("input", "target", 1) if name.startswith("input") else name,
+        ]
+
+        tgt_path = None
+        for candidate in candidates:
+            path = os.path.join(self.target_dir, candidate)
+            if os.path.exists(path):
+                tgt_path = path
+                break
+        if tgt_path is None:
+            base, ext = os.path.splitext(name)
+            digits = ''.join(ch for ch in base if ch.isdigit())
+            if digits:
+                path = os.path.join(self.target_dir, f"target_{digits}{ext}")
+                if os.path.exists(path):
+                    tgt_path = path
+        if tgt_path is None:
+            raise FileNotFoundError(f"找不到 '{name}' 的匹配目标, 目录: '{self.target_dir}'")
+
+        inp_img = Image.open(inp_path).convert('L')
+        tgt_img = Image.open(tgt_path).convert('L')
+        if self.resize_hw is not None:
+            pil_size = (self.resize_hw[1], self.resize_hw[0])
+            inp_img = inp_img.resize(pil_size, Image.LANCZOS)
+            tgt_img = tgt_img.resize(pil_size, Image.LANCZOS)
+
+        inp = torch.from_numpy(np.array(inp_img, dtype=np.float32) / 255.0).unsqueeze(0)
+        tgt = torch.from_numpy(np.array(tgt_img, dtype=np.float32) / 255.0).unsqueeze(0)
+        return inp, tgt
 
 
 # ==============================================================================
@@ -452,8 +480,19 @@ def save_training_summary(output_folder,
 # 训练 + 验证单轮
 # ==============================================================================
 
+def compute_loss(outputs, targets, ssim_fn, mae_fn):
+    """HDRNet 输出 raw logits，先映射到 [0, 1] 后再计算损失和指标。"""
+    pred_01 = torch.sigmoid(outputs).clamp(0.0, 1.0)
+    ssim_score = ssim_fn(pred_01, targets).clamp(0.0, 1.0)
+    loss_ssim = 1.0 - ssim_score
+    loss_mae = mae_fn(pred_01, targets)
+    loss = loss_ssim + loss_mae
+    mse_val = torch.mean((pred_01 - targets) ** 2).detach().item()
+    return loss, ssim_score.detach().item(), loss_mae.detach().item(), mse_val
+
+
 def train_one_epoch(model, loader, optimizer, ssim_fn, mae_fn,
-                    device, use_amp, scaler):
+                    device, use_amp, scaler, grad_clip=1.0):
     """执行一个 epoch 的训练，返回各指标均值。"""
     model.train()
     total_loss = total_ssim = total_mae = total_mse = 0.0
@@ -466,17 +505,13 @@ def train_one_epoch(model, loader, optimizer, ssim_fn, mae_fn,
 
         if use_amp and scaler is not None:
             with torch.amp.autocast('cuda'):
-                outputs    = model(inputs)
-                ssim_score = ssim_fn(outputs, targets)
-                loss_ssim  = 1.0 - ssim_score
-                loss_mae   = mae_fn(outputs, targets)
-                loss       = loss_ssim + loss_mae
+                outputs = model(inputs)
+                loss, ssim_val, mae_val, mse_val = compute_loss(
+                    outputs, targets, ssim_fn, mae_fn)
         else:
-            outputs    = model(inputs)
-            ssim_score = ssim_fn(outputs, targets)
-            loss_ssim  = 1.0 - ssim_score
-            loss_mae   = mae_fn(outputs, targets)
-            loss       = loss_ssim + loss_mae
+            outputs = model(inputs)
+            loss, ssim_val, mae_val, mse_val = compute_loss(
+                outputs, targets, ssim_fn, mae_fn)
 
         # NaN 保护
         if not torch.isfinite(loss):
@@ -485,20 +520,22 @@ def train_one_epoch(model, loader, optimizer, ssim_fn, mae_fn,
 
         if use_amp and scaler is not None:
             scaler.scale(loss).backward()
-            scaler.unscale_(optimizer)
-            nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            if grad_clip and grad_clip > 0:
+                scaler.unscale_(optimizer)
+                nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
             scaler.step(optimizer)
             scaler.update()
         else:
             loss.backward()
-            nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            if grad_clip and grad_clip > 0:
+                nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
             optimizer.step()
 
         with torch.no_grad():
             total_loss += loss.detach().item()
-            total_ssim += ssim_score.detach().item()
-            total_mae  += loss_mae.detach().item()
-            total_mse  += torch.mean((outputs - targets) ** 2).detach().item()
+            total_ssim += ssim_val
+            total_mae  += mae_val
+            total_mse  += mse_val
 
     n = len(loader)
     return total_loss / n, total_ssim / n, total_mae / n, total_mse / n
@@ -517,25 +554,21 @@ def validate_one_epoch(model, loader, ssim_fn, mae_fn, device, use_amp, scaler):
 
         if use_amp and scaler is not None:
             with torch.amp.autocast('cuda'):
-                outputs    = model(inputs)
-                ssim_score = ssim_fn(outputs, targets)
-                loss_ssim  = 1.0 - ssim_score
-                loss_mae   = mae_fn(outputs, targets)
-                loss       = loss_ssim + loss_mae
+                outputs = model(inputs)
+                loss, ssim_val, mae_val, mse_val = compute_loss(
+                    outputs, targets, ssim_fn, mae_fn)
         else:
-            outputs    = model(inputs)
-            ssim_score = ssim_fn(outputs, targets)
-            loss_ssim  = 1.0 - ssim_score
-            loss_mae   = mae_fn(outputs, targets)
-            loss       = loss_ssim + loss_mae
+            outputs = model(inputs)
+            loss, ssim_val, mae_val, mse_val = compute_loss(
+                outputs, targets, ssim_fn, mae_fn)
 
         if not torch.isfinite(loss):
             continue
 
         total_loss += loss.detach().item()
-        total_ssim += ssim_score.detach().item()
-        total_mae  += loss_mae.detach().item()
-        total_mse  += torch.mean((outputs - targets) ** 2).detach().item()
+        total_ssim += ssim_val
+        total_mae  += mae_val
+        total_mse  += mse_val
         valid_batches += 1
 
     if valid_batches == 0:
@@ -563,6 +596,7 @@ def train(
     epochs         = 100,
     lr             = 1e-3,
     use_amp        = True,
+    grad_clip      = 1.0,
     # ── 学习率调度 ─────────────────────────
     scheduler_type = 'step',   # 'step' | 'cosine' | 'plateau' | None
     step_size      = 30,
@@ -652,7 +686,7 @@ def train(
         # ---------- 训练 ----------
         tr_loss, tr_ssim, tr_mae, tr_mse = train_one_epoch(
             model, train_loader, optimizer, ssim_fn, mae_fn,
-            device, use_amp, scaler)
+            device, use_amp, scaler, grad_clip=grad_clip)
 
         # ---------- 验证 ----------
         vl_loss, vl_ssim, vl_mae, vl_mse = validate_one_epoch(
@@ -698,7 +732,17 @@ def train(
             best_val_mae  = vl_mae
             best_val_mse  = vl_mse
             best_val_ssim = vl_ssim
-            torch.save(model.state_dict(), model_save_path)
+            torch.save({
+                'epoch': epoch,
+                'model_name': 'hdrnet',
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'image_resize': image_resize,
+                'val_loss': vl_loss,
+                'val_ssim': vl_ssim,
+                'val_mae': vl_mae,
+                'val_mse': vl_mse,
+            }, model_save_path)
             print(f"  ✅ 最优模型已保存 → {model_save_path}  "
                   f"(Val Loss↓ {best_val_loss:.6f})")
         else:
@@ -801,8 +845,8 @@ def main():
     # ══════════════════════════════════════════════════
 
     # ── 数据路径 ──
-    INPUT_DIR  = 'data/inputs'
-    TARGET_DIR = 'data/targets'
+    INPUT_DIR  = 'data2/inputs'
+    TARGET_DIR = 'data2/targets'
 
     # ── 图像与数据 ──
     IMAGE_RESIZE = (128, 160)   # (H, W)；None 表示不缩放
@@ -814,6 +858,7 @@ def main():
     EPOCHS  = 100
     LR      = 1e-3
     USE_AMP = True              # 混合精度（仅 CUDA 有效）
+    GRAD_CLIP = 1.0             # 梯度裁剪阈值（0 表示不裁剪）
 
     # ── 学习率调度 ──
     SCHEDULER = 'step'          # 'step' | 'cosine' | 'plateau' | None
@@ -832,6 +877,7 @@ def main():
     print(f"  学习率     : {LR}")
     print(f"  批大小     : {BATCH_SIZE}")
     print(f"  混合精度   : {USE_AMP}")
+    print(f"  梯度裁剪   : {GRAD_CLIP}")
     print(f"  调度器     : {SCHEDULER}")
     print(f"  输出目录   : {os.path.abspath(OUTPUT_FOLDER)}")
     print()
@@ -852,6 +898,7 @@ def main():
         epochs          = EPOCHS,
         lr              = LR,
         use_amp         = USE_AMP,
+        grad_clip       = GRAD_CLIP,
         scheduler_type  = SCHEDULER,
         step_size       = STEP_SIZE,
         gamma           = GAMMA,

@@ -61,10 +61,10 @@ def compute_loss(pred, target, ssim_fn, mae_fn):
         此映射不改变梯度信息，仅使两者量纲对齐。
     """
     # 将 tanh 输出映射到 [0, 1]，与目标值域对齐
-    pred_01 = (pred + 1.0) / 2.0
+    pred_01 = ((pred + 1.0) / 2.0).clamp(0.0, 1.0)
 
     # SSIM 损失（1 - SSIM，越小越好）
-    ssim_score = ssim_fn(pred_01, target)           # scalar tensor
+    ssim_score = ssim_fn(pred_01, target).clamp(0.0, 1.0)
     loss_ssim  = 1.0 - ssim_score
 
     # MAE 损失
@@ -85,7 +85,8 @@ def compute_loss(pred, target, ssim_fn, mae_fn):
 # 训练 + 验证单轮
 # ==============================================================================
 
-def train_one_epoch(model, loader, optimizer, ssim_fn, mae_fn, device, use_amp, scaler):
+def train_one_epoch(model, loader, optimizer, ssim_fn, mae_fn, device, use_amp, scaler,
+                    grad_clip=1.0):
     """执行一个 epoch 的训练，返回各指标均值。"""
     model.train()
 
@@ -115,10 +116,15 @@ def train_one_epoch(model, loader, optimizer, ssim_fn, mae_fn, device, use_amp, 
 
         if use_amp and scaler is not None:
             scaler.scale(loss).backward()
+            if grad_clip and grad_clip > 0:
+                scaler.unscale_(optimizer)
+                nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
             scaler.step(optimizer)
             scaler.update()
         else:
             loss.backward()
+            if grad_clip and grad_clip > 0:
+                nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
             optimizer.step()
 
         total_loss += loss.detach().item()
@@ -593,7 +599,8 @@ def train(
         # ---------- 训练 ----------
         tr_loss, tr_ssim, tr_mae, tr_mse = train_one_epoch(
             model, train_loader, optimizer,
-            ssim_fn, mae_fn, device, use_amp, scaler)
+            ssim_fn, mae_fn, device, use_amp, scaler,
+            grad_clip=grad_clip)
 
         # ---------- 验证 ----------
         vl_loss, vl_ssim, vl_mae, vl_mse = validate_one_epoch(
@@ -640,7 +647,23 @@ def train(
             best_val_mae  = vl_mae
             best_val_mse  = vl_mse
             best_val_ssim = vl_ssim
-            torch.save(model.state_dict(), model_save_path)
+            torch.save({
+                'epoch': epoch,
+                'model_name': 'dcunet',
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'image_resize': image_resize,
+                'val_loss': vl_loss,
+                'val_ssim': vl_ssim,
+                'val_mae': vl_mae,
+                'val_mse': vl_mse,
+                'model_config': {
+                    'in_channels': in_channels,
+                    'out_channels': out_channels,
+                    'nf': nf,
+                    'use_dropout': use_dropout,
+                },
+            }, model_save_path)
             print(f"  ✅ 最优模型已保存 → {model_save_path}  "
                   f"(Val Loss↓ {best_val_loss:.6f})")
         else:
@@ -766,11 +789,11 @@ def main():
     # ══════════════════════════════════════════════════
 
     # ── 数据路径 ──
-    INPUT_DIR  = './data/inputs'
-    TARGET_DIR = './data/targets'
+    INPUT_DIR  = 'data2/inputs'
+    TARGET_DIR = 'data2/targets'
 
     # ── 图像与数据 ──
-    IMAGE_RESIZE  = (160, 128)   # (width, height)，None 表示不缩放
+    IMAGE_RESIZE  = (128, 160)   # (H, W)，None 表示不缩放
     TRAIN_SPLIT   = 0.8
     BATCH_SIZE    = 8
     NUM_WORKERS   = 0

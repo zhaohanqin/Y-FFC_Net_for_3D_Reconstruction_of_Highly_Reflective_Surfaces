@@ -246,7 +246,8 @@ class unet(nn.Module):
         return conv20_out
         #return maxpool3_out
 
-maxim = unet()
-input = torch.zeros(size=(1,1,128,160))
-out = maxim(input)
-print(out.shape)
+if __name__ == "__main__":
+    maxim = unet()
+    sample = torch.zeros(size=(1, 1, 128, 160))
+    out = maxim(sample)
+    print(out.shape)
