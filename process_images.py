@@ -29,7 +29,24 @@ import matplotlib.pyplot as plt
 import os
 from pathlib import Path
 from tqdm import tqdm
-from Y_FFC_unified import YFFC
+from Y_FFC_unified import YFFC, replace_bn_with_gn
+
+
+def _uses_group_norm_state_dict(state_dict):
+    """检测 checkpoint 是否来自 BN->GN 后的模型。"""
+    return not any(
+        key.endswith(('running_mean', 'running_var', 'num_batches_tracked'))
+        for key in state_dict
+    )
+
+
+def _merge_ema_weights(base_state_dict, ema_state_dict):
+    """将 EMA 参数覆盖到完整 state_dict 上，保留非 EMA 项。"""
+    merged = dict(base_state_dict)
+    for name, tensor in ema_state_dict.items():
+        if name in merged:
+            merged[name] = tensor
+    return merged
 
 
 def load_model(model_path, device, prefer_ema=True):
@@ -51,54 +68,38 @@ def load_model(model_path, device, prefer_ema=True):
     checkpoint = torch.load(model_path, map_location=device, weights_only=False)
 
     if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+        base_state_dict = checkpoint['model_state_dict']
+        # 推理 checkpoint 已包含训练后的 Swin 权重，禁用 ImageNet 预训练加载以避免离线推理时下载权重。
+        model = YFFC()
+        if _uses_group_norm_state_dict(base_state_dict):
+            replace_bn_with_gn(model, num_groups=8)
+
         # ── 训练保存的标准 checkpoint ──
         # 优先使用 EMA 权重（推理更稳定）
-        if prefer_ema and 'ema_shadow' in checkpoint:
-            # EMA shadow 的 key 与 model.named_parameters() 一致
-            ema_shadow = checkpoint['ema_shadow']
-            model_sd = model.state_dict()
-            for name, param in ema_shadow.items():
-                if name in model_sd:
-                    model_sd[name] = param
-            model.load_state_dict(model_sd)
+        ema_state_dict = checkpoint.get('ema_shadow') or checkpoint.get('ema')
+        if prefer_ema and ema_state_dict:
+            # EMA 只保存 model.named_parameters()，需要用完整 state_dict 补齐缓冲/非 EMA 项。
+            model.load_state_dict(_merge_ema_weights(base_state_dict, ema_state_dict))
             epoch = checkpoint.get('epoch', '?')
             best_ssim = checkpoint.get('best_ssim', '?')
             print(f"  ✓ 已加载 EMA 权重 (epoch={epoch}, best_ssim={best_ssim})")
         else:
-            model.load_state_dict(checkpoint['model_state_dict'])
+            model.load_state_dict(base_state_dict)
             epoch = checkpoint.get('epoch', '?')
             best_ssim = checkpoint.get('best_ssim', '?')
             print(f"  ✓ 已加载模型权重 (epoch={epoch}, best_ssim={best_ssim})")
     elif isinstance(checkpoint, dict):
         # ── 可能是纯 state_dict（key 为 layer 名称） ──
+        # 推理 checkpoint 已包含训练后的 Swin 权重，禁用 ImageNet 预训练加载以避免离线推理时下载权重。
+        model = YFFC()
+        if _uses_group_norm_state_dict(checkpoint):
+            replace_bn_with_gn(model, num_groups=8)
         model.load_state_dict(checkpoint)
         print("  ✓ 已加载纯 state_dict 权重")
     else:
         raise ValueError(f"无法识别的 checkpoint 格式: {type(checkpoint)}")
 
     model.to(device)
-    model.load_state_dict(state_dict, strict=True)
-
-    epoch = checkpoint.get('epoch', '?') if is_full_checkpoint else '?'
-    best_ssim = checkpoint.get('best_ssim', '?') if is_full_checkpoint else '?'
-    print(f"  [OK] 已加载完整模型权重 (epoch={epoch}, best_ssim={best_ssim})")
-
-    ema_key = None
-    if is_full_checkpoint and prefer_ema:
-        if 'ema_shadow' in checkpoint:
-            ema_key = 'ema_shadow'
-        elif 'ema' in checkpoint:
-            ema_key = 'ema'
-
-    if ema_key is not None:
-        loaded, skipped = _load_ema_shadow(model, checkpoint[ema_key])
-        print(f"  [OK] 已在完整权重基础上覆盖 EMA ({ema_key}): "
-              f"loaded={loaded}, skipped={skipped}")
-    elif not is_full_checkpoint:
-        print("  [OK] 已加载纯 state_dict 权重")
-    elif prefer_ema:
-        print("  [WARN] checkpoint 不包含 EMA 权重，使用普通模型权重")
-
     model.eval()
     return model
 
