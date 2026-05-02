@@ -201,7 +201,9 @@ def build_optimizer_v2(model, base_lr=2e-4, weight_decay=1e-4):
     for name, param in model.named_parameters():
         if not param.requires_grad:
             continue
-        if 'sa1' in name or 'sa2' in name or 'sa3' in name or 'sa4' in name or 'hf_enhance' in name:
+        if ('sa1' in name or 'sa2' in name or 'sa3' in name or
+            'sa4' in name or 'hf_enhance' in name or
+            'refinement_head' in name):
             new_p.append(param)
         elif ('fuse_h4' in name or 'fuse_h8' in name or
               'swin16_proj' in name):
@@ -232,6 +234,15 @@ def build_optimizer_v2(model, base_lr=2e-4, weight_decay=1e-4):
     return opt
 
 
+def format_lr_groups(optimizer):
+    """按参数组输出学习率，便于检查分层 LR 是否按预期运行。"""
+    parts = []
+    for idx, group in enumerate(optimizer.param_groups):
+        name = group.get('name', f'group_{idx}')
+        parts.append(f"{name}={group['lr']:.2e}")
+    return ", ".join(parts)
+
+
 # ════════════════════════════════════════════════════════════════════════
 # EnhancedCompositeLoss 返回的 loss_dict 中可能包含的键名列表
 # 用于统一累积、日志输出和历史追踪
@@ -240,7 +251,8 @@ def build_optimizer_v2(model, base_lr=2e-4, weight_decay=1e-4):
 # 主要的子损失键名（EnhancedCompositeLoss 的 loss_dict 中可能出现的所有键）
 # 'total' 和 'ssim' 是必有的；其余根据配置可能存在也可能为 0
 SUB_LOSS_KEYS = [
-    'total', 'ssim', 'l1', 'freq', 'perceptual',
+    'total', 'ssim', 'ssim_single_loss', 'msssim_loss', 'ssim_mixed_loss',
+    'l1', 'freq', 'perceptual',
     'spec', 'stat', 'grad',
     'focal', 'dice', 'gc',
 ]
@@ -249,6 +261,9 @@ SUB_LOSS_KEYS = [
 SUB_LOSS_DISPLAY_NAMES = {
     'total':      'Total Loss',
     'ssim':       'SSIM Loss (1-SSIM)',
+    'ssim_single_loss': 'SSIM Single Loss',
+    'msssim_loss': 'MS-SSIM Loss',
+    'ssim_mixed_loss': 'SSIM Mixed Loss',
     'l1':         'L1 / MAE Loss',
     'freq':       'Frequency Loss',
     'perceptual': 'Perceptual Loss',
@@ -854,7 +869,8 @@ def print_epoch_log(ep, total_epochs, epoch_time, avg_epoch_time, eta,
     sep2 = '-' * 78
 
     print(f"\n{sep}")
-    print(f"  Epoch [{ep+1:03d}/{total_epochs}]  耗时: {epoch_time:.1f}s | 均: {avg_epoch_time:.1f}s/ep | ETA: {eta} | LR: {current_lr:.8f}")
+    print(f"  Epoch [{ep+1:03d}/{total_epochs}]  耗时: {epoch_time:.1f}s | 均: {avg_epoch_time:.1f}s/ep | ETA: {eta}")
+    print(f"  LR: {current_lr}")
     print(f"  {sep2}")
     print(f"  {'指标':<16s}  {'Train':>12s}  {'Val':>12s}  {'Gap':>12s}")
     print(f"  {sep2}")
@@ -863,6 +879,10 @@ def print_epoch_log(ep, total_epochs, epoch_time, avg_epoch_time, eta,
     print(f"  {'MAE':<16s}  {tm:>12.6f}  {vm:>12.6f}  {abs(tm-vm):>12.6f}")
     print(f"  {'MSE':<16s}  {train_mse:>12.6f}  {val_mse:>12.6f}  {abs(train_mse-val_mse):>12.6f}")
     print(f"  {'PSNR (dB)':<16s}  {train_psnr:>12.2f}  {val_psnr:>12.2f}  {abs(train_psnr-val_psnr):>12.2f}")
+    if 'ssim_mixed_loss' in train_subs or 'ssim_mixed_loss' in val_subs:
+        train_mixed = 1.0 - train_subs.get('ssim_mixed_loss', 1.0)
+        val_mixed = 1.0 - val_subs.get('ssim_mixed_loss', 1.0)
+        print(f"  {'SSIM mixed':<16s}  {train_mixed:>12.4f}  {val_mixed:>12.4f}  {abs(train_mixed-val_mixed):>12.4f}")
 
     # ── 子损失项分解（完整显示） ──
     all_sub_keys = sorted(set(train_subs.keys()) | set(val_subs.keys()))
@@ -1160,9 +1180,9 @@ def train_model(cfg):
     optimizer = build_optimizer_v2(model, cfg['BASE_LR'], cfg['WEIGHT_DECAY'])
     scheduler = build_scheduler(
         optimizer,
-        warmup_iters=min(500, len(train_loader) * 3),
+        warmup_iters=min(500, math.ceil(len(train_loader) / cfg['ACCUMULATION_STEPS']) * 3),
         total_epochs=cfg['EPOCHS'],
-        iters_per_epoch=len(train_loader))
+        iters_per_epoch=math.ceil(len(train_loader) / cfg['ACCUMULATION_STEPS']))
 
     # ══════════ 5. AMP + EMA ══════════
     scaler = torch.amp.GradScaler('cuda', enabled=(device.type == 'cuda'))
@@ -1282,13 +1302,14 @@ def train_model(cfg):
         avg_epoch_time = np.mean(epoch_times)
         remaining = avg_epoch_time * (cfg['EPOCHS'] - ep - 1)
         eta = timedelta(seconds=int(remaining))
-        current_lr = optimizer.param_groups[0]['lr']
+        current_lr_value = optimizer.param_groups[0]['lr']
+        current_lr = format_lr_groups(optimizer)
 
         # [FIX] LR 回弹检测：若 LR 比上一 epoch 增加超过 50%，发出警告
         if ep > 0 and hasattr(train_model, '_prev_lr'):
-            if current_lr > train_model._prev_lr * 1.5 and current_lr > 1e-5:
-                print(f"  ⚠️ [LR 异常] LR 从 {train_model._prev_lr:.2e} 跳升至 {current_lr:.2e}！")
-        train_model._prev_lr = current_lr
+            if current_lr_value > train_model._prev_lr * 1.5 and current_lr_value > 1e-5:
+                print(f"  ⚠️ [LR 异常] LR 从 {train_model._prev_lr:.2e} 跳升至 {current_lr_value:.2e}！")
+        train_model._prev_lr = current_lr_value
 
         # ── 多指标最优模型保存 ──
         composite = COMPOSITE_ALPHA * vs + (1.0 - COMPOSITE_ALPHA) * (1.0 / (1.0 + vl))
@@ -1312,16 +1333,30 @@ def train_model(cfg):
         # ── 模型保存逻辑 ──
         improved_flags = []
 
-        def _save_best(state_dict, path):
+        def _build_ema_state_dict(raw_state_dict):
+            if not ema:
+                return raw_state_dict
+            ema_state_dict = dict(raw_state_dict)
+            for name, tensor in ema.shadow.items():
+                if name in ema_state_dict:
+                    ema_state_dict[name] = tensor
+            return ema_state_dict
+
+        def _save_best(path):
+            raw_state_dict = model.state_dict()
             sd = {
                 'epoch': ep + 1,
-                'model_state_dict': state_dict,
+                'model_state_dict': _build_ema_state_dict(raw_state_dict),
+                'raw_model_state_dict': raw_state_dict,
                 'optimizer_state_dict': optimizer.state_dict(),
                 'best_ssim': vs,
                 'val_loss': vl,
+                'image_size': cfg['IMAGE_SIZE'],
+                'uses_ema_weights': bool(ema),
             }
             if ema:
                 sd['ema'] = ema.shadow
+                sd['ema_shadow'] = ema.shadow
             if scaler is not None:
                 sd['scaler_state_dict'] = scaler.state_dict()
             torch.save(sd, path)
@@ -1330,7 +1365,7 @@ def train_model(cfg):
         if composite > best_composite:
             best_composite = composite
             early_stopping_counter = 0
-            _save_best(model.state_dict(), best_composite_path)
+            _save_best(best_composite_path)
             improved_flags.append(f'综合↑{composite:.4f}')
             best_info['Best Overall (SSIM×0.7 + NormLoss×0.3)'].update(
                 {'epoch': ep + 1, 'loss': vl, 'ssim': vs, 'mae': vm,
@@ -1341,7 +1376,7 @@ def train_model(cfg):
         # 策略 B：SSIM 最优
         if vs > best_val_ssim:
             best_val_ssim = vs
-            _save_best(model.state_dict(), best_ssim_path)
+            _save_best(best_ssim_path)
             improved_flags.append(f'SSIM↑{vs:.4f}')
             best_info['Best SSIM'].update(
                 {'epoch': ep + 1, 'loss': vl, 'ssim': vs, 'mae': vm,
@@ -1350,7 +1385,7 @@ def train_model(cfg):
         # 策略 C：Loss 最优
         if vl < best_val_loss:
             best_val_loss = vl
-            _save_best(model.state_dict(), best_loss_path)
+            _save_best(best_loss_path)
             improved_flags.append(f'Loss↓{vl:.6f}')
             best_info['Best Loss'].update(
                 {'epoch': ep + 1, 'loss': vl, 'ssim': vs, 'mae': vm,
@@ -1389,6 +1424,7 @@ def train_model(cfg):
                 'best_composite': best_composite,
                 'best_val_ssim': best_val_ssim,
                 'best_val_loss': best_val_loss,
+                'image_size': cfg['IMAGE_SIZE'],
             }
             if scheduler is not None:
                 ckpt['scheduler_state_dict'] = scheduler.state_dict()
@@ -1407,6 +1443,7 @@ def train_model(cfg):
         'epoch': ep + 1,
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
+        'image_size': cfg['IMAGE_SIZE'],
     }, last_model_path)
 
     # ══════════ 9. 训练总结 ══════════
@@ -1526,7 +1563,7 @@ def main():
     EMA_DECAY             = 0.9995   # [P16] EMA 衰减系数（调高增加平滑力度）
     USE_OHEM              = True     # 在线难样本挖掘
     USE_HIGHLIGHT_AUG     = True     # 默认开启训练集高反光合成增强
-    HIGHLIGHT_AUG_P       = 1.0      # 每个训练样本都叠加合成高反光；验证集不增强
+    HIGHLIGHT_AUG_P       = 0.5      # 降低合成高反光占比，避免训练分布过度偏向合成模式
 
     # ========== 数据目录 ==========
     INPUT_DIR             = 'data2/inputs'

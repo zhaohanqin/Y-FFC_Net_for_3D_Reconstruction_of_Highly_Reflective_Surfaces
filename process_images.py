@@ -88,6 +88,8 @@ def load_model(model_path, device, prefer_ema=True):
             epoch = checkpoint.get('epoch', '?')
             best_ssim = checkpoint.get('best_ssim', '?')
             print(f"  ✓ 已加载模型权重 (epoch={epoch}, best_ssim={best_ssim})")
+        model.training_image_size = checkpoint.get('image_size')
+        model.checkpoint_uses_ema_weights = checkpoint.get('uses_ema_weights', False)
     elif isinstance(checkpoint, dict):
         # ── 可能是纯 state_dict（key 为 layer 名称） ──
         # 推理 checkpoint 已包含训练后的 Swin 权重，禁用 ImageNet 预训练加载以避免离线推理时下载权重。
@@ -96,12 +98,30 @@ def load_model(model_path, device, prefer_ema=True):
             replace_bn_with_gn(model, num_groups=8)
         model.load_state_dict(checkpoint)
         print("  ✓ 已加载纯 state_dict 权重")
+        model.training_image_size = None
+        model.checkpoint_uses_ema_weights = False
     else:
         raise ValueError(f"无法识别的 checkpoint 格式: {type(checkpoint)}")
 
     model.to(device)
     model.eval()
     return model
+
+
+def resolve_patch_size_from_checkpoint(model, configured_patch_size):
+    """优先使用 checkpoint 记录的训练尺寸，避免推理 patch 与训练口径不一致。"""
+    ckpt_image_size = getattr(model, 'training_image_size', None)
+    if ckpt_image_size is None:
+        return configured_patch_size
+
+    ckpt_image_size = tuple(int(v) for v in ckpt_image_size)
+    configured_patch_size = tuple(int(v) for v in configured_patch_size)
+    if ckpt_image_size != configured_patch_size:
+        print(
+            f"[WARNING] checkpoint 训练尺寸为 {ckpt_image_size}，"
+            f"当前配置 TRAIN_IMAGE_SIZE={configured_patch_size}；"
+            f"将使用 checkpoint 尺寸进行滑窗推理")
+    return ckpt_image_size
 
 
 def load_image(image_path, target_size=None):
@@ -261,13 +281,14 @@ def sliding_window_inference(model, input_tensor, device, patch_size, overlap=32
     }
 
 
-def save_result(tensor, save_path):
+def save_result(tensor, save_path, bit_depth=8):
     """
     保存tensor为图像文件
     
     参数:
         tensor: 图像tensor [1, 1, H, W]
         save_path: 保存路径
+        bit_depth: 保存位深，支持 8 或 16
     
     注意:
         输出图像尺寸与输入tensor尺寸一致，不进行resize
@@ -278,11 +299,14 @@ def save_result(tensor, save_path):
     # 裁剪到[0, 1]范围
     image_array = np.clip(image_array, 0, 1)
     
-    # 转换为0-255
-    image_array = (image_array * 255).astype(np.uint8)
-    
-    # 转换为PIL图像并保存
-    image = Image.fromarray(image_array)
+    if bit_depth == 8:
+        image_array = (image_array * 255).round().astype(np.uint8)
+        image = Image.fromarray(image_array)
+    elif bit_depth == 16:
+        image_array = (image_array * 65535).round().astype(np.uint16)
+        image = Image.fromarray(image_array, mode='I;16')
+    else:
+        raise ValueError(f"bit_depth 仅支持 8 或 16，当前为: {bit_depth}")
     image.save(save_path)
 
 
@@ -330,7 +354,8 @@ def visualize_results(input_img, output_dict, save_path):
 
 
 def process_single_image(model, image_path, output_dir, device, show_visualization=True,
-                         collect_diffuse_dir=None, patch_size=None, overlap=32):
+                         collect_diffuse_dir=None, patch_size=None, overlap=32,
+                         save_16bit=False):
     """
     处理单张图像
     
@@ -388,12 +413,23 @@ def process_single_image(model, image_path, output_dir, device, show_visualizati
                     os.path.join(output_dir, f'{base_name}_specular.png'))
         save_result(gradient_output, 
                     os.path.join(output_dir, f'{base_name}_gradient.png'))
+        if save_16bit:
+            save_result(diffuse_output, os.path.join(output_dir, f'{base_name}_diffuse_16bit.png'),
+                        bit_depth=16)
+            save_result(specular_output, os.path.join(output_dir, f'{base_name}_specular_16bit.png'),
+                        bit_depth=16)
+            save_result(gradient_output, os.path.join(output_dir, f'{base_name}_gradient_16bit.png'),
+                        bit_depth=16)
         
         # 可选：额外保存一份漫反射结果到集中目录，方便统一处理
         if collect_diffuse_dir:
             os.makedirs(collect_diffuse_dir, exist_ok=True)
             original_filename = os.path.basename(image_path)
             save_result(diffuse_output, os.path.join(collect_diffuse_dir, original_filename))
+            if save_16bit:
+                stem, _ = os.path.splitext(original_filename)
+                save_result(diffuse_output, os.path.join(collect_diffuse_dir, f'{stem}_16bit.png'),
+                            bit_depth=16)
         
         # 可视化结果
         if show_visualization:
@@ -408,7 +444,7 @@ def process_single_image(model, image_path, output_dir, device, show_visualizati
 
 def process_folder(model, input_folder, output_folder, device, show_visualization=True,
                    supported_formats=None, collect_diffuse_dir=None,
-                   patch_size=None, overlap=32):
+                   patch_size=None, overlap=32, save_16bit=False):
     """
     批量处理文件夹中的所有图像
     
@@ -449,7 +485,8 @@ def process_folder(model, input_folder, output_folder, device, show_visualizatio
         image_output_dir = os.path.join(output_folder, image_name)
         
         if process_single_image(model, image_path, image_output_dir, device, show_visualization,
-                                collect_diffuse_dir, patch_size=patch_size, overlap=overlap):
+                                collect_diffuse_dir, patch_size=patch_size, overlap=overlap,
+                                save_16bit=save_16bit):
             success_count += 1
         else:
             fail_count += 1
@@ -487,6 +524,7 @@ def main():
     
     # 5. 可视化配置
     SHOW_VISUALIZATION = True  # 是否生成可视化对比图
+    SAVE_16BIT_OUTPUT = False  # 额外保存 16-bit PNG，减少弱纹理量化损失
     
     # 6. 支持的图像格式
     SUPPORTED_FORMATS = ['.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif']
@@ -532,6 +570,7 @@ def main():
     except Exception as e:
         print(f"❌ 模型加载失败: {e}")
         return
+    TRAIN_IMAGE_SIZE = resolve_patch_size_from_checkpoint(model, TRAIN_IMAGE_SIZE)
     
     # 判断输入类型并处理
     if os.path.isfile(INPUT_PATH):
@@ -545,7 +584,8 @@ def main():
         print(f"开始处理...")
         if process_single_image(model, INPUT_PATH, image_output_dir, device, SHOW_VISUALIZATION,
                                 DIFFUSE_COLLECTION_DIR,
-                                patch_size=TRAIN_IMAGE_SIZE, overlap=PATCH_OVERLAP):
+                                patch_size=TRAIN_IMAGE_SIZE, overlap=PATCH_OVERLAP,
+                                save_16bit=SAVE_16BIT_OUTPUT):
             print(f"✓ 处理完成!")
             print(f"\n输出文件位置:")
             print(f"  - {image_output_dir}/{image_name}_diffuse.png       (⭐ 去除高反光后的结果)")
@@ -562,7 +602,8 @@ def main():
         
         process_folder(model, INPUT_PATH, OUTPUT_DIR, device, SHOW_VISUALIZATION, SUPPORTED_FORMATS,
                        DIFFUSE_COLLECTION_DIR,
-                       patch_size=TRAIN_IMAGE_SIZE, overlap=PATCH_OVERLAP)
+                       patch_size=TRAIN_IMAGE_SIZE, overlap=PATCH_OVERLAP,
+                       save_16bit=SAVE_16BIT_OUTPUT)
         
         print(f"\n所有结果已保存到: {OUTPUT_DIR}")
         print(f"\n输出文件说明:")

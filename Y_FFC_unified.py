@@ -713,7 +713,9 @@ class SwinEncoderBranch(nn.Module):
         pad_w = (multiple - w % multiple) % multiple
         if pad_h == 0 and pad_w == 0:
             return x
-        return F.pad(x, (0, pad_w, 0, pad_h), mode="constant", value=0.0)
+        can_reflect = pad_h < h and pad_w < w and h > 1 and w > 1
+        pad_mode = "reflect" if can_reflect else "replicate"
+        return F.pad(x, (0, pad_w, 0, pad_h), mode=pad_mode)
 
     def forward(self, x):
         # 推荐训练/推理使用 320x256、384x384、512x512 等 patch。
@@ -759,7 +761,7 @@ class AdaptiveSkipFusion(nn.Module):
     不直接使用重型 CrossModalFusion；H/16 仍保留 CrossModalFusion 做瓶颈强交互。
     """
 
-    def __init__(self, res_channels, swin_channels, init_beta=0.0, gate_reduction=2):
+    def __init__(self, res_channels, swin_channels, init_beta=0.03, gate_reduction=2):
         super().__init__()
         hidden_channels = max(res_channels // gate_reduction, 16)
         self.beta = nn.Parameter(torch.tensor(float(init_beta)))
@@ -854,6 +856,14 @@ class CrossModalFusion(nn.Module):
             nn.GELU(),
         )
 
+    @staticmethod
+    def _modality_norm(feat):
+        channels = feat.shape[1]
+        groups = min(32, channels)
+        while groups > 1 and channels % groups != 0:
+            groups -= 1
+        return F.group_norm(feat, num_groups=groups)
+
     def _cross_attn(self, q, k, v, proj):
         """执行单方向的交叉注意力。"""
         B, C, H, W = q.shape
@@ -878,6 +888,9 @@ class CrossModalFusion(nn.Module):
         Returns:
             (B, out_dim, H, W) — 融合后的瓶颈输入特征
         """
+        cnn_feat = self._modality_norm(cnn_feat)
+        context_feat = self._modality_norm(context_feat)
+
         if self.sr_ratio > 1:
             context_kv = self.sr_pool(context_feat)
             cnn_kv = self.sr_pool(cnn_feat)
@@ -1023,9 +1036,13 @@ class PerceptualLoss(nn.Module):
     def __init__(self, layers=('relu1_2', 'relu2_2', 'relu3_3'),
                  weights=(1.0, 0.5, 0.25)):
         super(PerceptualLoss, self).__init__()
+        self.is_pretrained = False
         try:
             vgg = models.vgg16(weights=models.VGG16_Weights.IMAGENET1K_V1).features
-        except Exception:
+            self.is_pretrained = True
+            print("[PerceptualLoss] 已加载 ImageNet 预训练 VGG16，并启用 ImageNet 标准化")
+        except Exception as exc:
+            print(f"[PerceptualLoss] 预训练 VGG16 加载失败，感知损失将自动关闭: {exc}")
             vgg = models.vgg16(weights=None).features
 
         layer_map = {'relu1_2': 4, 'relu2_2': 9, 'relu3_3': 16}
@@ -1040,11 +1057,17 @@ class PerceptualLoss(nn.Module):
             param.requires_grad = False
 
         self.weights = weights
+        mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
+        std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
+        self.register_buffer('imagenet_mean', mean)
+        self.register_buffer('imagenet_std', std)
 
     def forward(self, pred, gt):
         if pred.size(1) == 1:
             pred = pred.repeat(1, 3, 1, 1)
             gt = gt.repeat(1, 3, 1, 1)
+        pred = (pred - self.imagenet_mean) / self.imagenet_std
+        gt = (gt - self.imagenet_mean) / self.imagenet_std
         loss = 0.0
         x, y = pred, gt
         for i, slice_module in enumerate(self.slices):
@@ -1253,6 +1276,8 @@ class EnhancedCompositeLoss(nn.Module):
         self.use_perceptual = use_perceptual
         if use_perceptual:
             self.perceptual = PerceptualLoss()
+            if not self.perceptual.is_pretrained:
+                self.use_perceptual = False
         self._ew_fn = compute_edge_weight_map
 
         self.focal = SpecularFocalLoss()
@@ -1337,7 +1362,11 @@ class EnhancedCompositeLoss(nn.Module):
                  self.lambda_dice * l_dice + self.lambda_gc * l_gc)
 
         d = {}
-        for k, v in [('total', total), ('ssim', l_ssim_single), ('l1', l_l1),
+        for k, v in [('total', total), ('ssim', l_ssim_single),
+                      ('ssim_single_loss', l_ssim_single),
+                      ('msssim_loss', l_msssim),
+                      ('ssim_mixed_loss', l_ssim),
+                      ('l1', l_l1),
                       ('freq', l_freq), ('perceptual', l_percep),
                       ('spec', l_spec), ('stat', l_stat), ('grad', l_grad),
                       ('focal', l_focal), ('dice', l_dice), ('gc', l_gc)]:
@@ -1393,11 +1422,14 @@ class SpecularAwareAttention(nn.Module):
         if inp.shape[-2:] != features.shape[-2:]:
             inp = F.interpolate(inp, size=features.shape[-2:],
                                 mode='bilinear', align_corners=False)
+        local_mean = F.avg_pool2d(inp, kernel_size=3, stride=1, padding=1)
+        local_contrast = (inp - local_mean).abs().clamp(0, 1)
+        spec_prior = (0.75 * inp + 0.25 * local_contrast).clamp(0, 1)
         t_off = self.adaptive_thresh(features)
         masks = []
         for i, base_t in enumerate(self.thresholds):
             eff_t = base_t * (0.5 + 0.5 * t_off[:, i:i+1, :, :])
-            masks.append(torch.sigmoid(self.steepness * (inp - eff_t)))
+            masks.append(torch.sigmoid(self.steepness * (spec_prior - eff_t)))
         multi_mask = torch.cat(masks, dim=1)
         att = self.modulation(torch.cat([features, multi_mask], dim=1))
         return features * (1.0 + att)
@@ -1682,7 +1714,7 @@ class FringeDataset(Dataset):
                 return transformed
             input_img, target_img = transformed
 
-        gt_specular = input_img - target_img
+        gt_specular = (input_img - target_img).clamp(0, 1)
 
         # 梯度幅值作为 gt_gradient
         gx, gy = torch.gradient(target_img, dim=(1, 2))
@@ -1769,15 +1801,15 @@ class Encoder(nn.Module):
 
         # 第三阶段自适应多尺度 skip 融合：
         # H/4 和 H/8 使用 AdaptiveSkipFusion，根据内容、位置和通道动态控制 Swin 注入比例。
-        # beta 初始为 0，模型初始行为接近纯 ResNet skip，训练中再逐步学习 Swin skip 的整体强度。
+        # beta 使用小正数初始化，保留稳定性，同时避免 Swin skip 注入过慢。
         self.fuse_h4 = AdaptiveSkipFusion(
             res_channels=128,
             swin_channels=self.swin_branch.channels_4,
-            init_beta=0.0)
+            init_beta=0.03)
         self.fuse_h8 = AdaptiveSkipFusion(
             res_channels=256,
             swin_channels=self.swin_branch.channels_8,
-            init_beta=0.0)
+            init_beta=0.05)
         self.swin16_proj = nn.Sequential(
             nn.Conv2d(self.swin_branch.channels_16, 512, kernel_size=1, stride=1, padding=0, bias=False),
             nn.BatchNorm2d(512),
@@ -2127,8 +2159,8 @@ class EnhancementLayers(nn.Module):
 
 
 class ResidualRefinementHead(nn.Module):
-    """[P1] 残差精修头：硬减法后做像素级修正，Tanh 限制 ±0.05。"""
-    def __init__(self, scale=0.05):
+    """[P1] 残差精修头：硬减法后做像素级修正，Tanh 限制小幅残差。"""
+    def __init__(self, scale=0.08):
         super().__init__()
         self.scale = scale
         self.refine = nn.Sequential(
@@ -2151,7 +2183,7 @@ class YFFC(nn.Module):
         self.gradient_decoder = GradientDecoder()
         self.enhancement_layers = EnhancementLayers()
         self.main_decoder = MainDecoder(in_channels=256)
-        self.refinement_head = ResidualRefinementHead(scale=0.05)  # [P1]
+        self.refinement_head = ResidualRefinementHead(scale=0.08)  # [P1]
 
     def forward(self, x):
         c_feat = self.encoder(x)
@@ -2252,7 +2284,8 @@ def build_optimizer(model, base_lr=2e-4, weight_decay=1e-4):
         if not param.requires_grad:
             continue
         if ('sa1' in name or 'sa2' in name or 'sa3' in name or
-            'sa4' in name or 'hf_enhance' in name):
+            'sa4' in name or 'hf_enhance' in name or
+            'refinement_head' in name):
             new_module_params.append(param)
         elif ('fuse_h4' in name or 'fuse_h8' in name or
               'swin16_proj' in name):
@@ -2464,11 +2497,11 @@ def train(args):
         else:
             min_side = int(img_size)
         hl_aug = HighlightAugmentation(
-            p=1.0, num_range=(1, 6),
+            p=0.5, num_range=(1, 6),
             radius_range=(3, max(5, min_side // 20)),
             intensity_range=(0.2, 0.7))
         paired_aug = EnhancedPairedTransform(highlight_aug=hl_aug)
-        print("[Aug] 已启用 EnhancedPairedTransform + HighlightAugmentation(p=1.0)")
+        print("[Aug] 已启用 EnhancedPairedTransform + HighlightAugmentation(p=0.5)")
     else:
         paired_aug = None
     full_train_dataset = FringeDataset(args.input_dir, args.target_dir,
@@ -2512,7 +2545,7 @@ def train(args):
 
     # 优化器 + 调度器
     optimizer = build_optimizer(model, base_lr=args.base_lr, weight_decay=args.weight_decay)
-    iters_per_epoch = len(train_loader)
+    iters_per_epoch = math.ceil(len(train_loader) / args.accumulation_steps)
     if iters_per_epoch == 0:
         raise ValueError("训练 DataLoader 为空，请检查数据量、batch_size 和 drop_last 设置。")
     scheduler = build_scheduler(optimizer, warmup_iters=min(500, iters_per_epoch * 3),
@@ -2554,13 +2587,23 @@ def train(args):
         save_ssim = val_ssim if val_loader is not None else train_ssim
         if save_ssim > best_val_ssim:
             best_val_ssim = save_ssim
+            raw_state_dict = model.state_dict()
+            save_state_dict = dict(raw_state_dict)
+            if ema is not None:
+                for name, tensor in ema.shadow.items():
+                    if name in save_state_dict:
+                        save_state_dict[name] = tensor
             save_dict = {
                 'epoch': epoch + 1,
-                'model_state_dict': model.state_dict(),
+                'model_state_dict': save_state_dict,
+                'raw_model_state_dict': raw_state_dict,
                 'optimizer_state_dict': optimizer.state_dict(),
                 'best_ssim': best_val_ssim,
+                'image_size': args.image_size,
+                'uses_ema_weights': bool(ema),
             }
             if ema is not None:
+                save_dict['ema'] = ema.shadow
                 save_dict['ema_shadow'] = ema.shadow
             save_path = os.path.join(args.save_dir, 'best_model.pth')
             os.makedirs(args.save_dir, exist_ok=True)
