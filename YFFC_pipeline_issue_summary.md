@@ -13,6 +13,23 @@
 - `Y_FFC_unified.py`
 - `train.py`
 - `process_images.py`
+- `X-FFC_V3_模型完整技术文档.md`
+- `decoupled_yffc/README.md`
+- `decoupled_yffc/train.py`
+- `decoupled_yffc/yffc/cli.py`
+- `decoupled_yffc/yffc/losses/basic.py`
+- `decoupled_yffc/yffc/losses/composite.py`
+- `decoupled_yffc/yffc/models/architecture/encoder.py`
+- `decoupled_yffc/yffc/models/architecture/model.py`
+- `decoupled_yffc/yffc/models/attention/modules.py`
+- `decoupled_yffc/yffc/models/blocks/convolution.py`
+- `decoupled_yffc/yffc/models/branches/swin.py`
+- `decoupled_yffc/yffc/training/engine.py`
+- `decoupled_yffc/yffc/training/loops.py`
+- `decoupled_yffc/yffc/training/metrics.py`
+- `decoupled_yffc/yffc/training/optimization.py`
+- `decoupled_yffc/yffc/training/reporting.py`
+- `decoupled_yffc/yffc/training/simple_loop.py`
 
 ## 已处理与已缓解问题
 
@@ -64,6 +81,12 @@
 
 ### 低优先级中已处理/部分处理项
 
+9. `[已实现]` 转置卷积上采样存在棋盘纹理风险
+- 原问题：主解码器多处 `TransposedConvBlock` 使用转置卷积上采样，存在棋盘纹理风险。
+- 已改动：保留 `TransposedConvBlock` 类名和外部调用接口，但内部改为三路 `Upsample(bilinear) + Conv2d` 的 resize-conv 上采样。
+- 改动位置：`Y_FFC_unified.py`、`decoupled_yffc/yffc/models/blocks/convolution.py`。
+- 兼容策略：旧 checkpoint 中转置卷积权重与新 resize-conv 权重形状不一致；`process_images.py` 已增加 flexible load，strict 失败时会跳过不兼容权重并加载其余可兼容权重。新训练不受影响。
+
 10. `[部分实现]` 镜面注意力包含亮度先验，可能误判亮漫反射区域
 - 原问题：`SpecularAwareAttention` 主要使用原图亮度作为阈值先验。
 - 已改动：加入局部对比度先验 `spec_prior = 0.75 * brightness + 0.25 * local_contrast`，降低纯亮度误判风险。
@@ -91,6 +114,13 @@
 - 原问题：CNN/Transformer 特征统计差异较大。
 - 已改动：在 `CrossModalFusion.forward()` 中对 `cnn_feat` 和 `context_feat` 先做无参数 `group_norm` 风格 modality norm，再进入 cross-attn。
 - 改动位置：`Y_FFC_unified.py`。
+
+15. `[已实现]` 当前没有显式跨尺度一致性约束
+- 原问题：H/4、H/8、H/16 各自独立融合，没有显式约束它们对同一结构区域给出一致上下文。
+- 已改动：`YFFC.forward()` 计算 H/4、H/8、H/16 融合特征的归一化响应图一致性标量 `cs`；`EnhancedCompositeLoss` 增加 `lambda_cs` 和 `cs` 子损失；训练循环将 `out.get('cs')` 传入损失函数。
+- 已改动：新增 `CrossScaleTopDownRefinement`，在 H/16 cross-modal 融合后执行 H/16 -> H/8 -> H/4 的受限残差回流，直接把深层上下文反馈到浅层 skip，同时用 `gamma.clamp(0, 0.2)` 限制结构实验的初始扰动。
+- 改动位置：`Y_FFC_unified.py`、`train.py`、`decoupled_yffc/yffc/models/architecture/encoder.py`、`decoupled_yffc/yffc/models/architecture/model.py`、`decoupled_yffc/yffc/losses/composite.py`、`decoupled_yffc/yffc/training/loops.py`、`decoupled_yffc/yffc/training/simple_loop.py`。
+- 推理说明：推理输出字典仍兼容 `r/g/b` 主输出，`cs` 仅作为训练辅助标量存在，不需要保存为图像。
 
 16. `[已实现]` 训练监控的 SSIM 口径与实际优化目标不一致
 - 原问题：优化 mixed SSIM，但日志只用 single SSIM。
@@ -129,21 +159,7 @@
 
 ## 暂缓/未改动隔离区
 
-以下项目本轮没有做破坏性结构改动，建议后续单独开版本或 ablation 实验。
-
-### 9. `[暂缓/未改动]` 转置卷积上采样存在棋盘纹理风险
-- 未改原因：替换 `TransposedConvBlock` 为 resize-conv 会改变模块结构和 state_dict key/shape，旧 checkpoint 很可能无法 strict load。
-- 建议后续迭代：
-  - 新建实验分支，例如 `resize_conv_decoder`。
-  - 将 `TransposedConvBlock` 替换为 `Upsample(mode='bilinear') + Conv2d` 的兼容实验版本。
-  - 单独比较棋盘纹理、SSIM、推理速度与 checkpoint 兼容性。
-
-### 15. `[暂缓/未改动]` 当前没有显式跨尺度一致性约束
-- 未改原因：显式跨尺度一致性通常需要新增 loss、额外中间输出或 top-down 融合模块，属于训练目标/结构级实验。
-- 建议后续迭代：
-  - 先记录 H/4、H/8、H/16 融合特征或 gate 的可视化，确认是否存在跨尺度语义漂移。
-  - 再尝试轻量 top-down 校正或跨尺度 consistency loss。
-  - 每次只加一个约束，避免和现有 loss 权重调度混在一起难以归因。
+原先隔离的 9、15 已在本轮落实。当前仍建议暂缓的是更进一步的结构实验，例如 H/4/H/8 双向 cross-attention、beta schedule 和 confidence-aware gating，这些应在当前新版本重新训练后再做 ablation。
 
 ### 12 的剩余结构实验
 - 当前只做了小正数 beta 和 H/16 modality norm，没有把 H/4、H/8 改成双向交互。
@@ -156,19 +172,24 @@
   - 用 specular confidence 或 edge confidence 调制 Swin 注入强度。
 
 ## 当前验证记录
-- `python -m py_compile train.py Y_FFC_unified.py process_images.py` 已通过。
+- `python -m py_compile train.py Y_FFC_unified.py process_images.py decoupled_yffc\train.py decoupled_yffc\Y_FFC_unified.py ...` 已通过，覆盖根目录主链路与 decoupled 训练/模型/损失文件。
+- `git diff --check` 已通过；仅有 Windows 换行符提示。
 - 轻量 smoke test 已覆盖：
-  - `YFFC(swin_pretrained=False)` forward。
-  - `EnhancedCompositeLoss` 新增 SSIM key。
+  - 根目录与 decoupled `YFFC(swin_pretrained=False)` forward。
+  - 根目录与 decoupled `TransposedConvBlock` 不再包含 `nn.ConvTranspose2d`，输出尺寸正常。
+  - 根目录与 decoupled `encoder.top_down_refine` 已存在，且其参数位于 `new_modules` 的 1.0x base LR 参数组。
+  - `YFFC.forward()` 输出 `r/g/b/cs`，`r/g/b` 尺寸和值域正常，`cs` 为有限标量。
+  - `EnhancedCompositeLoss` 新增 SSIM key 与 `cs` key。
   - optimizer 中 `refinement_head` 的 1.0x LR 分组。
   - scheduler 与 accumulation 的 step 对齐。
   - checkpoint 训练尺寸接管推理 patch。
+  - `process_images.py` flexible load 可跳过旧 checkpoint 中形状不兼容的权重。
   - Swin reflect/replicate padding。
   - 8-bit / 16-bit PNG 保存。
   - `CrossModalFusion` 与 `SpecularAwareAttention` 结构 smoke。
 
 ## 后续版本建议
 1. 先用当前版本重新训练或做小样本训练，确认 SSIM、PSNR、视觉细节是否稳定提升。
-2. 若输出仍有局部周期伪影，优先做问题 9 的 resize-conv decoder ablation。
-3. 若跨 patch 或高光边界仍有结构漂移，再做问题 15 的跨尺度一致性/渐进式 top-down 融合实验。
+2. 若输出仍有局部周期伪影，基于当前 resize-conv 版本继续检查是否来自 FFC/频域边界或滑窗融合。
+3. 若跨 patch 或高光边界仍有结构漂移，再在当前 `cs` loss 与受限 top-down 回流基础上尝试更强的双向 cross-attention 或 confidence-aware 融合实验。
 4. 每次只引入一个结构实验，并保存训练配置、checkpoint `image_size`、LR 分组日志和可视化样本，便于归因。

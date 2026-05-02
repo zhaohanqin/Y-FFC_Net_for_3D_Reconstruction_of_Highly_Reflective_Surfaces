@@ -12,6 +12,45 @@ from ..ffc import FFC_BN_ACT
 from ..heads import HighFrequencyEnhancement
 
 
+class CrossScaleTopDownRefinement(nn.Module):
+    """轻量 H/16 -> H/8 -> H/4 特征回流，使用受限残差避免破坏已稳定的 skip。"""
+
+    def __init__(self, h4_channels=128, h8_channels=256, h16_channels=512, init_gamma=0.05):
+        super().__init__()
+        self.h16_refine = Conv2D_BN_activa(h16_channels, h16_channels, 3, 1, 1)
+        self.h16_to_h8 = Conv2D_BN_activa(h16_channels, h8_channels, 1, 1, 0)
+        self.h8_gate = nn.Sequential(
+            nn.Conv2d(h8_channels * 2, h8_channels, kernel_size=1, bias=True),
+            nn.Sigmoid(),
+        )
+        self.h8_refine = Conv2D_BN_activa(h8_channels, h8_channels, 3, 1, 1)
+        self.h8_to_h4 = Conv2D_BN_activa(h8_channels, h4_channels, 1, 1, 0)
+        self.h4_gate = nn.Sequential(
+            nn.Conv2d(h4_channels * 2, h4_channels, kernel_size=1, bias=True),
+            nn.Sigmoid(),
+        )
+        self.gamma = nn.Parameter(torch.tensor(float(init_gamma)))
+
+    def forward(self, h4, h8, h16):
+        gamma = self.gamma.clamp(0.0, 0.2)
+
+        h16_ctx = self.h16_refine(h16)
+        h16_out = h16 + gamma * h16_ctx
+
+        h8_from_h16 = self.h16_to_h8(h16_ctx)
+        h8_from_h16 = F.interpolate(h8_from_h16, size=h8.shape[-2:], mode='bilinear', align_corners=False)
+        h8_gate = self.h8_gate(torch.cat([h8, h8_from_h16], dim=1))
+        h8_out = h8 + gamma * h8_gate * h8_from_h16
+
+        h8_ctx = self.h8_refine(h8_out)
+        h4_from_h8 = self.h8_to_h4(h8_ctx)
+        h4_from_h8 = F.interpolate(h4_from_h8, size=h4.shape[-2:], mode='bilinear', align_corners=False)
+        h4_gate = self.h4_gate(torch.cat([h4, h4_from_h8], dim=1))
+        h4_out = h4 + gamma * h4_gate * h4_from_h8
+
+        return h4_out, h8_out, h16_out
+
+
 class Encoder(nn.Module):
     """
     编码器：ResNet50 局部纹理分支 + Swin-Tiny 多尺度上下文分支。
@@ -75,11 +114,11 @@ class Encoder(nn.Module):
         self.fuse_h4 = AdaptiveSkipFusion(
             res_channels=128,
             swin_channels=self.swin_branch.channels_4,
-            init_beta=0.0)
+            init_beta=0.03)
         self.fuse_h8 = AdaptiveSkipFusion(
             res_channels=256,
             swin_channels=self.swin_branch.channels_8,
-            init_beta=0.0)
+            init_beta=0.05)
         self.swin16_proj = nn.Sequential(
             nn.Conv2d(self.swin_branch.channels_16, 512, kernel_size=1, stride=1, padding=0, bias=False),
             nn.BatchNorm2d(512),
@@ -93,6 +132,8 @@ class Encoder(nn.Module):
         self.cross_modal_fusion = CrossModalFusion(
             cnn_dim=512, context_dim=512,
             out_dim=512, num_heads=4, sr_ratio=2)
+        self.top_down_refine = CrossScaleTopDownRefinement(
+            h4_channels=128, h8_channels=256, h16_channels=512, init_gamma=0.05)
         self.cba_after_backbone = Conv2D_BN_activa(512, 256, 3, 1, 1)
         self.ffc_bottleneck = FFC_BN_ACT(256, 256, 3, 0.5, 0.5, padding=1)
         self.hf_enhance = HighFrequencyEnhancement(channels=256)
@@ -150,7 +191,8 @@ class Encoder(nn.Module):
         swin_feat_16 = self.swin16_proj(swin_16)
 
         fused = self.cross_modal_fusion(x_bb_4, swin_feat_16)
-        x_c = self.cba_after_backbone(fused)
+        x_bb_2, x_bb_3, x_bb_4 = self.top_down_refine(x_bb_2, x_bb_3, fused)
+        x_c = self.cba_after_backbone(x_bb_4)
 
         nl = 256 - int(256 * 0.5)
         out = self.ffc_bottleneck((x_c[:, :nl], x_c[:, nl:]))

@@ -7,14 +7,18 @@ import torch
 
 
 SUB_LOSS_KEYS = [
-    'total', 'ssim', 'l1', 'freq', 'perceptual',
+    'total', 'ssim', 'ssim_single_loss', 'msssim_loss', 'ssim_mixed_loss',
+    'l1', 'freq', 'perceptual',
     'spec', 'stat', 'grad',
-    'focal', 'dice', 'gc',
+    'focal', 'dice', 'gc', 'cs',
 ]
 
 SUB_LOSS_DISPLAY_NAMES = {
     'total':      'Total Loss',
     'ssim':       'SSIM Loss (1-SSIM)',
+    'ssim_single_loss': 'SSIM Single Loss',
+    'msssim_loss': 'MS-SSIM Loss',
+    'ssim_mixed_loss': 'SSIM Mixed Loss',
     'l1':         'L1 / MAE Loss',
     'freq':       'Frequency Loss',
     'perceptual': 'Perceptual Loss',
@@ -24,6 +28,7 @@ SUB_LOSS_DISPLAY_NAMES = {
     'focal':      'Focal Loss',
     'dice':       'Dice Loss',
     'gc':         'Grad Consistency',
+    'cs':         'Cross-scale Consistency',
 }
 
 

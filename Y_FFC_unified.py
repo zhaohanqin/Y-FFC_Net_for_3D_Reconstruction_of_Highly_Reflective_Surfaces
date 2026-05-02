@@ -609,13 +609,19 @@ class FeatureExtrationLayersB(nn.Module):
 
 
 class TransposedConvBlock(nn.Module):
-    """三路差异化 kernel 转置卷积（上采样）块。"""
+    """三路 resize-conv 上采样块，替代转置卷积以降低棋盘伪影。"""
 
     def __init__(self, in_channels, out_channels_branch=256):
         super(TransposedConvBlock, self).__init__()
-        self.branch_1 = Conv2D_BN_activa(in_channels, out_channels_branch, 2, 2, 0, transpose=True)
-        self.branch_2 = Conv2D_BN_activa(in_channels, out_channels_branch, 4, 2, 1, transpose=True)
-        self.branch_3 = Conv2D_BN_activa(in_channels, out_channels_branch, 6, 2, 2, transpose=True)
+        self.branch_1 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+            Conv2D_BN_activa(in_channels, out_channels_branch, 3, 1, 1))
+        self.branch_2 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+            Conv2D_BN_activa(in_channels, out_channels_branch, 5, 1, 2))
+        self.branch_3 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+            Conv2D_BN_activa(in_channels, out_channels_branch, 7, 1, 3))
 
     def forward(self, x):
         x1 = self.branch_1(x)
@@ -914,6 +920,45 @@ class CrossModalFusion(nn.Module):
         gate = self.gate(torch.cat([c2ctx_out, ctx2c_out], dim=1))
         fused = gate * c2ctx_out + (1.0 - gate) * ctx2c_out
         return self.final_proj(fused)
+
+
+class CrossScaleTopDownRefinement(nn.Module):
+    """轻量 H/16 -> H/8 -> H/4 特征回流，使用受限残差避免破坏已稳定的 skip。"""
+
+    def __init__(self, h4_channels=128, h8_channels=256, h16_channels=512, init_gamma=0.05):
+        super().__init__()
+        self.h16_refine = Conv2D_BN_activa(h16_channels, h16_channels, 3, 1, 1)
+        self.h16_to_h8 = Conv2D_BN_activa(h16_channels, h8_channels, 1, 1, 0)
+        self.h8_gate = nn.Sequential(
+            nn.Conv2d(h8_channels * 2, h8_channels, kernel_size=1, bias=True),
+            nn.Sigmoid(),
+        )
+        self.h8_refine = Conv2D_BN_activa(h8_channels, h8_channels, 3, 1, 1)
+        self.h8_to_h4 = Conv2D_BN_activa(h8_channels, h4_channels, 1, 1, 0)
+        self.h4_gate = nn.Sequential(
+            nn.Conv2d(h4_channels * 2, h4_channels, kernel_size=1, bias=True),
+            nn.Sigmoid(),
+        )
+        self.gamma = nn.Parameter(torch.tensor(float(init_gamma)))
+
+    def forward(self, h4, h8, h16):
+        gamma = self.gamma.clamp(0.0, 0.2)
+
+        h16_ctx = self.h16_refine(h16)
+        h16_out = h16 + gamma * h16_ctx
+
+        h8_from_h16 = self.h16_to_h8(h16_ctx)
+        h8_from_h16 = F.interpolate(h8_from_h16, size=h8.shape[-2:], mode='bilinear', align_corners=False)
+        h8_gate = self.h8_gate(torch.cat([h8, h8_from_h16], dim=1))
+        h8_out = h8 + gamma * h8_gate * h8_from_h16
+
+        h8_ctx = self.h8_refine(h8_out)
+        h4_from_h8 = self.h8_to_h4(h8_ctx)
+        h4_from_h8 = F.interpolate(h4_from_h8, size=h4.shape[-2:], mode='bilinear', align_corners=False)
+        h4_gate = self.h4_gate(torch.cat([h4, h4_from_h8], dim=1))
+        h4_out = h4 + gamma * h4_gate * h4_from_h8
+
+        return h4_out, h8_out, h16_out
 
 
 class SSIM(nn.Module):
@@ -1267,7 +1312,7 @@ class EnhancedCompositeLoss(nn.Module):
                  lambda_perceptual=0.05, lambda_spec=0.5, lambda_stat=0.0,
                  lambda_grad=0.5, use_edge_weight=True, use_perceptual=True,
                  lambda_focal=0.8, lambda_dice=0.3, lambda_gc=0.2,
-                 use_ohem=True, ohem_ratio=0.3):
+                 lambda_cs=0.05, use_ohem=True, ohem_ratio=0.3):
         super().__init__()
 
         self.ssim_fn = SSIM(as_loss=True)       # [P12]
@@ -1294,6 +1339,7 @@ class EnhancedCompositeLoss(nn.Module):
         self.lambda_focal = lambda_focal
         self.lambda_dice = lambda_dice
         self.lambda_gc = lambda_gc
+        self.lambda_cs = lambda_cs
         self.use_ohem = use_ohem
         self.ohem_ratio = ohem_ratio
         # ★ P5 修复：不再有可学习损失权重 ★
@@ -1314,7 +1360,7 @@ class EnhancedCompositeLoss(nn.Module):
         return amp_loss + 0.5 * phase_loss
 
     def forward(self, pred_diffuse, target, est_b, gt_specular,
-                pred_grad, gt_grad):
+                pred_grad, gt_grad, cross_scale_consistency=None):
         gt_sc = gt_specular.clamp(0, 1)
 
         # [P3] MS-SSIM + SSIM 混合
@@ -1353,13 +1399,18 @@ class EnhancedCompositeLoss(nn.Module):
             l_focal = self.focal(est_b, gt_sc)
         l_dice = self.dice(est_b, gt_sc)
         l_gc = self.gc(est_b, gt_sc)
+        if cross_scale_consistency is None:
+            l_cs = torch.tensor(0.0, device=pred_diffuse.device)
+        else:
+            l_cs = cross_scale_consistency.to(device=pred_diffuse.device, dtype=pred_diffuse.dtype)
 
         # ★ 纯加权求和，所有项 ≥ 0，total 必定 ≥ 0 ★
         total = (self.lambda_ssim * l_ssim + self.lambda_l1 * l_l1 +
                  self.lambda_freq * l_freq + self.lambda_perceptual * l_percep +
                  self.lambda_spec * l_spec + self.lambda_stat * l_stat +
                  self.lambda_grad * l_grad + self.lambda_focal * l_focal +
-                 self.lambda_dice * l_dice + self.lambda_gc * l_gc)
+                 self.lambda_dice * l_dice + self.lambda_gc * l_gc +
+                 self.lambda_cs * l_cs)
 
         d = {}
         for k, v in [('total', total), ('ssim', l_ssim_single),
@@ -1369,7 +1420,8 @@ class EnhancedCompositeLoss(nn.Module):
                       ('l1', l_l1),
                       ('freq', l_freq), ('perceptual', l_percep),
                       ('spec', l_spec), ('stat', l_stat), ('grad', l_grad),
-                      ('focal', l_focal), ('dice', l_dice), ('gc', l_gc)]:
+                      ('focal', l_focal), ('dice', l_dice), ('gc', l_gc),
+                      ('cs', l_cs)]:
             d[k] = v.item() if isinstance(v, torch.Tensor) else v
         return total, d
 
@@ -1823,6 +1875,8 @@ class Encoder(nn.Module):
         self.cross_modal_fusion = CrossModalFusion(
             cnn_dim=512, context_dim=512,
             out_dim=512, num_heads=4, sr_ratio=2)
+        self.top_down_refine = CrossScaleTopDownRefinement(
+            h4_channels=128, h8_channels=256, h16_channels=512, init_gamma=0.05)
         self.cba_after_backbone = Conv2D_BN_activa(512, 256, 3, 1, 1)
         self.ffc_bottleneck = FFC_BN_ACT(256, 256, 3, 0.5, 0.5, padding=1)
         self.hf_enhance = HighFrequencyEnhancement(channels=256)
@@ -1880,7 +1934,8 @@ class Encoder(nn.Module):
         swin_feat_16 = self.swin16_proj(swin_16)
 
         fused = self.cross_modal_fusion(x_bb_4, swin_feat_16)
-        x_c = self.cba_after_backbone(fused)
+        x_bb_2, x_bb_3, x_bb_4 = self.top_down_refine(x_bb_2, x_bb_3, fused)
+        x_c = self.cba_after_backbone(x_bb_4)
 
         nl = 256 - int(256 * 0.5)
         out = self.ffc_bottleneck((x_c[:, :nl], x_c[:, nl:]))
@@ -2173,6 +2228,26 @@ class ResidualRefinementHead(nn.Module):
         return torch.clamp(coarse + self.scale * delta, 0.0, 1.0)
 
 
+def cross_scale_consistency_loss(features):
+    """约束 H/4、H/8、H/16 融合特征对结构区域的响应保持一致。"""
+    maps = []
+    for feat in features:
+        response = feat.float().abs().mean(dim=1, keepdim=True)
+        mean = response.mean(dim=(2, 3), keepdim=True)
+        std = response.std(dim=(2, 3), keepdim=True, unbiased=False).clamp_min(1e-6)
+        maps.append((response - mean) / std)
+
+    target_size = maps[0].shape[-2:]
+    aligned = [
+        maps[0],
+        F.interpolate(maps[1], size=target_size, mode='bilinear', align_corners=False),
+        F.interpolate(maps[2], size=target_size, mode='bilinear', align_corners=False),
+    ]
+    return 0.5 * (
+        F.l1_loss(aligned[0], aligned[1]) +
+        F.l1_loss(aligned[1], aligned[2]))
+
+
 class YFFC(nn.Module):
     """Y-FFC 主网络（V3 优化版）。含 P1 残差精修头。"""
 
@@ -2198,7 +2273,8 @@ class YFFC(nn.Module):
             g_map = g_feat[-1]
         coarse = torch.clamp(x - est_b, 0.0, 1.0)
         pred_diffuse = self.refinement_head(coarse, x)  # [P1]
-        return {"r": pred_diffuse, "g": g_map, "b": est_b}
+        cs_loss = cross_scale_consistency_loss((c_feat[1], c_feat[2], c_feat[3]))
+        return {"r": pred_diffuse, "g": g_map, "b": est_b, "cs": cs_loss}
 
 
 # ╔════════════════════════════════════════════════════════════════════════════╗
@@ -2285,7 +2361,8 @@ def build_optimizer(model, base_lr=2e-4, weight_decay=1e-4):
             continue
         if ('sa1' in name or 'sa2' in name or 'sa3' in name or
             'sa4' in name or 'hf_enhance' in name or
-            'refinement_head' in name):
+            'refinement_head' in name or
+            'top_down_refine' in name):
             new_module_params.append(param)
         elif ('fuse_h4' in name or 'fuse_h8' in name or
               'swin16_proj' in name):
@@ -2403,7 +2480,8 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scheduler,
                 loss, loss_dict = criterion(
                     pred_diffuse.float(), target_img.float(),
                     est_b.float(), gt_specular.float(),
-                    pred_grad.float(), gt_gradient.float())
+                    pred_grad.float(), gt_gradient.float(),
+                    output.get('cs'))
 
             loss = loss / accumulation_steps
 
@@ -2460,7 +2538,7 @@ def validate(model, dataloader, criterion, device):
         output = model(input_img)
         loss, loss_dict = criterion(
             output['r'], target_img, output['b'], gt_specular,
-            output['g'], gt_gradient)
+            output['g'], gt_gradient, output.get('cs'))
 
         running_loss += loss_dict['total']
         running_ssim += (1.0 - loss_dict['ssim'])

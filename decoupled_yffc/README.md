@@ -4,8 +4,8 @@
 
 当前拆分版已按根目录主实现对齐：
 
-- 模型结构与 `Y_FFC_unified.py` 对齐：`YFFC`、ResNet50 + Swin-Tiny 双分支编码器、AdaptiveSkipFusion、FFC 模块、高频增强、梯度分支、主解码器、残差精修头等。
-- 训练主链路与 `train.py` 对齐：`EnhancedCompositeLoss`、OHEM、合成高光增强、BN->GN、EMA、分层学习率、warmup+cosine scheduler、自动训练/验证划分、固定验证可视化样本。
+- 模型结构与 `Y_FFC_unified.py` 对齐：`YFFC`、ResNet50 + Swin-Tiny 双分支编码器、AdaptiveSkipFusion、FFC 模块、高频增强、梯度分支、resize-conv 主解码器、残差精修头等。
+- 训练主链路与 `train.py` 对齐：`EnhancedCompositeLoss`、跨尺度一致性辅助损失、OHEM、合成高光增强、BN->GN、EMA、分层学习率、warmup+cosine scheduler、自动训练/验证划分、固定验证可视化样本。
 - 图像尺寸语义统一为 `(H, W)`；传给 PIL resize 时内部转换为 `(W, H)`。
 
 ## 顶层入口
@@ -50,7 +50,7 @@ python train.py
 - `USE_GN = True`
 - `USE_EMA = True`
 - `USE_OHEM = True`
-- `EnhancedPairedTransform + HighlightAugmentation(p=0.4)`
+- `EnhancedPairedTransform + HighlightAugmentation(p=0.5)`
 
 ## X-FFC-Swin 结构要点
 
@@ -61,6 +61,9 @@ python train.py
 3. `swin_4` 和 `swin_8` 通过 `AdaptiveSkipFusion` 分别增强 `x_bb_2` 和 `x_bb_3`。
 4. `swin_16` 投影到 512 通道后，与 `x_bb_4` 通过 `CrossModalFusion` 做 H/16 瓶颈融合。
 5. 瓶颈融合结果依次经过 `cba_after_backbone -> FFC bottleneck -> HighFrequencyEnhancement`，再送入梯度解码器和主解码器。
+6. 主解码器的 `TransposedConvBlock` 保留类名和外部接口，但内部已改为 `bilinear upsample + 3x3/5x5/7x7 conv` 的 resize-conv，降低棋盘格伪影风险。
+7. 编码器在 H/16 cross-modal 融合后通过 `CrossScaleTopDownRefinement` 做 H/16 -> H/8 -> H/4 的受限残差回流，把深层上下文反馈到浅层 skip。
+8. `YFFC.forward()` 会额外返回训练辅助标量 `cs`，用于 H/4、H/8、H/16 融合特征的跨尺度一致性约束；推理主输出仍使用 `r/g/b`。
 
 训练与推理建议：
 
@@ -100,12 +103,13 @@ python Y_FFC_unified.py train --input_dir data2/inputs --target_dir data2/target
 3. 使用 `ImprovedFringeDataset` 加载输入/目标图像，训练集使用 `EnhancedPairedTransform`。
 4. `HighlightAugmentation` 会随机叠加高斯 blob 高反光，并同步更新 `gt_specular`。
 5. 没有独立验证集时，使用固定 seed 自动划分训练/验证，验证集不做增强。
-6. 使用 `EnhancedCompositeLoss(use_ohem=USE_OHEM)`。
-7. 使用 `ImprovedWeightScheduler` 动态调度 `ssim/l1/freq/spec/grad/focal/dice/gc` 等损失权重。
-8. 使用 `build_optimizer_v2` 分层学习率，`encoder.swin_branch.swin` 使用低学习率，`fuse_h4/fuse_h8/swin16_proj` 作为 `adaptive_skip_fusion` 使用 base LR。
+6. 使用 `EnhancedCompositeLoss(use_ohem=USE_OHEM)`，训练循环会把模型输出里的 `cs` 传入复合损失。
+7. 使用 `ImprovedWeightScheduler` 动态调度 `ssim/l1/freq/spec/grad/focal/dice/gc/cs` 等损失权重。
+8. 使用 `build_optimizer_v2` 分层学习率，`encoder.swin_branch.swin` 使用低学习率，`fuse_h4/fuse_h8/swin16_proj/refinement_head/top_down_refine` 作为新模块使用 base LR。
 9. scheduler 只在真实 `optimizer.step()` 后推进，避免梯度累积时学习率走快。
 10. 训练日志会打印 `fuse_h4.beta`、`fuse_h8.beta` 和 gate mean，用于观察 Swin skip 是否被模型使用。
 11. 验证和可视化时可临时切换 EMA 权重。
+12. best checkpoint 在启用 EMA 验证时保存 EMA 合并权重为 `model_state_dict`，同时保留 `raw_model_state_dict`、`ema_shadow` 和 `image_size`，便于恢复训练和推理尺寸对齐。
 
 ## 数据命名匹配
 

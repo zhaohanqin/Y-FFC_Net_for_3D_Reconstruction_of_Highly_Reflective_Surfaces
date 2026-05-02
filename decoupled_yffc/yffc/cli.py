@@ -141,7 +141,7 @@ def main():
             gt_gradient = torch.rand_like(out['g'])
             with torch.no_grad():
                 loss, loss_dict = criterion(
-                    out['r'], target, out['b'], gt_specular, out['g'], gt_gradient)
+                    out['r'], target, out['b'], gt_specular, out['g'], gt_gradient, out.get('cs'))
             print(f"CompositeLoss 前向成功, total={loss.item():.4f}")
         except Exception as e:
             print(f"损失函数测试失败: {e}")

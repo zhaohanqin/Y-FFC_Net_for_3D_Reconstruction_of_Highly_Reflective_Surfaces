@@ -100,7 +100,7 @@ class EnhancedCompositeLoss(nn.Module):
                  lambda_perceptual=0.05, lambda_spec=0.5, lambda_stat=0.0,
                  lambda_grad=0.5, use_edge_weight=True, use_perceptual=True,
                  lambda_focal=0.8, lambda_dice=0.3, lambda_gc=0.2,
-                 use_ohem=True, ohem_ratio=0.3):
+                 lambda_cs=0.05, use_ohem=True, ohem_ratio=0.3):
         super().__init__()
 
         self.ssim_fn = SSIM(as_loss=True)       # [P12]
@@ -109,6 +109,8 @@ class EnhancedCompositeLoss(nn.Module):
         self.use_perceptual = use_perceptual
         if use_perceptual:
             self.perceptual = PerceptualLoss()
+            if not self.perceptual.is_pretrained:
+                self.use_perceptual = False
         self._ew_fn = compute_edge_weight_map
 
         self.focal = SpecularFocalLoss()
@@ -125,6 +127,7 @@ class EnhancedCompositeLoss(nn.Module):
         self.lambda_focal = lambda_focal
         self.lambda_dice = lambda_dice
         self.lambda_gc = lambda_gc
+        self.lambda_cs = lambda_cs
         self.use_ohem = use_ohem
         self.ohem_ratio = ohem_ratio
         # ★ P5 修复：不再有可学习损失权重 ★
@@ -145,7 +148,7 @@ class EnhancedCompositeLoss(nn.Module):
         return amp_loss + 0.5 * phase_loss
 
     def forward(self, pred_diffuse, target, est_b, gt_specular,
-                pred_grad, gt_grad):
+                pred_grad, gt_grad, cross_scale_consistency=None):
         gt_sc = gt_specular.clamp(0, 1)
 
         # [P3] MS-SSIM + SSIM 混合
@@ -184,19 +187,29 @@ class EnhancedCompositeLoss(nn.Module):
             l_focal = self.focal(est_b, gt_sc)
         l_dice = self.dice(est_b, gt_sc)
         l_gc = self.gc(est_b, gt_sc)
+        if cross_scale_consistency is None:
+            l_cs = torch.tensor(0.0, device=pred_diffuse.device)
+        else:
+            l_cs = cross_scale_consistency.to(device=pred_diffuse.device, dtype=pred_diffuse.dtype)
 
         # ★ 纯加权求和，所有项 ≥ 0，total 必定 ≥ 0 ★
         total = (self.lambda_ssim * l_ssim + self.lambda_l1 * l_l1 +
                  self.lambda_freq * l_freq + self.lambda_perceptual * l_percep +
                  self.lambda_spec * l_spec + self.lambda_stat * l_stat +
                  self.lambda_grad * l_grad + self.lambda_focal * l_focal +
-                 self.lambda_dice * l_dice + self.lambda_gc * l_gc)
+                 self.lambda_dice * l_dice + self.lambda_gc * l_gc +
+                 self.lambda_cs * l_cs)
 
         d = {}
-        for k, v in [('total', total), ('ssim', l_ssim_single), ('l1', l_l1),
+        for k, v in [('total', total), ('ssim', l_ssim_single),
+                      ('ssim_single_loss', l_ssim_single),
+                      ('msssim_loss', l_msssim),
+                      ('ssim_mixed_loss', l_ssim),
+                      ('l1', l_l1),
                       ('freq', l_freq), ('perceptual', l_percep),
                       ('spec', l_spec), ('stat', l_stat), ('grad', l_grad),
-                      ('focal', l_focal), ('dice', l_dice), ('gc', l_gc)]:
+                      ('focal', l_focal), ('dice', l_dice), ('gc', l_gc),
+                      ('cs', l_cs)]:
             d[k] = v.item() if isinstance(v, torch.Tensor) else v
         return total, d
 

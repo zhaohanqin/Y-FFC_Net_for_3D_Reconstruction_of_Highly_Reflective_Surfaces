@@ -18,7 +18,8 @@ def print_epoch_log(ep, total_epochs, epoch_time, avg_epoch_time, eta,
     sep2 = '-' * 78
 
     print(f"\n{sep}")
-    print(f"  Epoch [{ep+1:03d}/{total_epochs}]  耗时: {epoch_time:.1f}s | 均: {avg_epoch_time:.1f}s/ep | ETA: {eta} | LR: {current_lr:.8f}")
+    print(f"  Epoch [{ep+1:03d}/{total_epochs}]  耗时: {epoch_time:.1f}s | 均: {avg_epoch_time:.1f}s/ep | ETA: {eta}")
+    print(f"  LR: {current_lr}")
     print(f"  {sep2}")
     print(f"  {'指标':<16s}  {'Train':>12s}  {'Val':>12s}  {'Gap':>12s}")
     print(f"  {sep2}")
@@ -27,6 +28,10 @@ def print_epoch_log(ep, total_epochs, epoch_time, avg_epoch_time, eta,
     print(f"  {'MAE':<16s}  {tm:>12.6f}  {vm:>12.6f}  {abs(tm-vm):>12.6f}")
     print(f"  {'MSE':<16s}  {train_mse:>12.6f}  {val_mse:>12.6f}  {abs(train_mse-val_mse):>12.6f}")
     print(f"  {'PSNR (dB)':<16s}  {train_psnr:>12.2f}  {val_psnr:>12.2f}  {abs(train_psnr-val_psnr):>12.2f}")
+    if 'ssim_mixed_loss' in train_subs or 'ssim_mixed_loss' in val_subs:
+        train_mixed = 1.0 - train_subs.get('ssim_mixed_loss', 1.0)
+        val_mixed = 1.0 - val_subs.get('ssim_mixed_loss', 1.0)
+        print(f"  {'SSIM mixed':<16s}  {train_mixed:>12.4f}  {val_mixed:>12.4f}  {abs(train_mixed-val_mixed):>12.4f}")
 
     # ── 子损失项分解（完整显示） ──
     all_sub_keys = sorted(set(train_subs.keys()) | set(val_subs.keys()))

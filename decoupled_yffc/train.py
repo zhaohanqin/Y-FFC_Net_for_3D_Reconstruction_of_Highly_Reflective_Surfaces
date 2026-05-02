@@ -49,6 +49,8 @@ def main():
     USE_EMA               = True     # 指数移动平均
     EMA_DECAY             = 0.9995   # [P16] EMA 衰减系数（调高增加平滑力度）
     USE_OHEM              = True     # 在线难样本挖掘
+    USE_HIGHLIGHT_AUG     = True     # 默认开启训练集高反光合成增强
+    HIGHLIGHT_AUG_P       = 0.5      # 降低合成高反光占比，避免训练分布过度偏向合成模式
 
     # ========== 数据目录 ==========
     INPUT_DIR             = 'data2/inputs'
@@ -91,6 +93,8 @@ def main():
         'USE_EMA':                USE_EMA,
         'EMA_DECAY':              EMA_DECAY,
         'USE_OHEM':               USE_OHEM,
+        'USE_HIGHLIGHT_AUG':      USE_HIGHLIGHT_AUG,
+        'HIGHLIGHT_AUG_P':        HIGHLIGHT_AUG_P,
         'INPUT_DIR':              INPUT_DIR,
         'TARGET_DIR':             TARGET_DIR,
         'VAL_INPUT_DIR':          VAL_INPUT_DIR,

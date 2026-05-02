@@ -96,6 +96,14 @@ class CrossModalFusion(nn.Module):
             nn.GELU(),
         )
 
+    @staticmethod
+    def _modality_norm(feat):
+        channels = feat.shape[1]
+        groups = min(32, channels)
+        while groups > 1 and channels % groups != 0:
+            groups -= 1
+        return F.group_norm(feat, num_groups=groups)
+
     def _cross_attn(self, q, k, v, proj):
         """执行单方向的交叉注意力。"""
         B, C, H, W = q.shape
@@ -120,6 +128,9 @@ class CrossModalFusion(nn.Module):
         Returns:
             (B, out_dim, H, W) — 融合后的瓶颈输入特征
         """
+        cnn_feat = self._modality_norm(cnn_feat)
+        context_feat = self._modality_norm(context_feat)
+
         if self.sr_ratio > 1:
             context_kv = self.sr_pool(context_feat)
             cnn_kv = self.sr_pool(cnn_feat)
@@ -181,11 +192,14 @@ class SpecularAwareAttention(nn.Module):
         if inp.shape[-2:] != features.shape[-2:]:
             inp = F.interpolate(inp, size=features.shape[-2:],
                                 mode='bilinear', align_corners=False)
+        local_mean = F.avg_pool2d(inp, kernel_size=3, stride=1, padding=1)
+        local_contrast = (inp - local_mean).abs().clamp(0, 1)
+        spec_prior = (0.75 * inp + 0.25 * local_contrast).clamp(0, 1)
         t_off = self.adaptive_thresh(features)
         masks = []
         for i, base_t in enumerate(self.thresholds):
             eff_t = base_t * (0.5 + 0.5 * t_off[:, i:i+1, :, :])
-            masks.append(torch.sigmoid(self.steepness * (inp - eff_t)))
+            masks.append(torch.sigmoid(self.steepness * (spec_prior - eff_t)))
         multi_mask = torch.cat(masks, dim=1)
         att = self.modulation(torch.cat([features, multi_mask], dim=1))
         return features * (1.0 + att)

@@ -97,13 +97,19 @@ class FeatureExtrationLayersB(nn.Module):
 
 
 class TransposedConvBlock(nn.Module):
-    """三路差异化 kernel 转置卷积（上采样）块。"""
+    """三路 resize-conv 上采样块，替代转置卷积以降低棋盘伪影。"""
 
     def __init__(self, in_channels, out_channels_branch=256):
         super(TransposedConvBlock, self).__init__()
-        self.branch_1 = Conv2D_BN_activa(in_channels, out_channels_branch, 2, 2, 0, transpose=True)
-        self.branch_2 = Conv2D_BN_activa(in_channels, out_channels_branch, 4, 2, 1, transpose=True)
-        self.branch_3 = Conv2D_BN_activa(in_channels, out_channels_branch, 6, 2, 2, transpose=True)
+        self.branch_1 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+            Conv2D_BN_activa(in_channels, out_channels_branch, 3, 1, 1))
+        self.branch_2 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+            Conv2D_BN_activa(in_channels, out_channels_branch, 5, 1, 2))
+        self.branch_3 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+            Conv2D_BN_activa(in_channels, out_channels_branch, 7, 1, 3))
 
     def forward(self, x):
         x1 = self.branch_1(x)

@@ -183,6 +183,7 @@ class ImprovedWeightScheduler:
             'lambda_focal':      min(0.8, 0.3 + 0.5 * p_clamped),         # 上限降低
             'lambda_dice':       min(0.3, 0.1 + 0.2 * p_clamped),         # 上限降低
             'lambda_gc':         min(0.2, 0.05 + 0.15 * p_clamped),       # 上限降低
+            'lambda_cs':         min(0.05, 0.02 + 0.03 * p_clamped),
         }
 
     def step(self, criterion, ep):
@@ -203,7 +204,8 @@ def build_optimizer_v2(model, base_lr=2e-4, weight_decay=1e-4):
             continue
         if ('sa1' in name or 'sa2' in name or 'sa3' in name or
             'sa4' in name or 'hf_enhance' in name or
-            'refinement_head' in name):
+            'refinement_head' in name or
+            'top_down_refine' in name):
             new_p.append(param)
         elif ('fuse_h4' in name or 'fuse_h8' in name or
               'swin16_proj' in name):
@@ -254,7 +256,7 @@ SUB_LOSS_KEYS = [
     'total', 'ssim', 'ssim_single_loss', 'msssim_loss', 'ssim_mixed_loss',
     'l1', 'freq', 'perceptual',
     'spec', 'stat', 'grad',
-    'focal', 'dice', 'gc',
+    'focal', 'dice', 'gc', 'cs',
 ]
 
 # 用于日志输出时的友好名称映射
@@ -273,6 +275,7 @@ SUB_LOSS_DISPLAY_NAMES = {
     'focal':      'Focal Loss',
     'dice':       'Dice Loss',
     'gc':         'Grad Consistency',
+    'cs':         'Cross-scale Consistency',
 }
 
 
@@ -396,7 +399,8 @@ def train_one_epoch(model, loader, criterion, optimizer, scheduler,
                 loss, ld = criterion(
                     out['r'].float(), tgt.float(),
                     out['b'].float(), gt_s.float(),
-                    out['g'].float(), gt_g.float())
+                    out['g'].float(), gt_g.float(),
+                    out.get('cs'))
             loss = loss / accum
 
         # NaN / Inf 保护
@@ -495,7 +499,7 @@ def validate(model, loader, criterion, device, epoch=0, total_epochs=0,
         gt_s, gt_g = gt_s.to(device), gt_g.to(device)
 
         out = _tta_forward(model, inp) if use_tta else model(inp)  # [P15]
-        loss, ld = criterion(out['r'], tgt, out['b'], gt_s, out['g'], gt_g)
+        loss, ld = criterion(out['r'], tgt, out['b'], gt_s, out['g'], gt_g, out.get('cs'))
 
         if not torch.isfinite(loss):
             continue
@@ -1545,7 +1549,7 @@ def main():
     # ╚══════════════════════════════════════════════════════════════╝
 
     # ========== 基础训练参数 ==========
-    EPOCHS                = 50       # 训练总轮数
+    EPOCHS                = 300       # 训练总轮数
     BATCH_SIZE            = 3         # 384 分辨率推荐 2~4
     BASE_LR               = 2e-4     # 基础学习率（分层 LR 以此为基准）
     WEIGHT_DECAY          = 1e-4     # AdamW 权重衰减
@@ -1575,7 +1579,7 @@ def main():
     SAVE_EVERY_N_EPOCHS   = 20       # 每 N 轮保存检查点（0=不保存）
 
     # ========== 可视化间隔 ==========
-    VIS_EVERY_N_EPOCHS    = 1       # 每 N 轮保存验证样本可视化（0=不保存）
+    VIS_EVERY_N_EPOCHS    = 10       # 每 N 轮保存验证样本可视化（0=不保存）
     VIS_NUM_SAMPLES       = 2        # 每次保存几张固定验证样本
     VIS_SAMPLE_SEED       = None     # None=每次训练随机抽样；填整数可复现同一批图像
 

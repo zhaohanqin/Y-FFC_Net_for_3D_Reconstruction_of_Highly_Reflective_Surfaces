@@ -2,6 +2,7 @@
 
 import os
 import time
+import math
 
 import torch
 from torch.utils.data import DataLoader
@@ -46,7 +47,8 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scheduler,
                 loss, loss_dict = criterion(
                     pred_diffuse.float(), target_img.float(),
                     est_b.float(), gt_specular.float(),
-                    pred_grad.float(), gt_gradient.float())
+                    pred_grad.float(), gt_gradient.float(),
+                    output.get('cs'))
 
             loss = loss / accumulation_steps
 
@@ -103,7 +105,7 @@ def validate(model, dataloader, criterion, device):
         output = model(input_img)
         loss, loss_dict = criterion(
             output['r'], target_img, output['b'], gt_specular,
-            output['g'], gt_gradient)
+            output['g'], gt_gradient, output.get('cs'))
 
         running_loss += loss_dict['total']
         running_ssim += (1.0 - loss_dict['ssim'])
@@ -140,11 +142,11 @@ def train(args):
         else:
             min_side = int(img_size)
         hl_aug = HighlightAugmentation(
-            p=0.4, num_range=(1, 6),
+            p=0.5, num_range=(1, 6),
             radius_range=(3, max(5, min_side // 20)),
             intensity_range=(0.2, 0.7))
         paired_aug = EnhancedPairedTransform(highlight_aug=hl_aug)
-        print("[Aug] 已启用 EnhancedPairedTransform + HighlightAugmentation(p=0.4)")
+        print("[Aug] 已启用 EnhancedPairedTransform + HighlightAugmentation(p=0.5)")
     else:
         paired_aug = None
 
@@ -189,9 +191,9 @@ def train(args):
 
     # 优化器 + 调度器
     optimizer = build_optimizer(model, base_lr=args.base_lr, weight_decay=args.weight_decay)
-    iters_per_epoch = len(train_loader)
-    if iters_per_epoch == 0:
+    if len(train_loader) == 0:
         raise ValueError("训练 DataLoader 为空，请检查数据量、batch_size 和 drop_last 设置。")
+    iters_per_epoch = math.ceil(len(train_loader) / args.accumulation_steps)
     scheduler = build_scheduler(optimizer, warmup_iters=min(500, iters_per_epoch * 3),
                                 total_epochs=args.epochs, iters_per_epoch=iters_per_epoch)
 
@@ -231,13 +233,23 @@ def train(args):
         save_ssim = val_ssim if val_loader is not None else train_ssim
         if save_ssim > best_val_ssim:
             best_val_ssim = save_ssim
+            raw_state_dict = model.state_dict()
+            save_state_dict = dict(raw_state_dict)
+            if ema is not None:
+                for name, tensor in ema.shadow.items():
+                    if name in save_state_dict:
+                        save_state_dict[name] = tensor
             save_dict = {
                 'epoch': epoch + 1,
-                'model_state_dict': model.state_dict(),
+                'model_state_dict': save_state_dict,
+                'raw_model_state_dict': raw_state_dict,
                 'optimizer_state_dict': optimizer.state_dict(),
                 'best_ssim': best_val_ssim,
+                'image_size': args.image_size,
+                'uses_ema_weights': bool(ema),
             }
             if ema is not None:
+                save_dict['ema'] = ema.shadow
                 save_dict['ema_shadow'] = ema.shadow
             save_path = os.path.join(args.save_dir, 'best_model.pth')
             os.makedirs(args.save_dir, exist_ok=True)
@@ -248,7 +260,8 @@ def train(args):
             ckpt_path = os.path.join(args.save_dir, f'checkpoint_epoch{epoch + 1}.pth')
             os.makedirs(args.save_dir, exist_ok=True)
             torch.save({'epoch': epoch + 1, 'model_state_dict': model.state_dict(),
-                        'optimizer_state_dict': optimizer.state_dict()}, ckpt_path)
+                        'optimizer_state_dict': optimizer.state_dict(),
+                        'image_size': args.image_size}, ckpt_path)
 
     print("=" * 70)
     print(f"训练完成！最佳 SSIM: {best_val_ssim:.4f}")

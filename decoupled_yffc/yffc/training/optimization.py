@@ -32,6 +32,7 @@ class ImprovedWeightScheduler:
             'lambda_focal':      min(0.8, 0.3 + 0.5 * p_clamped),         # 上限降低
             'lambda_dice':       min(0.3, 0.1 + 0.2 * p_clamped),         # 上限降低
             'lambda_gc':         min(0.2, 0.05 + 0.15 * p_clamped),       # 上限降低
+            'lambda_cs':         min(0.05, 0.02 + 0.03 * p_clamped),
         }
 
     def step(self, criterion, ep):
@@ -46,7 +47,10 @@ def build_optimizer_v2(model, base_lr=2e-4, weight_decay=1e-4):
     for name, param in model.named_parameters():
         if not param.requires_grad:
             continue
-        if 'sa1' in name or 'sa2' in name or 'sa3' in name or 'sa4' in name or 'hf_enhance' in name:
+        if ('sa1' in name or 'sa2' in name or 'sa3' in name or
+            'sa4' in name or 'hf_enhance' in name or
+            'refinement_head' in name or
+            'top_down_refine' in name):
             new_p.append(param)
         elif ('fuse_h4' in name or 'fuse_h8' in name or
               'swin16_proj' in name):
@@ -75,3 +79,12 @@ def build_optimizer_v2(model, base_lr=2e-4, weight_decay=1e-4):
         n = sum(p.numel() for p in g['params'])
         print(f"  [{g['name']}] {n:,} params, lr={g['lr']:.8f}")
     return opt
+
+
+def format_lr_groups(optimizer):
+    """按参数组输出学习率，便于检查分层 LR 是否按预期运行。"""
+    parts = []
+    for idx, group in enumerate(optimizer.param_groups):
+        name = group.get('name', f'group_{idx}')
+        parts.append(f"{name}={group['lr']:.2e}")
+    return ", ".join(parts)

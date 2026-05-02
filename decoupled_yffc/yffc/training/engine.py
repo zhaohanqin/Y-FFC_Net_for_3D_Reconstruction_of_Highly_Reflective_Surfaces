@@ -2,6 +2,7 @@
 
 import os
 import time
+import math
 from collections import defaultdict
 from datetime import datetime, timedelta
 
@@ -14,7 +15,7 @@ from ..losses import EnhancedCompositeLoss
 from ..models import YFFC
 from .loops import train_one_epoch, validate
 from .metrics import SUB_LOSS_DISPLAY_NAMES, SUB_LOSS_KEYS
-from .optimization import ImprovedWeightScheduler, build_optimizer_v2
+from .optimization import ImprovedWeightScheduler, build_optimizer_v2, format_lr_groups
 from .reporting import print_epoch_log, save_training_summary
 from .utils import EMA, build_scheduler, replace_bn_with_gn
 from .visualization import (
@@ -83,11 +84,16 @@ def train_model(cfg):
 
     # ══════════ 2. 数据集 ══════════
     min_side = min(img_hw)  # 取短边计算高光半径
-    hl_aug = HighlightAugmentation(
-        p=0.4, num_range=(1, 6),
-        radius_range=(3, max(5, min_side // 20)),
-        intensity_range=(0.2, 0.7))
-    aug = EnhancedPairedTransform(highlight_aug=hl_aug)
+    if cfg.get('USE_HIGHLIGHT_AUG', True):
+        hl_aug = HighlightAugmentation(
+            p=float(cfg.get('HIGHLIGHT_AUG_P', 0.5)), num_range=(1, 6),
+            radius_range=(3, max(5, min_side // 20)),
+            intensity_range=(0.2, 0.7))
+        aug = EnhancedPairedTransform(highlight_aug=hl_aug)
+        print(f"[Aug] 训练集已启用 EnhancedPairedTransform + HighlightAugmentation(p={hl_aug.p})")
+    else:
+        aug = EnhancedPairedTransform(highlight_aug=HighlightAugmentation(p=0.0))
+        print("[Aug] 训练集已启用几何/亮度增强，高反光合成已关闭")
 
     full_ds = ImprovedFringeDataset(
         cfg['INPUT_DIR'], cfg['TARGET_DIR'],
@@ -169,9 +175,9 @@ def train_model(cfg):
         raise ValueError("训练 DataLoader 为空，请检查数据量、batch_size 和 drop_last 设置。")
     scheduler = build_scheduler(
         optimizer,
-        warmup_iters=min(500, len(train_loader) * 3),
+        warmup_iters=min(500, math.ceil(len(train_loader) / cfg['ACCUMULATION_STEPS']) * 3),
         total_epochs=cfg['EPOCHS'],
-        iters_per_epoch=len(train_loader))
+        iters_per_epoch=math.ceil(len(train_loader) / cfg['ACCUMULATION_STEPS']))
 
     # ══════════ 5. AMP + EMA ══════════
     scaler = torch.amp.GradScaler('cuda', enabled=(device.type == 'cuda'))
@@ -294,13 +300,14 @@ def train_model(cfg):
         avg_epoch_time = np.mean(epoch_times)
         remaining = avg_epoch_time * (cfg['EPOCHS'] - ep - 1)
         eta = timedelta(seconds=int(remaining))
-        current_lr = optimizer.param_groups[0]['lr']
+        current_lr_value = optimizer.param_groups[0]['lr']
+        current_lr = format_lr_groups(optimizer)
 
         # [FIX] LR 回弹检测：若 LR 比上一 epoch 增加超过 50%，发出警告
         if ep > 0 and hasattr(train_model, '_prev_lr'):
-            if current_lr > train_model._prev_lr * 1.5 and current_lr > 1e-5:
-                print(f"  ⚠️ [LR 异常] LR 从 {train_model._prev_lr:.2e} 跳升至 {current_lr:.2e}！")
-        train_model._prev_lr = current_lr
+            if current_lr_value > train_model._prev_lr * 1.5 and current_lr_value > 1e-5:
+                print(f"  ⚠️ [LR 异常] LR 从 {train_model._prev_lr:.2e} 跳升至 {current_lr_value:.2e}！")
+        train_model._prev_lr = current_lr_value
 
         # ── 多指标最优模型保存 ──
         composite = COMPOSITE_ALPHA * vs + (1.0 - COMPOSITE_ALPHA) * (1.0 / (1.0 + vl))
@@ -324,16 +331,30 @@ def train_model(cfg):
         # ── 模型保存逻辑 ──
         improved_flags = []
 
-        def _save_best(state_dict, path):
+        def _build_ema_state_dict(raw_state_dict):
+            if not ema:
+                return raw_state_dict
+            ema_state_dict = dict(raw_state_dict)
+            for name, tensor in ema.shadow.items():
+                if name in ema_state_dict:
+                    ema_state_dict[name] = tensor
+            return ema_state_dict
+
+        def _save_best(path):
+            raw_state_dict = model.state_dict()
             sd = {
                 'epoch': ep + 1,
-                'model_state_dict': state_dict,
+                'model_state_dict': _build_ema_state_dict(raw_state_dict),
+                'raw_model_state_dict': raw_state_dict,
                 'optimizer_state_dict': optimizer.state_dict(),
                 'best_ssim': vs,
                 'val_loss': vl,
+                'image_size': cfg['IMAGE_SIZE'],
+                'uses_ema_weights': bool(ema),
             }
             if ema:
                 sd['ema'] = ema.shadow
+                sd['ema_shadow'] = ema.shadow
             if scaler is not None:
                 sd['scaler_state_dict'] = scaler.state_dict()
             torch.save(sd, path)
@@ -342,7 +363,7 @@ def train_model(cfg):
         if composite > best_composite:
             best_composite = composite
             early_stopping_counter = 0
-            _save_best(model.state_dict(), best_composite_path)
+            _save_best(best_composite_path)
             improved_flags.append(f'综合↑{composite:.4f}')
             best_info['Best Overall (SSIM×0.7 + NormLoss×0.3)'].update(
                 {'epoch': ep + 1, 'loss': vl, 'ssim': vs, 'mae': vm,
@@ -353,7 +374,7 @@ def train_model(cfg):
         # 策略 B：SSIM 最优
         if vs > best_val_ssim:
             best_val_ssim = vs
-            _save_best(model.state_dict(), best_ssim_path)
+            _save_best(best_ssim_path)
             improved_flags.append(f'SSIM↑{vs:.4f}')
             best_info['Best SSIM'].update(
                 {'epoch': ep + 1, 'loss': vl, 'ssim': vs, 'mae': vm,
@@ -362,7 +383,7 @@ def train_model(cfg):
         # 策略 C：Loss 最优
         if vl < best_val_loss:
             best_val_loss = vl
-            _save_best(model.state_dict(), best_loss_path)
+            _save_best(best_loss_path)
             improved_flags.append(f'Loss↓{vl:.6f}')
             best_info['Best Loss'].update(
                 {'epoch': ep + 1, 'loss': vl, 'ssim': vs, 'mae': vm,
@@ -401,6 +422,7 @@ def train_model(cfg):
                 'best_composite': best_composite,
                 'best_val_ssim': best_val_ssim,
                 'best_val_loss': best_val_loss,
+                'image_size': cfg['IMAGE_SIZE'],
             }
             if scheduler is not None:
                 ckpt['scheduler_state_dict'] = scheduler.state_dict()
@@ -419,6 +441,7 @@ def train_model(cfg):
         'epoch': ep + 1,
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
+        'image_size': cfg['IMAGE_SIZE'],
     }, last_model_path)
 
     # ══════════ 9. 训练总结 ══════════

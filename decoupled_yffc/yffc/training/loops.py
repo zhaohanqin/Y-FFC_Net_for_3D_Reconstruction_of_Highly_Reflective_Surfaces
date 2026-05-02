@@ -36,7 +36,8 @@ def train_one_epoch(model, loader, criterion, optimizer, scheduler,
                 loss, ld = criterion(
                     out['r'].float(), tgt.float(),
                     out['b'].float(), gt_s.float(),
-                    out['g'].float(), gt_g.float())
+                    out['g'].float(), gt_g.float(),
+                    out.get('cs'))
             loss = loss / accum
 
         # NaN / Inf 保护
@@ -135,7 +136,7 @@ def validate(model, loader, criterion, device, epoch=0, total_epochs=0,
         gt_s, gt_g = gt_s.to(device), gt_g.to(device)
 
         out = _tta_forward(model, inp) if use_tta else model(inp)  # [P15]
-        loss, ld = criterion(out['r'], tgt, out['b'], gt_s, out['g'], gt_g)
+        loss, ld = criterion(out['r'], tgt, out['b'], gt_s, out['g'], gt_g, out.get('cs'))
 
         if not torch.isfinite(loss):
             continue

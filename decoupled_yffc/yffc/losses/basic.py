@@ -32,9 +32,13 @@ class PerceptualLoss(nn.Module):
     def __init__(self, layers=('relu1_2', 'relu2_2', 'relu3_3'),
                  weights=(1.0, 0.5, 0.25)):
         super(PerceptualLoss, self).__init__()
+        self.is_pretrained = False
         try:
             vgg = models.vgg16(weights=models.VGG16_Weights.IMAGENET1K_V1).features
-        except Exception:
+            self.is_pretrained = True
+            print("[PerceptualLoss] 已加载 ImageNet 预训练 VGG16，并启用 ImageNet 标准化")
+        except Exception as exc:
+            print(f"[PerceptualLoss] 预训练 VGG16 加载失败，感知损失将自动关闭: {exc}")
             vgg = models.vgg16(weights=None).features
 
         layer_map = {'relu1_2': 4, 'relu2_2': 9, 'relu3_3': 16}
@@ -49,11 +53,17 @@ class PerceptualLoss(nn.Module):
             param.requires_grad = False
 
         self.weights = weights
+        mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
+        std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
+        self.register_buffer('imagenet_mean', mean)
+        self.register_buffer('imagenet_std', std)
 
     def forward(self, pred, gt):
         if pred.size(1) == 1:
             pred = pred.repeat(1, 3, 1, 1)
             gt = gt.repeat(1, 3, 1, 1)
+        pred = (pred - self.imagenet_mean) / self.imagenet_std
+        gt = (gt - self.imagenet_mean) / self.imagenet_std
         loss = 0.0
         x, y = pred, gt
         for i, slice_module in enumerate(self.slices):

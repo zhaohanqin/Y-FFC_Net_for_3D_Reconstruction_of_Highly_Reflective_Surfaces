@@ -67,7 +67,9 @@ class SwinEncoderBranch(nn.Module):
         pad_w = (multiple - w % multiple) % multiple
         if pad_h == 0 and pad_w == 0:
             return x
-        return F.pad(x, (0, pad_w, 0, pad_h), mode="constant", value=0.0)
+        can_reflect = pad_h < h and pad_w < w and h > 1 and w > 1
+        pad_mode = "reflect" if can_reflect else "replicate"
+        return F.pad(x, (0, pad_w, 0, pad_h), mode=pad_mode)
 
     def forward(self, x):
         # 不建议直接整图训练 2448x2048；大图推理建议 sliding-window + overlap 融合。
@@ -110,7 +112,7 @@ class AdaptiveSkipFusion(nn.Module):
     CrossModalFusion；H/16 仍保留 CrossModalFusion 做瓶颈强交互。
     """
 
-    def __init__(self, res_channels, swin_channels, init_beta=0.0, gate_reduction=2):
+    def __init__(self, res_channels, swin_channels, init_beta=0.03, gate_reduction=2):
         super().__init__()
         hidden_channels = max(res_channels // gate_reduction, 16)
         self.beta = nn.Parameter(torch.tensor(float(init_beta)))

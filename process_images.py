@@ -49,6 +49,29 @@ def _merge_ema_weights(base_state_dict, ema_state_dict):
     return merged
 
 
+def _load_state_dict_flexible(model, state_dict):
+    """优先严格加载；结构升级后形状不匹配的旧权重会被跳过。"""
+    try:
+        model.load_state_dict(state_dict)
+        return
+    except RuntimeError as exc:
+        model_state = model.state_dict()
+        compatible = {
+            key: value for key, value in state_dict.items()
+            if key in model_state and model_state[key].shape == value.shape
+        }
+        skipped = sorted(set(state_dict.keys()) - set(compatible.keys()))
+        result = model.load_state_dict(compatible, strict=False)
+        print(
+            f"[WARNING] checkpoint 与当前结构不完全匹配，已兼容加载 "
+            f"{len(compatible)}/{len(model_state)} 个张量；跳过 {len(skipped)} 个旧权重")
+        if result.missing_keys:
+            print(f"[WARNING] 新结构随机初始化参数数量: {len(result.missing_keys)}")
+        if result.unexpected_keys:
+            print(f"[WARNING] checkpoint 额外参数数量: {len(result.unexpected_keys)}")
+        print(f"[WARNING] strict 加载失败摘要: {str(exc).splitlines()[0]}")
+
+
 def load_model(model_path, device, prefer_ema=True):
     """
     智能加载模型权重，自动识别 checkpoint 格式。
@@ -79,12 +102,12 @@ def load_model(model_path, device, prefer_ema=True):
         ema_state_dict = checkpoint.get('ema_shadow') or checkpoint.get('ema')
         if prefer_ema and ema_state_dict:
             # EMA 只保存 model.named_parameters()，需要用完整 state_dict 补齐缓冲/非 EMA 项。
-            model.load_state_dict(_merge_ema_weights(base_state_dict, ema_state_dict))
+            _load_state_dict_flexible(model, _merge_ema_weights(base_state_dict, ema_state_dict))
             epoch = checkpoint.get('epoch', '?')
             best_ssim = checkpoint.get('best_ssim', '?')
             print(f"  ✓ 已加载 EMA 权重 (epoch={epoch}, best_ssim={best_ssim})")
         else:
-            model.load_state_dict(base_state_dict)
+            _load_state_dict_flexible(model, base_state_dict)
             epoch = checkpoint.get('epoch', '?')
             best_ssim = checkpoint.get('best_ssim', '?')
             print(f"  ✓ 已加载模型权重 (epoch={epoch}, best_ssim={best_ssim})")
@@ -96,7 +119,7 @@ def load_model(model_path, device, prefer_ema=True):
         model = YFFC(swin_pretrained=False)
         if _uses_group_norm_state_dict(checkpoint):
             replace_bn_with_gn(model, num_groups=8)
-        model.load_state_dict(checkpoint)
+        _load_state_dict_flexible(model, checkpoint)
         print("  ✓ 已加载纯 state_dict 权重")
         model.training_image_size = None
         model.checkpoint_uses_ema_weights = False

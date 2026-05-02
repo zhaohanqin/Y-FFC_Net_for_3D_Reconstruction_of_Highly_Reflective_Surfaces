@@ -25,6 +25,14 @@
 5. **增强桥接模块**：`EnhancementLayers` 对梯度分支的中间特征做频域分解和增强，为主解码器提供结构化上下文。
 6. **主解码层**：`MainDecoder` 结合 `x_c`、编码器 skip、增强特征和梯度图，通过注意力门控、SpecularAwareAttention、FFC 与梯度门控逐级恢复，预测镜面反射分量 `b`。
 7. **漫反射恢复与精修**：先执行物理减法 `coarse = clamp(x - b, 0, 1)`，再由 `ResidualRefinementHead` 对粗漫反射结果做小幅像素级修正，得到最终漫反射输出 `r`。
+8. **跨尺度一致性辅助项与 top-down 回流**：训练时额外计算 H/4、H/8、H/16 融合特征的归一化响应图一致性标量 `cs`，用于约束不同尺度对同一结构区域的响应保持一致。编码器还在 H/16 cross-modal 融合后加入轻量 top-down refinement，将 H/16 上下文逐级反馈到 H/8、H/4 skip。`cs` 只参与训练损失，不作为推理图像结果保存。
+
+### 1.2 当前实现更新（resize-conv 与跨尺度一致性）
+
+当前版本相对原 V3 文档新增了两项结构级改动：
+
+- **主解码器上采样从转置卷积切换为 resize-conv**：`TransposedConvBlock` 保留类名和外部接口，但内部改为三路 `Upsample(mode='bilinear') + Conv2d`。这降低了转置卷积带来的棋盘纹理风险。由于权重形状发生变化，旧 checkpoint 的部分 decoder 权重无法 strict 复用；推理加载器会过滤形状不匹配的旧权重并加载其余可兼容权重。
+- **新增 cross-scale consistency loss 与 top-down refinement**：`YFFC.forward()` 返回 `cs` 标量，`EnhancedCompositeLoss` 使用 `lambda_cs` 将其纳入总损失。`CrossScaleTopDownRefinement` 在 H/16 -> H/8 -> H/4 上执行受限残差回流，配合 `cs` loss 约束多尺度结构响应一致性，目的是减少高光边界、细条纹和局部结构在不同尺度间的语义漂移。
 
 ---
 
@@ -69,7 +77,8 @@ X-FFC 是一个专为**图像高光分解任务**设计的深度学习模型。�
 ```python
 {'r': pred_diffuse,    # [B, 1, H, W]  漫反射分量（主输出）
  'g': gradient_map,    # [B, 1, H, W]  梯度图（辅助输出）
- 'b': est_specular}    # [B, 1, H, W]  镜面反射分量
+ 'b': est_specular,    # [B, 1, H, W]  镜面反射分量
+ 'cs': cs_loss}        # 标量，仅训练使用的跨尺度一致性辅助项
 ```
 
 ### 3.3 整体架构概览
@@ -82,7 +91,7 @@ X-FFC V3 / X-FFC-Swin 的整体架构可概括为 **"双编码 → 多尺度自�
 
 3. **主解码分支（MainDecoder）**：执行核心任务——重建镜面反射分量。融合编码器跳跃特征（经 Attention\_block 门控加权）、增强特征、梯度门控注入 \[P10\]，并在每一级应用 SpecularAwareAttention 高光感知注意力。输出头采用扩展设计 \[P2\]（4 层卷积 + 膨胀卷积 + skip connection）。
 
-4. **残差精修头（ResidualRefinementHead）** \[P1\]：对硬减法 \(x - b\) 得到的粗漫反射分量做像素级修正，使用 Tanh 限制修正幅度在 \(\pm 0.05\) 范围内。
+4. **残差精修头（ResidualRefinementHead）** \[P1\]：对硬减法 \(x - b\) 得到的粗漫反射分量做像素级修正，使用 Tanh 与 `scale=0.08` 限制修正幅度在 \(\pm 0.08\) 范围内。
 
 ---
 
@@ -403,7 +412,7 @@ MainDecoder 的核心是 5 级逐步上采样过程，每一级都执行精心�
 4. 三源融合：`cat([自身 768ch, bridge 512ch, xe1 128ch]) → 1408ch`
 
 **Level 2（H/16 → H/8）**：
-1. TransposedConvBlock（1408→384ch）：三路差异化 kernel（2×2/4×4/6×6）转置卷积上采样
+1. TransposedConvBlock（1408→384ch）：三路 resize-conv（bilinear upsample + 3×3/5×5/7×7 卷积）上采样
 2. ffc\_h8：FFC\_BN\_ACT（ratio=0.25）+ 残差连接
 3. **\[P10\] 梯度门控注入**：`x = x * (1 + grad_gate_2(x_g))`，梯度图经 `3×3 Conv → Sigmoid` 生成调制门控，在边缘区域增强特征响应
 4. SpecularAwareAttention（sa2）
@@ -412,7 +421,7 @@ MainDecoder 的核心是 5 级逐步上采样过程，每一级都执行精心�
 
 **Level 3（H/8 → H/4）**：
 1. FeatureExtrationLayersB（704→640ch）：四路并行卷积（7×7/3×3/3×3/3×3+3×3），输出 192+192+128+128=640ch
-2. TransposedConvBlock（640→192ch）上采样
+2. TransposedConvBlock（640→192ch）resize-conv 上采样
 3. ffc\_h4：FFC\_BN\_ACT（ratio=0.25）+ 残差连接
 4. **\[P10\] 梯度门控注入**：`x = x * (1 + grad_gate_3(x_g))`
 5. SpecularAwareAttention（sa3）
@@ -420,14 +429,14 @@ MainDecoder 的核心是 5 级逐步上采样过程，每一级都执行精心�
 7. 三源融合：`cat([自身 192ch, bridge 128ch, xe3 32ch]) → 352ch`
 
 **Level 4（H/4 → H/2）**：
-1. TransposedConvBlock（352→96ch）上采样
+1. TransposedConvBlock（352→96ch）resize-conv 上采样
 2. **\[P10\] 梯度门控注入**：`x = x * (1 + grad_gate_4(x_g))`
 3. SpecularAwareAttention（sa4）
 4. Attention\_block（att4）对 \(x\_bb\_1\) 加权
 5. 三源融合：`cat([自身 96ch, bridge 64ch, xe4 16ch]) → 176ch`
 
 **Level 5（H/2 → H）— 输出**：
-1. TransposedConvBlock（176→48ch）上采样至原始分辨率
+1. TransposedConvBlock（176→48ch）resize-conv 上采样至原始分辨率
 2. 拼接梯度图：`cat([自身 48ch, x_g 1ch]) → 49ch`
 3. **\[P2\] 扩展输出头**：
    ```
@@ -505,10 +514,10 @@ x (浅层特征, 待加权)     → W_x(1×1 Conv + BN) → x1
 ```python
 refine = Conv2d(2→16) + GELU + Conv2d(16→16) + GELU + Conv2d(16→1) + Tanh
 delta = refine(cat[coarse, original])  # 值域 [-1, 1]
-output = clamp(coarse + 0.05 * delta, 0, 1)
+output = clamp(coarse + 0.08 * delta, 0, 1)
 ```
 
-**设计意义**：硬减法 \(x - b\) 虽然物理上精确，但 \(b\) 的预测误差会直接传递到漫反射分量。残差精修头接受粗预测和原始输入两路输入，输出一个微小的修正量（通过 Tanh 限制在 \([-1, 1]\) 范围，再乘以 scale=0.05 限制实际修正幅度在 \(\pm 0.05\) 内）。这种"先粗后精"的策略保证了物理一致性的同时允许亚像素级的误差修正。
+**设计意义**：硬减法 \(x - b\) 虽然物理上精确，但 \(b\) 的预测误差会直接传递到漫反射分量。残差精修头接受粗预测和原始输入两路输入，输出一个微小的修正量（通过 Tanh 限制在 \([-1, 1]\) 范围，再乘以 scale=0.08 限制实际修正幅度在 \(\pm 0.08\) 内）。这种"先粗后精"的策略保证了物理一致性的同时给末端细节保留更大的可学习修正空间。
 
 ---
 
@@ -528,8 +537,8 @@ output = clamp(coarse + 0.05 * delta, 0, 1)
 
 #### TransposedConvBlock（上采样块）
 
-- **结构**：三路差异化 kernel 转置卷积（2×2/4×4/6×6），stride=2，拼接后输出 3×out\_ch
-- **作用**：多种 kernel 尺寸的并行转置卷积有效缓解单一上采样方式的棋盘格伪影
+- **结构**：三路 resize-conv，上采样统一使用 `Upsample(scale_factor=2, mode='bilinear')`，随后接 3×3/5×5/7×7 卷积，拼接后输出 3×out\_ch
+- **作用**：用确定性插值先完成空间放大，再用多尺度卷积补充局部重建能力，降低转置卷积常见的棋盘格伪影风险
 
 #### TransposedConvBlock\_same（同尺寸块）
 
@@ -542,7 +551,7 @@ output = clamp(coarse + 0.05 * delta, 0, 1)
 
 #### Conv2D\_BN\_activa
 
-通用的 Conv/TransposedConv + BN + Activation 组合块，支持以下配置：
+通用的 Conv/TransposedConv + BN + Activation 组合块。当前主解码器的 `TransposedConvBlock` 已改为 resize-conv，不再依赖该模块的转置卷积分支；梯度分支等历史结构仍可使用 `transpose=True` 配置：
 
 - `transpose=True/False`：切换标准卷积和转置卷积
 - `if_bn=True/False`：是否使用 BatchNorm
@@ -565,7 +574,7 @@ class YFFC(nn.Module):
         self.gradient_decoder = GradientDecoder()
         self.enhancement_layers = EnhancementLayers()
         self.main_decoder = MainDecoder(in_channels=256)
-        self.refinement_head = ResidualRefinementHead(scale=0.05)  # [P1]
+        self.refinement_head = ResidualRefinementHead(scale=0.08)  # [P1]
 
     def forward(self, x):
         # 第一步：双编码器特征提取
@@ -581,13 +590,17 @@ class YFFC(nn.Module):
         # enh = (x_enhanced_1, x_enhanced_2, x_enhanced_3, x_enhanced_4)
 
         # 第四步：主解码器重建镜面反射分量
+        # 注意：Encoder 内部已经执行 CrossScaleTopDownRefinement。
         est_b = self.main_decoder(c_feat, enh, g_feat[-1], original_input=x)
 
         # 第五步：硬减法 + [P1] 残差精修
         coarse = clamp(x - est_b, 0, 1)
         pred_diffuse = self.refinement_head(coarse, x)
 
-        return {"r": pred_diffuse, "g": g_map, "b": est_b}
+        # 第六步：跨尺度一致性辅助标量，仅训练损失使用
+        cs_loss = cross_scale_consistency_loss([c_feat[1], c_feat[2], c_feat[3]])
+
+        return {"r": pred_diffuse, "g": g_feat[-1], "b": est_b, "cs": cs_loss}
 ```
 
 ---
@@ -716,7 +729,7 @@ class YFFC(nn.Module):
     │   └─ cat([768, 512, 128]) → [B, 1408, 8, 10]
     │
     ├─ Level 2 (8×10 → 16×20):
-    │   ├─ TransposedConvBlock(1408→384ch) 上采样
+    │   ├─ TransposedConvBlock(1408→384ch) resize-conv 上采样
     │   ├─ ffc_h8(ratio=0.25) + 残差
     │   ├─ [P10] x = x * (1 + grad_gate_2(x_g))      ← 梯度门控
     │   ├─ sa2: SpecularAwareAttention(384ch)
@@ -725,7 +738,7 @@ class YFFC(nn.Module):
     │
     ├─ Level 3 (16×20 → 32×40):
     │   ├─ FeatureExtrationLayersB(704→640ch)
-    │   ├─ TransposedConvBlock(640→192ch) 上采样
+    │   ├─ TransposedConvBlock(640→192ch) resize-conv 上采样
     │   ├─ ffc_h4(ratio=0.25) + 残差
     │   ├─ [P10] x = x * (1 + grad_gate_3(x_g))      ← 梯度门控
     │   ├─ sa3: SpecularAwareAttention(192ch)
@@ -733,14 +746,14 @@ class YFFC(nn.Module):
     │   └─ cat([192, 128, 32]) → [B, 352, 32, 40]
     │
     ├─ Level 4 (32×40 → 64×80):
-    │   ├─ TransposedConvBlock(352→96ch) 上采样
+    │   ├─ TransposedConvBlock(352→96ch) resize-conv 上采样
     │   ├─ [P10] x = x * (1 + grad_gate_4(x_g))      ← 梯度门控
     │   ├─ sa4: SpecularAwareAttention(96ch)
     │   ├─ att4: Attention_block(96, 64) → 加权 x_bb_1
     │   └─ cat([96, 64, 16]) → [B, 176, 64, 80]
     │
     └─ Level 5 (64×80 → 128×160):
-        ├─ TransposedConvBlock(176→48ch) 上采样
+        ├─ TransposedConvBlock(176→48ch) resize-conv 上采样
         ├─ cat([48, x_g 1ch]) → [B, 49, 128, 160]
         ├─ [P2] 扩展输出头:
         │   ├─ output_reduce: 1×1 Conv(49→32) → skip
@@ -758,9 +771,11 @@ coarse_diffuse = clamp(x - est_b, 0, 1)        # 硬减法
 [P1] ResidualRefinementHead:
     cat([coarse, x]) → Conv(2→16) + GELU → Conv(16→16) + GELU → Conv(16→1) + Tanh
     delta ∈ [-1, 1]
-    pred_diffuse = clamp(coarse + 0.05 * delta, 0, 1)
+    pred_diffuse = clamp(coarse + 0.08 * delta, 0, 1)
 
-输出字典: {'r': pred_diffuse, 'g': x_g, 'b': est_b}
+cs_loss = cross_scale_consistency_loss([H4_feat, H8_feat, H16_feat])
+
+输出字典: {'r': pred_diffuse, 'g': x_g, 'b': est_b, 'cs': cs_loss}
 ```
 
 ---
@@ -769,7 +784,7 @@ coarse_diffuse = clamp(x - est_b, 0, 1)        # 硬减法
 
 ### 7.1 EnhancedCompositeLoss（增强复合损失 V3）
 
-X-FFC 使用 `EnhancedCompositeLoss` 作为训练损失，它整合了 10 个子损失项，从像素级、结构级、频域、感知、分割等多个维度约束网络学习：
+X-FFC 使用 `EnhancedCompositeLoss` 作为训练损失，它整合了 11 个子损失项，从像素级、结构级、频域、感知、分割和跨尺度特征一致性等多个维度约束网络学习：
 
 #### 子损失项详解
 
@@ -829,9 +844,15 @@ MS-SSIM 在 3 个尺度上评估结构相似性，对多尺度结构变化更敏
 
 当 `use_ohem=True` 时，SpecularFocalLoss 被替换为 OHEM 版本：先计算所有像素的误差，选出误差最大的 top-30% 像素，对这些"难样本"像素额外加权。最终损失为 `0.5 * base_loss + 0.5 * hard_loss`。
 
+**11. CrossScaleConsistencyLoss（跨尺度一致性辅助损失）**
+
+\[l_{cs} = \text{mean}\left(\text{L1}(R_{h4}, up(R_{h8})) + \text{L1}(R_{h4}, up(R_{h16}))\right)\]
+
+`YFFC.forward()` 会从 H/4、H/8、H/16 融合特征中构造归一化响应图，并统一上采样到 H/4 尺度后计算一致性约束。该项不改变推理输出的主图像路径，只作为训练期辅助标量 `cs` 传入 `EnhancedCompositeLoss`，用于抑制不同尺度对同一结构区域给出相互冲突的响应。
+
 #### 总损失计算
 
-\[l_{total} = \lambda_{ssim} l_{ssim} + \lambda_{l1} l_{l1} + \lambda_{freq} l_{freq} + \lambda_{percep} l_{percep} + \lambda_{spec} l_{spec} + \lambda_{grad} l_{grad} + \lambda_{focal} l_{focal} + \lambda_{dice} l_{dice} + \lambda_{gc} l_{gc}\]
+\[l_{total} = \lambda_{ssim} l_{ssim} + \lambda_{l1} l_{l1} + \lambda_{freq} l_{freq} + \lambda_{percep} l_{percep} + \lambda_{spec} l_{spec} + \lambda_{grad} l_{grad} + \lambda_{focal} l_{focal} + \lambda_{dice} l_{dice} + \lambda_{gc} l_{gc} + \lambda_{cs} l_{cs}\]
 
 所有项 \(\geq 0\)，\(\lambda_{stat}\) 默认为 0（\[P5\] 移除冗余统计损失）。不使用可学习权重（这是导致早期版本出现负数损失的根源），所有权重完全由 \(\lambda\_*\) 和动态调度器控制。
 
@@ -856,6 +877,7 @@ MS-SSIM 在 3 个尺度上评估结构相似性，对多尺度结构变化更敏
 | \(\lambda_{focal}\) | 0.3 | 0.8（上升） |
 | \(\lambda_{dice}\) | 0.1 | 0.3（上升） |
 | \(\lambda_{gc}\) | 0.05 | 0.2（上升） |
+| \(\lambda_{cs}\) | 0.02 | 0.05（上升） |
 | \(\lambda_{grad}\) | 0.5 | 0.3（下降） |
 
 ---
@@ -917,7 +939,7 @@ shadow[name] = decay * shadow[name] + (1 - decay) * param.data
 3. **随机旋转**（p=0.3）：正方形图像支持 90°/180°/270°，非正方形仅支持 180°
 4. **随机裁剪+缩放**（p=0.5）：裁剪比例 0.7\~1.0，裁剪后插值回原始尺寸
 5. **亮度增强**（0.9\~1.1 倍）：同步应用于 input、target 和 gt\_specular
-6. **HighlightAugmentation（合成高光增强）**（p=0.4）：随机叠加 1-6 个高斯 blob 高光（半径 3\~min\_side/20，强度 0.2\~0.7），同步更新 input 和 gt\_specular
+6. **HighlightAugmentation（合成高光增强）**（p=0.5）：随机叠加 1-6 个高斯 blob 高光（半径 3\~min\_side/20，强度 0.2\~0.7），同步更新 input 和 gt\_specular
 7. **梯度真值计算**：对 target 计算空间梯度幅值，以 99.5% 分位数归一化到 \([0,1]\)
 
 ### 8.7 多指标最优模型保存
@@ -989,7 +1011,7 @@ YFFC (X-FFC V3)
   │   ├─ (FFC1, FFC2): FFC_BN_ACT                         // 瓶颈 FFC
   │   ├─ (multiscale_conv): MultiscaleConvBlock            // 多尺度卷积
   │   ├─ (transposed_block_1): TransposedConvBlock_same    // 同尺寸
-  │   ├─ (transposed_block_2 ... _5): TransposedConvBlock  // 上采样
+  │   ├─ (transposed_block_2 ... _5): TransposedConvBlock  // resize-conv 上采样
   │   ├─ (feature_extraction_B): FeatureExtrationLayersB   // 四路特征提取
   │   ├─ (att1 ... att4): Attention_block                  // 注意力门控
   │   ├─ (sa1 ... sa4): SpecularAwareAttention             // ★ 高光感知注意力
@@ -1030,12 +1052,13 @@ YFFC (X-FFC V3)
 | \[S3\] | H/4、H/8、H/16 层级输出 | SwinEncoderBranch | NCHW 多尺度特征 |
 | \[S4\] | 自适应 skip 融合 | AdaptiveSkipFusion | gate + beta 控制 Swin 注入 |
 | \[S5\] | H/16 交叉注意力融合 | CrossModalFusion | ResNet 与 Swin 双向信息交互 |
+| \[S6\] | Top-down 跨尺度回流 | CrossScaleTopDownRefinement | H/16 上下文受限反馈到 H/8/H/4 skip |
 
 ### 流水线与训练改进
 
 | 编号 | 改进 | 位置 | 说明 |
 |------|------|------|------|
-| \[P1\] | 残差精修头 | ResidualRefinementHead | ±0.05 像素级修正 |
+| \[P1\] | 残差精修头 | ResidualRefinementHead | ±0.08 像素级修正 |
 | \[P2\] | 扩展输出头 | MainDecoder | 4 层 + 膨胀 + skip |
 | \[P3\] | MS-SSIM 混合 | EnhancedCompositeLoss | 多尺度结构评估 |
 | \[P4\] | 频域相位损失 | EnhancedCompositeLoss | 相位一致性约束 |
@@ -1046,6 +1069,7 @@ YFFC (X-FFC V3)
 | \[P10\] | 梯度门控注入 | MainDecoder | 边缘区域特征调制 |
 | \[P12\] | SSIM soft clamp | SSIM | 保留梯度流 |
 | \[P13\] | Charbonnier 损失 | EnhancedCompositeLoss | 零点光滑可导 |
+| \[P14\] | 跨尺度一致性 | EnhancedCompositeLoss / YFFC.forward | H/4、H/8、H/16 响应图一致性约束 |
 | \[P15\] | TTA（测试时增强） | \_tta\_forward | 4 翻转推理平均 |
 | \[P16\] | EMA decay 调高 | train\_model | 0.9995 增加平滑 |
 
@@ -1063,7 +1087,7 @@ YFFC (X-FFC V3)
 
 5. **精细化融合策略**：注意力门控跳跃连接（每通道独立权重）、三源融合（自身 + 门控编码器特征 + 增强特征）、梯度图最终层融合——多层次、多来源的融合策略确保信息传递的高效性。
 
-6. **残差精修范式** \[P1\]：先通过物理减法获得粗预测，再通过轻量级网络做微量修正（\(\pm 0.05\)），兼顾物理一致性和像素级精度。
+6. **残差精修范式** \[P1\]：先通过物理减法获得粗预测，再通过轻量级网络做微量修正（\(\pm 0.08\)），兼顾物理一致性和像素级精度。
 
 7. **训练稳定性工程**：分层学习率、EMA、GroupNorm、梯度累积/裁剪、混合精度、NaN/损失尖峰保护、无重启余弦退火、60% 截断的动态权重调度——系统性的工程手段保障了大型网络的训练稳定性和收敛效率。
 
