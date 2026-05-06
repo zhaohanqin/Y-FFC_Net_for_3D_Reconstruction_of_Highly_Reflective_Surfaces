@@ -1,1120 +1,1941 @@
-import torch  # PyTorch 主库
-import torch.nn as nn  # 神经网络模块
-import torch.optim as optim  # 优化器模块
-from torch.utils.data import DataLoader  # 数据加载器
-import os  # 文件与路径操作
-import numpy as np  # 数值计算
-from PIL import Image  # 图像读写
-import matplotlib.pyplot as plt  # 可视化
-from matplotlib import rcParams  # 字体/渲染设置
-from tqdm import tqdm  # 进度条
-import time  # 时间跟踪
-from datetime import datetime, timedelta  # 日期时间处理
-from Y_FFC import YFFC, FringeDataset, SSIM, statistical_loss  # 导入模型、数据集与损失
+"""
+train_v2.py — Y-FFC V2 工程化训练脚本（增强可观测性版）
+=========================================================
 
-def train_model(model, train_loader, val_loader, epochs=100, lr=0.001, device='cuda', 
-                use_amp=True, gradient_accumulation_steps=1, optimizer_config=None, 
-                scheduler_config=None, loss_config=None, training_config=None):
+整合全部改进方案，同时遵循 train.py 的工程规范：
+  - 顶部集中参数配置
+  - tqdm 进度条 + 结构化日志
+  - 多指标最优模型自动保存（综合 / SSIM / Loss）
+  - 训练曲线自动生成（Loss / SSIM / MAE / 子损失）
+  - 训练总结文件（training_summary.txt）
+
+核心训练逻辑（V2 增强部分）：
+  ⭐⭐⭐⭐⭐ 分层 LR / EMA / GN / Warmup / 动态权重
+  ⭐⭐⭐⭐⭐ 输入分辨率自定义 (H, W)，如 (160, 128) / (384, 384)
+  ⭐⭐⭐⭐  EnhancedCompositeLoss（SpecularFocal + Dice + GradConsistency）
+  ⭐⭐⭐⭐  高反光模拟数据增强 HighlightAugmentation
+  ⭐⭐⭐   网络内嵌 SpecularAwareAttention + HighFrequencyEnhancement
+  ⭐⭐     梯度一致性损失 GradientConsistencyLoss
+  ⭐⭐     OHEM 难样本挖掘
+
+增强可观测性：
+  ✅ 终端日志完整展示全部子损失项（SSIM / L1 / Freq / Perceptual / Spec / Stat / Grad / Focal / Dice / GC）
+  ✅ 验证阶段额外计算 MSE / PSNR 指标
+  ✅ 验证样本可视化（输入 / GT / 预测 / 镜面反射 / 梯度 / 差异图）
+  ✅ 子损失历史曲线独立绘制
+  ✅ 训练总结文件包含完整子损失信息
+"""
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.utils.data import Dataset, DataLoader
+import os
+import time
+import math
+import random
+import numpy as np
+from PIL import Image
+from datetime import datetime, timedelta
+from tqdm import tqdm
+from collections import defaultdict
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
+# ── 从统一文件导入所有模型相关模块 ──
+# 原分散在 Y_FFC_v2.py / Y_FFC.py / specular_modules.py 中，
+# 现已整合到 Y_FFC_unified.py 单文件。
+from Y_FFC_unified import (
+    YFFC,
+    build_scheduler,
+    EMA,
+    replace_bn_with_gn,
+    # 高反光专用模块（原 specular_modules.py）
+    EnhancedCompositeLoss,
+    EnhancedPairedTransform,
+    HighlightAugmentation,
+    compute_gradient_target,
+)
+
+
+def set_global_seed(seed):
+    """统一设置训练相关随机种子，seed=None 时保持默认随机行为。"""
+    if seed is None:
+        return
+    seed = int(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
+def seed_worker(worker_id):
+    """DataLoader worker 随机源初始化，配合 generator 保证增强可复现。"""
+    worker_seed = torch.initial_seed() % (2 ** 32)
+    random.seed(worker_seed)
+    np.random.seed(worker_seed)
+
+
+def make_generator(seed, offset=0):
+    if seed is None:
+        return None
+    return torch.Generator().manual_seed(int(seed) + int(offset))
+
+
+def get_lr_groups(optimizer):
+    return {g.get('name', f'group_{idx}'): g['lr']
+            for idx, g in enumerate(optimizer.param_groups)}
+
+
+def format_lr_groups(lr_groups):
+    return ', '.join(f'{name}={lr:.2e}' for name, lr in lr_groups.items())
+
+
+def metric_from_loss(loss_value):
+    if loss_value is None:
+        return float('nan')
+    return 1.0 - float(loss_value)
+
+
+def collect_pretrained_status(model, criterion=None):
+    """收集预训练权重加载状态，写入日志和 summary 便于复现实验。"""
+    statuses = []
+    encoder = getattr(model, 'encoder', None)
+    if encoder is not None:
+        statuses.append(getattr(encoder, 'pretrained_status', 'resnet50: status unknown'))
+        vit_branch = getattr(encoder, 'vit_branch', None)
+        if vit_branch is not None:
+            statuses.append(getattr(vit_branch, 'pretrained_status', 'vit_b_16: status unknown'))
+    if criterion is not None and hasattr(criterion, 'perceptual'):
+        statuses.append(getattr(criterion.perceptual, 'pretrained_status', 'vgg16: status unknown'))
+    return statuses
+
+
+def set_fourier_tukey_window(model, enabled=True, alpha=0.25):
+    changed = 0
+    for module in model.modules():
+        if hasattr(module, 'use_tukey_window'):
+            module.use_tukey_window = bool(enabled)
+            if hasattr(module, 'tukey_alpha'):
+                module.tukey_alpha = float(alpha)
+            changed += 1
+    return changed
+
+
+def apply_ohem_schedule(criterion, epoch, total_epochs, cfg):
+    if not hasattr(criterion, 'use_ohem') or not hasattr(criterion, 'ohem_ratio'):
+        return {}
+    if not cfg.get('USE_OHEM', True):
+        criterion.use_ohem = False
+        return {'use_ohem': False, 'ohem_ratio': 0.0}
+
+    start_ratio = float(cfg.get('OHEM_START_RATIO', 0.3))
+    final_ratio = float(cfg.get('OHEM_FINAL_RATIO', start_ratio))
+    decay_start = float(cfg.get('OHEM_DECAY_START', 0.65))
+    progress = epoch / max(total_epochs - 1, 1)
+
+    if progress <= decay_start:
+        ratio = start_ratio
+    else:
+        t = (progress - decay_start) / max(1.0 - decay_start, 1e-8)
+        ratio = start_ratio + (final_ratio - start_ratio) * min(max(t, 0.0), 1.0)
+
+    criterion.use_ohem = ratio > 0
+    criterion.ohem_ratio = max(ratio, 0.0)
+    return {'use_ohem': criterion.use_ohem, 'ohem_ratio': criterion.ohem_ratio}
+
+
+# ════════════════════════════════════════════════════════════════════════
+# 改进版数据集
+# ════════════════════════════════════════════════════════════════════════
+
+class ImprovedFringeDataset(Dataset):
     """
-    训练模型：执行多轮（epoch）训练与验证，并保存最佳模型权重
-    
-    参数:
-        model: Y-FFC网络模型
-        train_loader: 训练数据加载器
-        val_loader: 验证数据加载器
-        epochs: 训练轮数，默认100轮
-        lr: 学习率，默认0.001
-        device: 计算设备，默认CUDA
-        use_amp: 是否使用混合精度训练，默认True（节省显存）
-        gradient_accumulation_steps: 梯度累积步数，默认1（增大此值可模拟更大的batch_size）
-        optimizer_config: 优化器配置字典
-        scheduler_config: 学习率调度器配置字典
-        loss_config: 损失函数配置字典
-        training_config: 训练策略配置字典
-    
+    改进版数据集：
+      - 支持自定义分辨率 (H, W)，如 (160, 128)、(384, 384)
+      - EnhancedPairedTransform（含高反光模拟）
+      - gt_gradient 使用梯度幅值
+
+    resize 参数说明：
+      - int         : 正方形，如 384 → (384, 384)
+      - (H, W) 元组 : 任意矩形，如 (160, 128)
+      - None        : 不 resize，保持原图大小
+    """
+    def __init__(self, input_dir, target_dir, resize=(160, 128), paired_transform=None):
+        self.input_dir = input_dir
+        self.target_dir = target_dir
+        self.paired_transform = paired_transform
+
+        # 统一 resize 格式为 (H, W) 或 None
+        if resize is None:
+            self.resize_hw = None
+        elif isinstance(resize, (int, float)):
+            self.resize_hw = (int(resize), int(resize))
+        elif isinstance(resize, (tuple, list)) and len(resize) == 2:
+            self.resize_hw = (int(resize[0]), int(resize[1]))
+        else:
+            raise ValueError(f"resize 参数格式不正确: {resize}，应为 int / (H, W) / None")
+
+        self.files = sorted([
+            f for f in os.listdir(input_dir)
+            if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff'))
+        ])
+
+        resize_str = f"{self.resize_hw[0]}×{self.resize_hw[1]}" if self.resize_hw else "原始尺寸"
+        print(f"[Dataset] {len(self.files)} 样本, resize={resize_str}")
+
+    def __len__(self):
+        return len(self.files)
+
+    def __getitem__(self, idx):
+        name = self.files[idx]
+        inp_path = os.path.join(self.input_dir, name)
+
+        # 查找匹配的目标图
+        candidates = [
+            name,
+            name.replace("input_", "target_", 1) if name.startswith("input_") else name,
+            name.replace("input", "target", 1) if name.startswith("input") else name,
+        ]
+        tgt_path = None
+        for c in candidates:
+            p = os.path.join(self.target_dir, c)
+            if os.path.exists(p):
+                tgt_path = p
+                break
+        if tgt_path is None:
+            base, ext = os.path.splitext(name)
+            digits = ''.join(ch for ch in base if ch.isdigit())
+            if digits:
+                p = os.path.join(self.target_dir, f"target_{digits}{ext}")
+                if os.path.exists(p):
+                    tgt_path = p
+        if tgt_path is None:
+            raise FileNotFoundError(f"找不到 '{name}' 的匹配目标, 目录: '{self.target_dir}'")
+
+        inp_pil = Image.open(inp_path).convert('L')
+        tgt_pil = Image.open(tgt_path).convert('L')
+
+        # resize: self.resize_hw = (H, W)，PIL.resize 需要 (W, H)
+        if self.resize_hw is not None:
+            pil_size = (self.resize_hw[1], self.resize_hw[0])  # (W, H)
+            inp_pil = inp_pil.resize(pil_size, Image.LANCZOS)
+            tgt_pil = tgt_pil.resize(pil_size, Image.LANCZOS)
+
+        inp = torch.from_numpy(np.array(inp_pil, dtype=np.float32) / 255.0).unsqueeze(0)
+        tgt = torch.from_numpy(np.array(tgt_pil, dtype=np.float32) / 255.0).unsqueeze(0)
+
+        if self.paired_transform is not None:
+            inp, tgt, gt_spec, gt_grad = self.paired_transform(inp, tgt)
+        else:
+            gt_spec = (inp - tgt).clamp(0, 1)
+            gt_grad = compute_gradient_target(tgt)
+
+        return inp, tgt, gt_spec, gt_grad
+
+
+# ════════════════════════════════════════════════════════════════════════
+# 扩展版动态权重调度（新增 focal/dice/gc 权重调度）
+# ════════════════════════════════════════════════════════════════════════
+
+class ImprovedWeightScheduler:
+    """
+    策略（修复版）：
+      早期(0~30%)   以 L1 快速收敛
+      中期(30~60%)  加大 focal/dice/freq
+      后期(60~100%) 权重冻结在平台值，不再变化 ← 关键修复
+
+    原版问题：权重持续线性增大直到最后一轮，导致后期优化目标不断漂移，
+    与学习率衰减产生冲突，叠加 LR 回弹造成损失突增。
+    """
+    def __init__(self, total_epochs):
+        self.T = max(total_epochs, 1)
+
+    def get_weights(self, ep):
+        # 在 60% 训练进度处截断，之后权重不再变化
+        p = min(ep / self.T, 1.0)
+        p_clamped = min(p / 0.6, 1.0)  # 在 60% 处达到最终值
+
+        return {
+            'lambda_ssim':       1.0,
+            'lambda_l1':         max(0.5, 1.0 - 0.5 * p_clamped),
+            'lambda_freq':       min(0.15, 0.05 + 0.10 * p_clamped),      # 上限降低
+            'lambda_perceptual': min(0.10, 0.02 + 0.08 * p_clamped),      # 上限降低
+            'lambda_spec':       0.5,
+            'lambda_stat':       0.0,    # [P5] 移除冗余 stat 损失
+            'lambda_grad':       max(0.3, 0.5 - 0.2 * p_clamped),
+            'lambda_focal':      min(0.8, 0.3 + 0.5 * p_clamped),         # 上限降低
+            'lambda_dice':       min(0.3, 0.1 + 0.2 * p_clamped),         # 上限降低
+            'lambda_gc':         min(0.2, 0.05 + 0.15 * p_clamped),       # 上限降低
+        }
+
+    def step(self, criterion, ep):
+        w = self.get_weights(ep)
+        criterion.update_weights(**w)
+        return w
+
+
+# ════════════════════════════════════════════════════════════════════════
+# 扩展版分层学习率
+# ════════════════════════════════════════════════════════════════════════
+
+def build_optimizer_v2(model, base_lr=2e-4, weight_decay=1e-4):
+    """分层学习率：预训练编码器 0.1×, FFC/融合 0.5×, 解码器/新模块 1.0×"""
+    enc_pre, ffc_p, dec_p, new_p, other_p = [], [], [], [], []
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            continue
+        if 'sa1' in name or 'sa2' in name or 'sa3' in name or 'sa4' in name or 'hf_enhance' in name:
+            new_p.append(param)
+        elif 'encoder.vit_branch.vit' in name or 'encoder.stem' in name or 'encoder.layer' in name:
+            enc_pre.append(param)
+        elif 'ffc' in name.lower():
+            ffc_p.append(param)
+        elif 'gradient_decoder' in name or 'main_decoder' in name or 'enhancement_layers' in name:
+            dec_p.append(param)
+        else:
+            other_p.append(param)
+
+    groups = [
+        {'params': enc_pre, 'lr': base_lr * 0.1, 'name': 'encoder_pretrained'},
+        {'params': other_p, 'lr': base_lr * 0.5, 'name': 'fusion'},
+        {'params': dec_p,   'lr': base_lr,        'name': 'decoders'},
+        {'params': ffc_p,   'lr': base_lr * 0.5, 'name': 'ffc'},
+        {'params': new_p,   'lr': base_lr,        'name': 'new_modules'},
+    ]
+    groups = [g for g in groups if g['params']]
+    opt = torch.optim.AdamW(groups, weight_decay=weight_decay)
+    for g in groups:
+        n = sum(p.numel() for p in g['params'])
+        print(f"  [{g['name']}] {n:,} params, lr={g['lr']:.8f}")
+    return opt
+
+
+# ════════════════════════════════════════════════════════════════════════
+# EnhancedCompositeLoss 返回的 loss_dict 中可能包含的键名列表
+# 用于统一累积、日志输出和历史追踪
+# ════════════════════════════════════════════════════════════════════════
+
+# 主要的子损失键名（EnhancedCompositeLoss 的 loss_dict 中可能出现的所有键）
+# 'total' 和 'ssim' 是必有的；其余根据配置可能存在也可能为 0
+SUB_LOSS_KEYS = [
+    'total', 'ssim', 'msssim', 'ssim_mix', 'l1', 'freq', 'perceptual',
+    'spec', 'stat', 'grad',
+    'focal', 'dice', 'gc',
+]
+
+# 用于日志输出时的友好名称映射
+SUB_LOSS_DISPLAY_NAMES = {
+    'total':      'Total Loss',
+    'ssim':       'SSIM Loss (1-SSIM)',
+    'msssim':     'MS-SSIM Loss',
+    'ssim_mix':   'SSIM Mix Loss',
+    'l1':         'Weighted Charbonnier',
+    'freq':       'Frequency Loss',
+    'perceptual': 'Perceptual Loss',
+    'spec':       'Specular Loss',
+    'stat':       'Statistical Loss',
+    'grad':       'Gradient Loss',
+    'focal':      'Focal Loss',
+    'dice':       'Dice Loss',
+    'gc':         'Grad Consistency',
+}
+
+
+# ════════════════════════════════════════════════════════════════════════
+# 统一指标计算模块 MetricTracker
+# ════════════════════════════════════════════════════════════════════════
+
+class MetricTracker:
+    """
+    统一指标计算器，供 train_one_epoch 和 validate 共用。
+    避免训练/验证阶段指标计算逻辑不一致或重复代码。
+
+    追踪指标：
+      - SSIM（漫反射分支，1 - ssim_loss，越高越好）
+      - True MAE （漫反射分支，mean(abs(pred-target))）
+      - MSE （漫反射分支，均方误差）
+      - PSNR（漫反射分支，峰值信噪比，dB）
+      - 全部子损失项（来自 EnhancedCompositeLoss 的 loss_dict）
+
+    PSNR 公式（图像范围 [0, 1]）：
+      PSNR = 10 × log10(1 / MSE)
+    当 MSE 极小时（< 1e-10），PSNR 上限设为 60 dB。
+    """
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.n = 0
+        self.tot_loss = 0.0
+        self.tot_ssim = 0.0
+        self.tot_mae = 0.0
+        self.tot_mse = 0.0
+        self.tot_psnr = 0.0
+        self.sub_accum = defaultdict(float)
+        self.region_accum = defaultdict(float)
+        self.region_count = defaultdict(int)
+
+    def update(self, loss_dict, pred, target, gt_specular=None, input_img=None):
+        """
+        更新一个 batch 的指标。
+
+        参数:
+            loss_dict : dict，EnhancedCompositeLoss 返回的 loss_dict
+                        必须包含 'total' 和 'ssim'，可选包含 'l1'/'mae' 等
+            pred      : Tensor，漫反射分支预测输出 (B, 1, H, W)
+            target    : Tensor，漫反射分支真值 (B, 1, H, W)
+        """
+        self.n += 1
+
+        # 主指标
+        self.tot_loss += loss_dict['total']
+        self.tot_ssim += (1.0 - loss_dict['ssim'])
+        true_mae = torch.mean(torch.abs(pred - target)).item()
+        self.tot_mae += true_mae
+
+        # MSE（漫反射分支）
+        mse_val = torch.mean((pred - target) ** 2).item()
+        self.tot_mse += mse_val
+
+        # PSNR = 10 × log10(1 / MSE)，图像范围 [0, 1]
+        if mse_val > 1e-10:
+            self.tot_psnr += 10.0 * math.log10(1.0 / mse_val)
+        else:
+            self.tot_psnr += 60.0  # MSE 极小时设上限
+
+        # 子损失项
+        for k, v in loss_dict.items():
+            self.sub_accum[k] += v
+
+        if gt_specular is not None:
+            self._update_region_metrics(pred, target, gt_specular, input_img)
+
+    def _accumulate_masked_error(self, name, abs_err, sq_err, mask):
+        mask = mask.to(dtype=abs_err.dtype)
+        denom = mask.sum()
+        if denom <= 1:
+            return
+        self.region_accum[f'{name}_mae'] += (abs_err * mask).sum().item() / denom.item()
+        self.region_accum[f'{name}_mse'] += (sq_err * mask).sum().item() / denom.item()
+        self.region_count[f'{name}_mae'] += 1
+        self.region_count[f'{name}_mse'] += 1
+
+    def _update_region_metrics(self, pred, target, gt_specular, input_img=None):
+        with torch.no_grad():
+            abs_err = torch.abs(pred - target)
+            sq_err = (pred - target) ** 2
+            spec_mask = gt_specular > 0.05
+
+            gx = gt_specular[..., :, 1:] - gt_specular[..., :, :-1]
+            gy = gt_specular[..., 1:, :] - gt_specular[..., :-1, :]
+            gx = F.pad(gx, (0, 1, 0, 0), mode='replicate')
+            gy = F.pad(gy, (0, 0, 0, 1), mode='replicate')
+            boundary_mask = torch.sqrt(gx ** 2 + gy ** 2 + 1e-8) > 0.02
+
+            self._accumulate_masked_error('specular_region', abs_err, sq_err, spec_mask)
+            self._accumulate_masked_error('specular_boundary', abs_err, sq_err, boundary_mask)
+            if input_img is not None:
+                self._accumulate_masked_error('saturated_region', abs_err, sq_err, input_img > 0.98)
+
+    def compute(self):
+        """
+        计算 epoch 平均指标。
+
+        返回:
+            avg_loss  : float
+            avg_ssim  : float（越高越好）
+            avg_mae   : float
+            avg_mse   : float
+            avg_psnr  : float（dB）
+            avg_subs  : dict，所有子损失项的平均值
+        """
+        d = max(self.n, 1)
+        return (
+            self.tot_loss / d,
+            self.tot_ssim / d,
+            self.tot_mae / d,
+            self.tot_mse / d,
+            self.tot_psnr / d,
+            {k: v / d for k, v in self.sub_accum.items()},
+            {k: self.region_accum[k] / max(self.region_count[k], 1)
+             for k in self.region_accum.keys()},
+        )
+
+
+# ════════════════════════════════════════════════════════════════════════
+# 训练核心（一个 epoch）—— 增强版：返回全部子损失分量 + MSE/PSNR
+# ════════════════════════════════════════════════════════════════════════
+
+def train_one_epoch(model, loader, criterion, optimizer, scheduler,
+                    scaler, ema, device, accum=4, max_norm=1.0, epoch=0, total_epochs=0):
+    """
+    执行一个 epoch 的训练。
+
     返回:
-        train_losses: 训练损失历史记录
-        val_losses: 验证损失历史记录
+        avg_loss  : float，平均总损失
+        avg_ssim  : float，平均 SSIM（漫反射分支，越高越好）
+        avg_mae   : float，平均 True MAE（漫反射分支）
+        avg_mse   : float，平均 MSE（漫反射分支）
+        avg_psnr  : float，平均 PSNR（漫反射分支，dB）
+        avg_subs  : dict，所有子损失项的 epoch 平均值
+        train_info: dict，记录 spike batch 数和实际 optimizer step 数
     """
-    # 设置默认配置
-    if optimizer_config is None:
-        optimizer_config = {'type': 'adam', 'betas': (0.9, 0.999), 'eps': 1e-8, 'weight_decay': 0.0}
-    if scheduler_config is None:
-        scheduler_config = {'type': 'step', 'step_size': 30, 'gamma': 0.5}
-    if loss_config is None:
-        loss_config = {'ssim_window_size': 11, 'ssim_sigma': 1.5, 
-                      'weight_diffuse': 1.0, 'weight_specular': 1.0, 'weight_gradient': 1.0}
-    if training_config is None:
-        training_config = {'use_grad_clip': False, 'grad_clip_value': 1.0, 
-                          'use_early_stopping': False, 'early_stopping_patience': 20,
-                          'model_save_path': 'best_model.pth', 'checkpoint_dir': 'checkpoints',
-                          'save_every_n_epochs': 0}
-    # 清理CUDA缓存
-    if device.type == 'cuda':
-        torch.cuda.empty_cache()
-        print(f"已清理CUDA缓存，当前显存使用: {torch.cuda.memory_allocated(device)/1024**3:.2f} GB")
-    
-    model.to(device)  # 将模型移动到指定设备（CPU/GPU）
-    
-    # ==================== 初始化优化器 ====================
-    opt_type = optimizer_config.get('type', 'adam').lower()
-    if opt_type == 'adam':
-        optimizer = optim.Adam(
-            model.parameters(), 
-            lr=lr,
-            betas=optimizer_config.get('betas', (0.9, 0.999)),
-            eps=optimizer_config.get('eps', 1e-8),
-            weight_decay=optimizer_config.get('weight_decay', 0.0)
-        )
-        print(f"使用Adam优化器: lr={lr}, betas={optimizer_config.get('betas', (0.9, 0.999))}, weight_decay={optimizer_config.get('weight_decay', 0.0)}")
-    elif opt_type == 'adamw':
-        optimizer = optim.AdamW(
-            model.parameters(),
-            lr=lr,
-            betas=optimizer_config.get('betas', (0.9, 0.999)),
-            eps=optimizer_config.get('eps', 1e-8),
-            weight_decay=optimizer_config.get('weight_decay', 0.01)
-        )
-        print(f"使用AdamW优化器: lr={lr}, weight_decay={optimizer_config.get('weight_decay', 0.01)}")
-    elif opt_type == 'sgd':
-        optimizer = optim.SGD(
-            model.parameters(),
-            lr=lr,
-            momentum=optimizer_config.get('momentum', 0.9),
-            weight_decay=optimizer_config.get('weight_decay', 0.0001)
-        )
-        print(f"使用SGD优化器: lr={lr}, momentum={optimizer_config.get('momentum', 0.9)}")
-    else:
-        raise ValueError(f"不支持的优化器类型: {opt_type}")
-    
-    # ==================== 初始化学习率调度器 ====================
-    sched_type = scheduler_config.get('type', 'step').lower()
-    if sched_type == 'step':
-        scheduler = optim.lr_scheduler.StepLR(
-            optimizer,
-            step_size=scheduler_config.get('step_size', 30),
-            gamma=scheduler_config.get('gamma', 0.5)
-        )
-        print(f"使用StepLR调度器: step_size={scheduler_config.get('step_size', 30)}, gamma={scheduler_config.get('gamma', 0.5)}")
-    elif sched_type == 'cosine':
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(
-            optimizer,
-            T_max=scheduler_config.get('T_max', epochs),
-            eta_min=scheduler_config.get('eta_min', 1e-6)
-        )
-        print(f"使用CosineAnnealingLR调度器: T_max={scheduler_config.get('T_max', epochs)}")
-    elif sched_type == 'plateau':
-        scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer,
-            mode='min',
-            factor=scheduler_config.get('factor', 0.5),
-            patience=scheduler_config.get('patience', 10),
-            verbose=True
-        )
-        print(f"使用ReduceLROnPlateau调度器: patience={scheduler_config.get('patience', 10)}")
-    elif sched_type == 'exponential':
-        scheduler = optim.lr_scheduler.ExponentialLR(
-            optimizer,
-            gamma=scheduler_config.get('gamma', 0.95)
-        )
-        print(f"使用ExponentialLR调度器: gamma={scheduler_config.get('gamma', 0.95)}")
-    else:
-        scheduler = None
-        print("未使用学习率调度器")
-    
-    # 混合精度训练scaler
-    scaler = torch.amp.GradScaler('cuda') if use_amp and device.type == 'cuda' else None
-    
-    # ==================== 定义损失函数 ====================
-    ssim_window_size = loss_config.get('ssim_window_size', 11)
-    ssim_sigma = loss_config.get('ssim_sigma', 1.5)
-    ssim_loss = SSIM(window_size=ssim_window_size, sigma=ssim_sigma)
-    mae_loss = nn.L1Loss()
-    print(f"SSIM损失参数: window_size={ssim_window_size}, sigma={ssim_sigma}")
-    
-    # 损失权重
-    weight_diffuse = loss_config.get('weight_diffuse', 1.0)
-    weight_specular = loss_config.get('weight_specular', 1.0)
-    weight_gradient = loss_config.get('weight_gradient', 1.0)
-    print(f"损失权重: 漫反射={weight_diffuse}, 镜面反射={weight_specular}, 梯度={weight_gradient}")
-    
-    # 记录训练/验证历史损失，用于绘制学习曲线
-    train_losses = []  # 每轮训练平均损失
-    val_losses = []    # 每轮验证平均损失
-    train_accuracies = []  # 每轮训练平均精度（基于SSIM）
-    val_accuracies = []    # 每轮验证平均精度（基于SSIM）
-    epoch_times = []   # 每轮训练时间
-    
-    best_val_loss = float('inf')  # 最佳验证损失（越小越好），用于模型保存
-    
-    # ==================== 训练策略配置 ====================
-    use_grad_clip = training_config.get('use_grad_clip', False)
-    grad_clip_value = training_config.get('grad_clip_value', 1.0)
-    use_early_stopping = training_config.get('use_early_stopping', False)
-    early_stopping_patience = training_config.get('early_stopping_patience', 20)
-    early_stopping_counter = 0
-    model_save_path = training_config.get('model_save_path', 'best_model.pth')
-    checkpoint_dir = training_config.get('checkpoint_dir', 'checkpoints')
-    save_every_n_epochs = training_config.get('save_every_n_epochs', 0)
-    
-    # 创建检查点目录
-    if save_every_n_epochs > 0:
-        os.makedirs(checkpoint_dir, exist_ok=True)
-    
-    if use_grad_clip:
-        print(f"启用梯度裁剪: max_norm={grad_clip_value}")
-    if use_early_stopping:
-        print(f"启用早停策略: patience={early_stopping_patience}")
-    
-    print(f"开始训练，共{epochs}轮，学习率{lr}")
-    if use_amp and device.type == 'cuda':
-        print("使用混合精度训练（AMP）以节省显存")
-    if gradient_accumulation_steps > 1:
-        print(f"使用梯度累积，累积步数: {gradient_accumulation_steps}")
-    
-    # 打印训练开始时间
-    start_time_total = time.time()
-    print(f"\n 训练开始时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("=" * 80)
-    
-    for epoch in range(epochs):  # 逐轮训练
-        epoch_start_time = time.time()  # 记录本轮开始时间
-        
-        # ==================== 训练阶段 ====================
-        model.train()  # 切换到训练模式（启用BN/Dropout等正则化）
-        train_loss = 0  # 本轮训练损失累计
-        train_ssim_total = 0  # 本轮训练SSIM累计（用于计算精度）
-        
-        # 使用 tqdm 展示训练批次进度
-        optimizer.zero_grad()  # 在循环开始前清空梯度
-        
-        for batch_idx, batch in enumerate(tqdm(train_loader, total=len(train_loader), desc=f'Train {epoch+1}/{epochs}', leave=False)):
-            # 将数据移到指定设备
-            inputs, gt_diffuse, gt_specular, gt_gradient = [x.to(device) for x in batch]
-            
-            # ==================== 前向传播（使用混合精度） ====================
-            if use_amp and scaler is not None:
-                with torch.amp.autocast('cuda'):
-                    estimations = model(inputs)  # 模型输出字典：{'r': 漫反射, 'g': 梯度, 'b': 镜面反射}
-                    pred_diffuse = estimations['r']    # 预测漫反射分量
-                    pred_specular = estimations['b']   # 预测镜面反射分量
-                    pred_gradient = estimations['g']   # 预测梯度分量
-                    
-                    # ==================== 损失计算 ====================
-                    # 漫反射分支损失计算
-                    ld_ssim = 1 - ssim_loss(pred_diffuse, gt_diffuse)  # 结构相似性损失
-                    ld_mae = mae_loss(pred_diffuse, gt_diffuse)         # L1 损失
-                    ld_sl = statistical_loss(pred_diffuse, gt_diffuse)  # 统计损失（均值/方差一致性）
-                    ld = ld_ssim + ld_mae + ld_sl  # 漫反射总损失
-                    
-                    # 镜面反射分支损失计算
-                    ls_ssim = 1 - ssim_loss(pred_specular, gt_specular)  # 结构相似性损失
-                    ls_sl = statistical_loss(pred_specular, gt_specular)  # 统计损失
-                    ls = ls_ssim + ls_sl  # 镜面反射总损失
-                    
-                    # 梯度分支损失计算
-                    lg_ssim = 1 - ssim_loss(pred_gradient, gt_gradient)  # 结构相似性损失
-                    lg = lg_ssim  # 梯度损失（仅使用SSIM）
-                    
-                    # 总损失 = 漫反射损失 + 镜面反射损失 + 梯度损失（加权）
-                    loss = weight_diffuse * ld + weight_specular * ls + weight_gradient * lg
-                    loss = loss / gradient_accumulation_steps  # 梯度累积时缩放损失
-                    
-                    # 计算SSIM精度（用于训练精度统计）
-                    train_ssim_total += ssim_loss(pred_diffuse, gt_diffuse).item()
-            else:
-                estimations = model(inputs)  # 模型输出字典：{'r': 漫反射, 'g': 梯度, 'b': 镜面反射}
-                pred_diffuse = estimations['r']    # 预测漫反射分量
-                pred_specular = estimations['b']   # 预测镜面反射分量
-                pred_gradient = estimations['g']   # 预测梯度分量
-                
-                # ==================== 损失计算 ====================
-                # 漫反射分支损失计算
-                ld_ssim = 1 - ssim_loss(pred_diffuse, gt_diffuse)  # 结构相似性损失
-                ld_mae = mae_loss(pred_diffuse, gt_diffuse)         # L1 损失
-                ld_sl = statistical_loss(pred_diffuse, gt_diffuse)  # 统计损失（均值/方差一致性）
-                ld = ld_ssim + ld_mae + ld_sl  # 漫反射总损失
-                
-                # 镜面反射分支损失计算
-                ls_ssim = 1 - ssim_loss(pred_specular, gt_specular)  # 结构相似性损失
-                ls_sl = statistical_loss(pred_specular, gt_specular)  # 统计损失
-                ls = ls_ssim + ls_sl  # 镜面反射总损失
-                
-                # 梯度分支损失计算
-                lg_ssim = 1 - ssim_loss(pred_gradient, gt_gradient)  # 结构相似性损失
-                lg = lg_ssim  # 梯度损失（仅使用SSIM）
-                
-                # 总损失 = 漫反射损失 + 镜面反射损失 + 梯度损失（加权）
-                loss = weight_diffuse * ld + weight_specular * ls + weight_gradient * lg
-                loss = loss / gradient_accumulation_steps  # 梯度累积时缩放损失
-                
-                # 计算SSIM精度（用于训练精度统计）
-                train_ssim_total += ssim_loss(pred_diffuse, gt_diffuse).item()
-            
-            # ==================== 反向传播与参数更新 ====================
-            if use_amp and scaler is not None:
-                scaler.scale(loss).backward()  # 混合精度反向传播
-            else:
-                loss.backward()  # 计算梯度
-            
-            # 梯度累积：每accumulation_steps步更新一次参数
-            if (batch_idx + 1) % gradient_accumulation_steps == 0:
-                # 梯度裁剪（防止梯度爆炸）
-                if use_grad_clip:
-                    if use_amp and scaler is not None:
-                        scaler.unscale_(optimizer)
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_value)
-                
-                if use_amp and scaler is not None:
-                    scaler.step(optimizer)  # 混合精度参数更新
-                    scaler.update()  # 更新scaler
-                else:
-                    optimizer.step()  # 按梯度更新权重
-                optimizer.zero_grad()  # 清空梯度
-            
-            train_loss += loss.item() * gradient_accumulation_steps  # 累计训练损失（恢复原始尺度）
-            
-            # 在进度条上显示当前损失
-            if (batch_idx + 1) % 10 == 0:
-                tqdm.write(f'Epoch {epoch+1}, Batch {batch_idx+1}, Loss: {loss.item() * gradient_accumulation_steps:.6f}')
-        
-        # 处理最后一个不完整的累积批次
-        if (batch_idx + 1) % gradient_accumulation_steps != 0:
-            if use_amp and scaler is not None:
+    model.train()
+    tracker = MetricTracker()
+    optimizer.zero_grad()
+    valid_accum = 0
+    optimizer_steps = 0
+    scheduler_steps = 0
+    spike_batches = 0
+    nonfinite_batches = 0
+
+    pbar = tqdm(enumerate(loader), total=len(loader),
+                desc=f'Train {epoch+1}/{total_epochs}', leave=False)
+    for i, (inp, tgt, gt_s, gt_g) in pbar:
+        inp, tgt = inp.to(device), tgt.to(device)
+        gt_s, gt_g = gt_s.to(device), gt_g.to(device)
+
+        with torch.amp.autocast('cuda', enabled=(device.type == 'cuda')):
+            out = model(inp)
+            with torch.amp.autocast('cuda', enabled=False):
+                loss, ld = criterion(
+                    out['r'].float(), tgt.float(),
+                    out['b'].float(), gt_s.float(),
+                    out['g'].float(), gt_g.float())
+            loss = loss / accum
+
+        # NaN / Inf 保护
+        if not torch.isfinite(loss):
+            tqdm.write(f'[WARNING] Epoch {epoch+1} Batch {i+1}: loss NaN/Inf, 跳过')
+            nonfinite_batches += 1
+            continue
+
+        # [FIX] 损失尖峰保护：如果单批损失超过历史均值的 10 倍，跳过该批次
+        # 防止异常样本或数值不稳定导致的梯度爆炸
+        _current_loss_val = ld['total']
+        if tracker.n > 5:  # 至少积累 5 批数据后才判断
+            _avg_so_far = tracker.tot_loss / tracker.n
+            if _avg_so_far > 0 and _current_loss_val > _avg_so_far * 10.0:
+                tqdm.write(f'[WARNING] Epoch {epoch+1} Batch {i+1}: '
+                           f'loss spike {_current_loss_val:.4f} >> avg {_avg_so_far:.4f}, 跳过')
+                spike_batches += 1
+                continue
+
+        if device.type == 'cuda':
+            scaler.scale(loss).backward()
+        else:
+            loss.backward()
+        valid_accum += 1
+
+        if valid_accum >= accum or ((i + 1) == len(loader) and valid_accum > 0):
+            if device.type == 'cuda':
+                scaler.unscale_(optimizer)
+                nn.utils.clip_grad_norm_(model.parameters(), max_norm)
                 scaler.step(optimizer)
                 scaler.update()
             else:
+                nn.utils.clip_grad_norm_(model.parameters(), max_norm)
                 optimizer.step()
+            if scheduler:
+                scheduler.step()
+                scheduler_steps += 1
             optimizer.zero_grad()
-        
-        # ==================== 验证阶段 ====================
-        model.eval()  # 切换到评估模式（禁用BN/Dropout等）
-        val_loss = 0  # 本轮验证损失累计
-        val_ssim_total = 0  # 本轮验证SSIM累计（用于计算精度）
-        
-        with torch.no_grad():  # 关闭梯度计算以节省显存与加速
-            # 使用 tqdm 展示验证批次进度
-            for batch in tqdm(val_loader, total=len(val_loader), desc=f'Val {epoch+1}/{epochs}', leave=False):
-                inputs, gt_diffuse, gt_specular, gt_gradient = [x.to(device) for x in batch]
-                
-                # 前向传播（不计算梯度，使用混合精度）
-                if use_amp and scaler is not None:
-                    with torch.amp.autocast('cuda'):
-                        estimations = model(inputs)
-                        pred_diffuse = estimations['r']
-                        pred_specular = estimations['b']
-                        pred_gradient = estimations['g']
-                        
-                        # 验证损失计算（与训练阶段相同）
-                        ld_ssim = 1 - ssim_loss(pred_diffuse, gt_diffuse)
-                        ld_mae = mae_loss(pred_diffuse, gt_diffuse)
-                        ld_sl = statistical_loss(pred_diffuse, gt_diffuse)
-                        ld = ld_ssim + ld_mae + ld_sl
-                        
-                        ls_ssim = 1 - ssim_loss(pred_specular, gt_specular)
-                        ls_sl = statistical_loss(pred_specular, gt_specular)
-                        ls = ls_ssim + ls_sl
-                        
-                        lg_ssim = 1 - ssim_loss(pred_gradient, gt_gradient)
-                        lg = lg_ssim
-                        
-                        loss = weight_diffuse * ld + weight_specular * ls + weight_gradient * lg
-                        
-                        # 计算SSIM精度（用于验证精度统计）
-                        val_ssim_total += ssim_loss(pred_diffuse, gt_diffuse).item()
-                else:
-                    estimations = model(inputs)
-                    pred_diffuse = estimations['r']
-                    pred_specular = estimations['b']
-                    pred_gradient = estimations['g']
-                    
-                    # 验证损失计算（与训练阶段相同）
-                    ld_ssim = 1 - ssim_loss(pred_diffuse, gt_diffuse)
-                    ld_mae = mae_loss(pred_diffuse, gt_diffuse)
-                    ld_sl = statistical_loss(pred_diffuse, gt_diffuse)
-                    ld = ld_ssim + ld_mae + ld_sl
-                    
-                    ls_ssim = 1 - ssim_loss(pred_specular, gt_specular)
-                    ls_sl = statistical_loss(pred_specular, gt_specular)
-                    ls = ls_ssim + ls_sl
-                    
-                    lg_ssim = 1 - ssim_loss(pred_gradient, gt_gradient)
-                    lg = lg_ssim
-                    
-                    loss = weight_diffuse * ld + weight_specular * ls + weight_gradient * lg
-                    
-                    # 计算SSIM精度（用于验证精度统计）
-                    val_ssim_total += ssim_loss(pred_diffuse, gt_diffuse).item()
-                
-                val_loss += loss.item()
-        
-        # ==================== 统计与记录 ====================
-        # 计算本轮的平均训练/验证损失和精度
-        avg_train_loss = train_loss / len(train_loader)
-        avg_val_loss = val_loss / len(val_loader)
-        avg_train_acc = train_ssim_total / len(train_loader)  # SSIM作为精度指标
-        avg_val_acc = val_ssim_total / len(val_loader)
-        
-        # 记录损失和精度历史
-        train_losses.append(avg_train_loss)
-        val_losses.append(avg_val_loss)
-        train_accuracies.append(avg_train_acc)
-        val_accuracies.append(avg_val_acc)
-        
-        # 计算本轮耗时和预估剩余时间
-        epoch_time = time.time() - epoch_start_time
-        epoch_times.append(epoch_time)
-        avg_epoch_time = np.mean(epoch_times)
-        remaining_epochs = epochs - (epoch + 1)
-        eta_seconds = avg_epoch_time * remaining_epochs
-        eta = timedelta(seconds=int(eta_seconds))
-        
-        # 获取当前学习率
-        current_lr = optimizer.param_groups[0]['lr']
-        
-        # ==================== 打印详细训练信息 ====================
-        print("\n" + "=" * 80)
-        print(f"Epoch [{epoch+1}/{epochs}] 训练统计")
-        print("=" * 80)
-        print(f"本轮耗时: {epoch_time:.2f}秒 | 平均耗时: {avg_epoch_time:.2f}秒/轮 | 预计剩余: {eta}")
-        print(f"损失值:   训练损失 = {avg_train_loss:.6f} | 验证损失 = {avg_val_loss:.6f}")
-        print(f"精度值:   训练精度 = {avg_train_acc:.4f} | 验证精度 = {avg_val_acc:.4f} (SSIM)")
-        print(f"超参数:   学习率 = {current_lr:.6f} | 批大小 = {train_loader.batch_size} | 累积步数 = {gradient_accumulation_steps}")
+            if ema:
+                ema.update()
+            optimizer_steps += 1
+            valid_accum = 0
+
+        # 使用 MetricTracker 统一累积全部指标（含 MSE / PSNR）
+        with torch.no_grad():
+            tracker.update(ld, out['r'].float(), tgt.float(), gt_s.float(), inp.float())
+
+        # 更新进度条
+        pbar.set_postfix({
+            'loss': f"{ld['total']:.4f}",
+            'ssim': f"{1 - ld['ssim']:.4f}",
+            'l1':   f"{ld.get('l1', ld.get('mae', 0.0)):.4f}",
+        })
+
+    # 如果 epoch 末尾遇到异常 batch，仍需提交之前已累积的正常梯度。
+    if valid_accum > 0:
         if device.type == 'cuda':
-            print(f"显存使用: {torch.cuda.memory_allocated(device)/1024**3:.2f} GB / {torch.cuda.max_memory_allocated(device)/1024**3:.2f} GB (当前/峰值)")
-        
-        # ==================== 保存最佳模型 ====================
-        if avg_val_loss < best_val_loss:
-            best_val_loss = avg_val_loss
-            early_stopping_counter = 0  # 重置早停计数器
-            torch.save(model.state_dict(), model_save_path)
-            print(f'最佳模型已保存: {model_save_path}, 验证损失: {best_val_loss:.6f}, 验证精度: {avg_val_acc:.4f}')
+            scaler.unscale_(optimizer)
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm)
+            scaler.step(optimizer)
+            scaler.update()
         else:
-            early_stopping_counter += 1
-            if use_early_stopping:
-                print(f'⚠️ 验证损失未改善 ({early_stopping_counter}/{early_stopping_patience})')
-        
-        # ==================== 实时绘制训练曲线 ====================
-        if (epoch + 1) % 5 == 0 or epoch == 0:  # 每5轮或第一轮绘制一次
-            output_folder = os.path.dirname(model_save_path)
-            plot_training_curves(train_losses, val_losses, train_accuracies, val_accuracies, 
-                               output_folder, epoch + 1)
-            print(f'训练曲线已更新: {os.path.join(output_folder, "training_curves_realtime.png")}')
-        
-        # ==================== 定期可视化样本结果 ====================
-        if (epoch + 1) % 10 == 0 or epoch == 0:  # 每10轮或第一轮可视化一次
-            output_folder = os.path.dirname(model_save_path)
-            visualize_sample_during_training(model, val_loader, device, output_folder, epoch + 1)
-            print(f'样本可视化已更新: {os.path.join(output_folder, f"sample_epoch_{epoch+1}.png")}')
-        
-        # ==================== 定期保存检查点 ====================
-        if save_every_n_epochs > 0 and (epoch + 1) % save_every_n_epochs == 0:
-            checkpoint_path = os.path.join(checkpoint_dir, f'checkpoint_epoch_{epoch+1}.pth')
-            torch.save({
-                'epoch': epoch + 1,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'train_loss': avg_train_loss,
-                'val_loss': avg_val_loss,
-                'best_val_loss': best_val_loss,
-                'train_acc': avg_train_acc,
-                'val_acc': avg_val_acc
-            }, checkpoint_path)
-            print(f'检查点已保存: {checkpoint_path}')
-            print("=" * 80 + "\n")
-        
-        # ==================== 早停检查 ====================
-        if use_early_stopping and early_stopping_counter >= early_stopping_patience:
-            print(f'\n⛔早停触发！验证损失在 {early_stopping_patience} 轮内未改善，停止训练。')
-            break
-        
-        # ==================== 学习率调度 ====================
-        if scheduler is not None:
-            if sched_type == 'plateau':
-                scheduler.step(avg_val_loss)  # ReduceLROnPlateau需要验证损失
-            else:
-                scheduler.step()  # 其他调度器按epoch步进
-    
-    # 打印训练总结
-    total_time = time.time() - start_time_total
-    total_time_str = str(timedelta(seconds=int(total_time)))
-    print("\n" + "=" * 80)
-    print("训练完成！")
-    print("=" * 80)
-    print(f"总训练时间: {total_time_str}")
-    print(f"最佳验证损失: {best_val_loss:.6f}")
-    print(f"最终训练精度: {train_accuracies[-1]:.4f} | 最终验证精度: {val_accuracies[-1]:.4f}")
-    print("=" * 80)
-    
-    return train_losses, val_losses, train_accuracies, val_accuracies  # 返回训练过程中的损失和精度曲线
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm)
+            optimizer.step()
+        if scheduler:
+            scheduler.step()
+            scheduler_steps += 1
+        optimizer.zero_grad()
+        if ema:
+            ema.update()
+        optimizer_steps += 1
 
-def test_model(model, test_loader, device='cuda'):
+    avg_loss, avg_ssim, avg_mae, avg_mse, avg_psnr, avg_subs, region_metrics = tracker.compute()
+    train_info = {
+        'spike_batches': spike_batches,
+        'nonfinite_batches': nonfinite_batches,
+        'optimizer_steps': optimizer_steps,
+        'scheduler_steps': scheduler_steps,
+    }
+    return avg_loss, avg_ssim, avg_mae, avg_mse, avg_psnr, avg_subs, region_metrics, train_info
+
+
+def _tta_forward(model, inp):
+    """[P15] Test-Time Augmentation：4 次翻转推理取平均。"""
+    preds_b = []
+    preds_g = []
+    for flip_h in [False, True]:
+        for flip_v in [False, True]:
+            x = inp
+            if flip_h: x = torch.flip(x, [-1])
+            if flip_v: x = torch.flip(x, [-2])
+            out = model(x)
+            b = out['b']
+            g = out['g']
+            if flip_v: b = torch.flip(b, [-2])
+            if flip_h: b = torch.flip(b, [-1])
+            if flip_v: g = torch.flip(g, [-2])
+            if flip_h: g = torch.flip(g, [-1])
+            preds_b.append(b)
+            preds_g.append(g)
+    avg_b = torch.stack(preds_b, dim=0).mean(0)
+    avg_g = torch.stack(preds_g, dim=0).mean(0)
+    avg_r = torch.clamp(inp - avg_b, 0.0, 1.0)
+    if hasattr(model, 'refinement_head'):
+        avg_r = model.refinement_head(avg_r, inp, avg_b)
+    return {'r': avg_r, 'b': avg_b, 'g': avg_g}
+
+
+@torch.no_grad()
+def validate(model, loader, criterion, device, epoch=0, total_epochs=0,
+             use_tta=False):
     """
-    测试模型：在测试集上计算评估指标（SSIM/MAE/PSNR），不更新参数
-    
-    参数:
-        model: 训练好的Y-FFC网络模型
-        test_loader: 测试数据加载器
-        device: 计算设备
-    
+    执行验证。
+
     返回:
-        avg_ssim: 平均结构相似性指数
-        avg_mae: 平均绝对误差
-        avg_psnr: 平均峰值信噪比
+        avg_loss  : float，平均总损失
+        avg_ssim  : float，平均 SSIM（漫反射分支，越高越好）
+        avg_mae   : float，平均 True MAE（漫反射分支）
+        avg_mse   : float，平均 MSE（漫反射分支）
+        avg_psnr  : float，平均 PSNR（漫反射分支，dB）
+        avg_subs  : dict，所有子损失项的 epoch 平均值
     """
-    model.eval()  # 切换到评估模式
-    
-    # 初始化损失函数（用于计算指标）
-    ssim_loss = SSIM()  # 用于计算 SSIM 指标
-    mae_loss = nn.L1Loss()  # 用于计算 MAE 指标
-    
-    # 累计指标统计
-    total_ssim = 0  # SSIM 累计
-    total_mae = 0   # MAE 累计
-    total_psnr = 0  # PSNR 累计
-    
-    print("开始模型测试...")
-    
-    with torch.no_grad():  # 不计算梯度，节省内存
-        for batch_idx, batch in enumerate(tqdm(test_loader, total=len(test_loader), desc='Testing', leave=True)):
-            inputs, gt_diffuse, gt_specular, gt_gradient = [x.to(device) for x in batch]
-            
-            # 前向传播
-            estimations = model(inputs)
-            pred_diffuse = estimations['r']     # 漫反射预测
-            pred_specular = estimations['b']    # 镜面反射预测（这里未直接用于指标）
-            pred_gradient = estimations['g']    # 梯度预测（这里未直接用于指标）
-            
-            # ==================== 计算评估指标 ====================
-            ssim_val = ssim_loss(pred_diffuse, gt_diffuse)  # 结构相似性
-            mae_val = mae_loss(pred_diffuse, gt_diffuse)    # 平均绝对误差
-            
-            # PSNR 计算：基于均方误差，值越大表示图像质量越好
-            mse = nn.MSELoss()(pred_diffuse, gt_diffuse)
-            psnr = 20 * torch.log10(1.0 / torch.sqrt(mse))  # PSNR = 20*log10(MAX/√MSE)
-            
-            # 累计指标
-            total_ssim += ssim_val.item()
-            total_mae += mae_val.item()
-            total_psnr += psnr.item()
-            
-            # 在进度条上输出每个 batch 的指标
-            tqdm.write(f'Batch {batch_idx}: SSIM: {ssim_val:.4f}, MAE: {mae_val:.4f}, PSNR: {psnr:.2f}')
-    
-    # ==================== 计算平均指标 ====================
-    avg_ssim = total_ssim / len(test_loader)
-    avg_mae = total_mae / len(test_loader)
-    avg_psnr = total_psnr / len(test_loader)
-    
-    print(f'\n========== 测试结果汇总 ==========')
-    print(f'SSIM: {avg_ssim:.4f} (越接近1越好)')
-    print(f'MAE:  {avg_mae:.4f} (越接近0越好)')
-    print(f'PSNR: {avg_psnr:.2f} dB (越大越好)')
-    
-    return avg_ssim, avg_mae, avg_psnr  # 返回测试集上的平均指标
+    model.eval()
+    tracker = MetricTracker()
 
-def visualize_results(model, test_loader, device='cuda', num_samples=5, output_folder=''):
-    """
-    可视化测试结果：显示输入、预测与差异图，帮助理解模型效果
-    
-    参数:
-        model: 训练好的模型
-        test_loader: 测试数据加载器
-        device: 计算设备
-        num_samples: 要可视化的样本数量
-        output_folder: 输出文件夹路径
-    """
-    model.eval()  # 评估模式
-    
-    # 创建可视化结果子文件夹
-    if output_folder:
-        vis_folder = os.path.join(output_folder, 'visualizations')
-        os.makedirs(vis_folder, exist_ok=True)
-    else:
-        vis_folder = ''
-    
-    # 处理num_samples为None的情况：可视化所有测试样本
-    if num_samples is None:
-        num_samples = len(test_loader)
-    
-    print(f"开始可视化{num_samples}个测试样本...")
-    
-    with torch.no_grad():  # 不进行梯度计算
-        for i, batch in enumerate(tqdm(test_loader, total=min(len(test_loader), num_samples), desc='Visualizing', leave=True)):
-            if i >= num_samples:  # 只可视化指定数量样本
-                break
-                
-            inputs, gt_diffuse, gt_specular, gt_gradient = [x.to(device) for x in batch]
-            
-            # 前向传播获取预测结果
-            estimations = model(inputs)
-            pred_diffuse = estimations['r']     # 预测漫反射
-            pred_specular = estimations['b']    # 预测镜面反射
-            pred_gradient = estimations['g']    # 预测梯度
-            
-            # ==================== 数据转换 ====================
-            # 转为 numpy 数组便于显示（取第一个样本）
-            input_img = inputs[0, 0].cpu().numpy()           # 输入图像
-            gt_diffuse_img = gt_diffuse[0, 0].cpu().numpy() # 真实漫反射
-            pred_diffuse_img = pred_diffuse[0, 0].cpu().numpy() # 预测漫反射
-            pred_specular_img = pred_specular[0, 0].cpu().numpy() # 预测镜面反射
-            pred_gradient_img = pred_gradient[0, 0].cpu().numpy() # 预测梯度
-            
-            # ==================== 创建可视化布局 ====================
-            # 2×3 网格布局，显示所有相关图像
-            fig, axes = plt.subplots(2, 3, figsize=(15, 10))
-            
-            # 第一行：输入、真实漫反射、预测漫反射
-            axes[0, 0].imshow(input_img, cmap='gray')
-            # 英文标题释义：Input (Highly Reflective) = “输入图像（高反射表面）”
-            axes[0, 0].set_title('Input (Highly Reflective)')
-            axes[0, 0].axis('off')
-            
-            axes[0, 1].imshow(gt_diffuse_img, cmap='gray')
-            # 英文标题释义：Ground Truth (Diffuse) = “真实标签（漫反射分量）”
-            axes[0, 1].set_title('Ground Truth (Diffuse)')
-            axes[0, 1].axis('off')
-            
-            axes[0, 2].imshow(pred_diffuse_img, cmap='gray')
-            # 英文标题释义：Predicted (Diffuse) = “网络预测（漫反射分量）”
-            axes[0, 2].set_title('Predicted (Diffuse)')
-            axes[0, 2].axis('off')
-            
-            # 第二行：预测镜面反射、预测梯度、差异图
-            axes[1, 0].imshow(pred_specular_img, cmap='gray')
-            # 英文标题释义：Predicted (Specular) = “网络预测（镜面反射分量）”
-            axes[1, 0].set_title('Predicted (Specular)')
-            axes[1, 0].axis('off')
-            
-            axes[1, 1].imshow(pred_gradient_img, cmap='gray')
-            # 英文标题释义：Predicted (Gradient) = “网络预测（梯度场）”
-            axes[1, 1].set_title('Predicted (Gradient)')
-            axes[1, 1].axis('off')
-            
-            # 显示与真实漫反射的差异（用于评估预测精度）
-            diff = np.abs(pred_diffuse_img - gt_diffuse_img)
-            axes[1, 2].imshow(diff, cmap='hot')  # 热力图显示差异
-            # 英文标题释义：Difference (|Pred - GT|) = “预测与真实的绝对差异”
-            axes[1, 2].set_title('Difference (|Pred - GT|)')
-            axes[1, 2].axis('off')
-            
-            plt.tight_layout()
-            
-            # 保存到输出文件夹
-            if vis_folder:
-                save_path = os.path.join(vis_folder, f'results_sample_{i+1}.png')
-            else:
-                save_path = f'results_sample_{i+1}.png'
-            
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')  # 保存高分辨率结果
-            plt.close()  # 关闭图形，节省内存
-            
-            print(f"样本 {i+1} 可视化完成，已保存为 {save_path}")
+    pbar = tqdm(loader, total=len(loader),
+                desc=f'Val   {epoch+1}/{total_epochs}', leave=False)
+    for inp, tgt, gt_s, gt_g in pbar:
+        inp, tgt = inp.to(device), tgt.to(device)
+        gt_s, gt_g = gt_s.to(device), gt_g.to(device)
 
-def plot_training_curves(train_losses, val_losses, train_accs, val_accs, output_folder, current_epoch):
+        out = _tta_forward(model, inp) if use_tta else model(inp)  # [P15]
+        loss, ld = criterion(out['r'], tgt, out['b'], gt_s, out['g'], gt_g)
+
+        if not torch.isfinite(loss):
+            continue
+
+        tracker.update(ld, out['r'].float(), tgt.float(), gt_s.float(), inp.float())
+
+    return tracker.compute()
+
+
+# ════════════════════════════════════════════════════════════════════════
+# 验证样本可视化（参考 train.py 的 visualize_sample_during_training）
+# ════════════════════════════════════════════════════════════════════════
+
+@torch.no_grad()
+def visualize_sample_during_training(model, vis_loader, device, output_folder,
+                                      current_epoch, num_samples=2):
     """
-    实时绘制训练曲线（损失和精度）
-    
+    训练过程中可视化验证样本结果。
+
+    布局：每个样本一行 2×3 子图
+        第一行：输入图像 | GT 漫反射 | 预测漫反射
+        第二行：预测镜面反射 | 预测梯度 | 差异图（热力图）
+
     参数:
-        train_losses: 训练损失列表
-        val_losses: 验证损失列表
-        train_accs: 训练精度列表
-        val_accs: 验证精度列表
-        output_folder: 输出文件夹
-        current_epoch: 当前epoch数
+        model          : 当前模型
+        vis_loader     : 本次训练固定的可视化样本 DataLoader
+        device         : 计算设备
+        output_folder  : 输出目录
+        current_epoch  : 当前 epoch 编号
+        num_samples    : 可视化样本数（默认 2）
+    """
+    model.eval()
+    vis_dir = os.path.join(output_folder, 'val_visualization')
+    os.makedirs(vis_dir, exist_ok=True)
+
+    batch = next(iter(vis_loader))
+    inputs, gt_diffuse, gt_specular, gt_gradient = [x.to(device) for x in batch]
+
+    estimations = model(inputs)
+    pred_diffuse = estimations['r']
+    pred_specular = estimations['b']
+    pred_gradient = estimations['g']
+
+    actual_samples = min(num_samples, inputs.size(0))
+
+    for s in range(actual_samples):
+        fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+
+        input_img = inputs[s, 0].cpu().numpy()
+        gt_diff_img = gt_diffuse[s, 0].cpu().numpy()
+        pred_diff_img = pred_diffuse[s, 0].cpu().numpy()
+        pred_spec_img = pred_specular[s, 0].cpu().numpy()
+        pred_grad_img = pred_gradient[s, 0].cpu().numpy()
+
+        # 第一行
+        axes[0, 0].imshow(input_img, cmap='gray', vmin=0, vmax=1)
+        axes[0, 0].set_title('Input (Highly Reflective)', fontsize=11)
+        axes[0, 0].axis('off')
+
+        axes[0, 1].imshow(gt_diff_img, cmap='gray', vmin=0, vmax=1)
+        axes[0, 1].set_title('GT Diffuse', fontsize=11)
+        axes[0, 1].axis('off')
+
+        axes[0, 2].imshow(pred_diff_img, cmap='gray', vmin=0, vmax=1)
+        axes[0, 2].set_title('Pred Diffuse', fontsize=11)
+        axes[0, 2].axis('off')
+
+        # 第二行
+        axes[1, 0].imshow(pred_spec_img, cmap='gray', vmin=0, vmax=1)
+        axes[1, 0].set_title('Pred Specular', fontsize=11)
+        axes[1, 0].axis('off')
+
+        axes[1, 1].imshow(pred_grad_img, cmap='gray', vmin=0, vmax=1)
+        axes[1, 1].set_title('Pred Gradient', fontsize=11)
+        axes[1, 1].axis('off')
+
+        diff = np.abs(pred_diff_img - gt_diff_img)
+        im = axes[1, 2].imshow(diff, cmap='hot', vmin=0, vmax=0.3)
+        axes[1, 2].set_title('|Pred - GT| Difference', fontsize=11)
+        axes[1, 2].axis('off')
+        plt.colorbar(im, ax=axes[1, 2], fraction=0.046)
+
+        # 计算当前样本指标
+        sample_mae = np.mean(diff)
+        sample_mse = np.mean(diff ** 2)
+        sample_max_err = np.max(diff)
+
+        fig.suptitle(
+            f'Epoch {current_epoch} - Sample {s+1}  |  '
+            f'MAE={sample_mae:.4f}  MSE={sample_mse:.6f}  MaxErr={sample_max_err:.4f}',
+            fontsize=14, fontweight='bold')
+        plt.tight_layout()
+
+        save_path = os.path.join(vis_dir, f'epoch_{current_epoch:03d}_sample{s+1}.png')
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        plt.close()
+
+    model.train()
+    return vis_dir
+
+
+def build_fixed_visualization_loader(val_dataset, num_samples, num_workers,
+                                     pin_memory=False, seed=None):
+    """
+    为本次训练固定抽取一批验证样本。
+
+    seed=None 时使用当前时间生成种子，因此不同训练文件夹通常会选到不同图像；
+    训练开始后样本索引固定，保证同一次训练中各 epoch 的可视化可直接对比。
+    """
+    dataset_size = len(val_dataset)
+    if dataset_size <= 0:
+        raise ValueError("验证集为空，无法抽取可视化样本")
+
+    sample_count = min(max(int(num_samples), 1), dataset_size)
+    if seed is None:
+        seed = time.time_ns() % (2**63 - 1)
+    seed = int(seed)
+
+    generator = torch.Generator().manual_seed(seed)
+    vis_indices = torch.randperm(dataset_size, generator=generator)[:sample_count].tolist()
+    vis_dataset = torch.utils.data.Subset(val_dataset, vis_indices)
+    vis_loader = DataLoader(
+        vis_dataset,
+        batch_size=sample_count,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        worker_init_fn=seed_worker,
+        generator=make_generator(seed, offset=1))
+    return vis_loader, vis_indices, seed
+
+
+# ════════════════════════════════════════════════════════════════════════
+# 训练曲线绘制
+# ════════════════════════════════════════════════════════════════════════
+
+def plot_training_history(history, output_folder, total_epochs):
+    """
+    绘制完整训练历史曲线（Loss / SSIM / True MAE / MSE），保存为 training_history.png。
+
+    布局：4 行 × 2 列（参考 train.py 风格）
+        左列：Train vs Val 折线图
+        右列：Gap 填充对比图
+    """
+    epochs_range = range(1, len(history['train_losses']) + 1)
+
+    # 固定 4 组指标
+    pairs = [
+        ('train_losses', 'val_losses',  'Loss',  'purple'),
+        ('train_ssims',  'val_ssims',   'SSIM',  'green'),
+        ('train_maes',   'val_maes',    'True MAE',   'orange'),
+        ('train_mses',   'val_mses',    'MSE',   'teal'),
+    ]
+
+    fig, axes = plt.subplots(4, 2, figsize=(16, 20))
+
+    # 左列标签（Diffuse 分支相关的加 "(Diffuse)" 后缀）
+    left_titles = [
+        'Train vs Val Loss',
+        'Train vs Val SSIM (Diffuse)',
+        'Train vs Val True MAE (Diffuse)',
+        'Train vs Val MSE (Diffuse)',
+    ]
+    right_titles = [
+        'Loss Gap (filled)',
+        'SSIM Gap (filled)',
+        'True MAE Gap (filled)',
+        'MSE Gap (filled)',
+    ]
+
+    for row, (tk, vk, label, fill_color) in enumerate(pairs):
+        t_data = history.get(tk, [])
+        v_data = history.get(vk, [])
+        if not t_data or not v_data:
+            continue
+
+        # 左：折线图
+        axes[row, 0].plot(epochs_range, t_data, 'b-o',
+                          label=f'Train {label}' + (' (Diffuse)' if label in ('True MAE', 'MSE') else ''),
+                          linewidth=2, markersize=3)
+        axes[row, 0].plot(epochs_range, v_data, 'r-s',
+                          label=f'Val {label}' + (' (Diffuse)' if label in ('True MAE', 'MSE') else ''),
+                          linewidth=2, markersize=3)
+        axes[row, 0].set_xlabel('Epoch', fontsize=11)
+        axes[row, 0].set_ylabel(label, fontsize=11)
+        axes[row, 0].set_title(left_titles[row], fontsize=13, fontweight='bold')
+        axes[row, 0].legend(fontsize=10)
+        axes[row, 0].grid(True, alpha=0.3)
+        if label == 'SSIM':
+            axes[row, 0].set_ylim([0, 1])
+
+        # 右：填充对比图
+        axes[row, 1].plot(epochs_range, t_data, 'b-',
+                          label=f'Train {label}', linewidth=2, alpha=0.8)
+        axes[row, 1].plot(epochs_range, v_data, 'r-',
+                          label=f'Val {label}', linewidth=2, alpha=0.8)
+        axes[row, 1].fill_between(epochs_range, t_data, v_data, alpha=0.15, color=fill_color)
+        axes[row, 1].set_xlabel('Epoch', fontsize=11)
+        axes[row, 1].set_ylabel(label, fontsize=11)
+        axes[row, 1].set_title(right_titles[row], fontsize=13, fontweight='bold')
+        axes[row, 1].legend(fontsize=10)
+        axes[row, 1].grid(True, alpha=0.3)
+        if label == 'SSIM':
+            axes[row, 1].set_ylim([0, 1])
+
+    fig.suptitle(f'Y-FFC V2 Net  Training History  ({total_epochs} epochs)',
+                 fontsize=16, fontweight='bold', y=1.01)
+    plt.tight_layout()
+
+    os.makedirs(output_folder, exist_ok=True)
+    save_path = os.path.join(output_folder, 'training_history.png')
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    return save_path
+
+
+def plot_individual_curves(history, output_folder, total_epochs):
+    """
+    将 Loss / SSIM / True MAE / MSE 四条训练曲线分别保存为独立图片，
+    放在 output_folder/training_curves/ 文件夹中。
+
+    每张图包含 Train vs Val 两条曲线。
+    """
+    curves_dir = os.path.join(output_folder, 'training_curves')
+    os.makedirs(curves_dir, exist_ok=True)
+
+    epochs_range = range(1, len(history['train_losses']) + 1)
+
+    items = [
+        ('train_losses', 'val_losses', 'Loss',  '损失值 (Loss)', 'loss'),
+        ('train_ssims',  'val_ssims',  'SSIM',  'SSIM',          'ssim'),
+        ('train_maes',   'val_maes',   'True MAE',   'True MAE', 'mae'),
+        ('train_mses',   'val_mses',   'MSE',   'MSE',           'mse'),
+    ]
+
+    saved = []
+    for tk, vk, label, ylabel, fname in items:
+        t_data = history.get(tk, [])
+        v_data = history.get(vk, [])
+        if not t_data or not v_data:
+            continue
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.plot(epochs_range, t_data, 'b-o', label=f'Train {label}', linewidth=2, markersize=3)
+        ax.plot(epochs_range, v_data, 'r-s', label=f'Val {label}',   linewidth=2, markersize=3)
+        ax.set_xlabel('Epoch', fontsize=12)
+        ax.set_ylabel(ylabel, fontsize=12)
+        ax.set_title(f'Train vs Val {label}  ({total_epochs} epochs)',
+                     fontsize=14, fontweight='bold')
+        ax.legend(fontsize=11)
+        ax.grid(True, alpha=0.3)
+        if label == 'SSIM':
+            ax.set_ylim([0, 1])
+
+        plt.tight_layout()
+        p = os.path.join(curves_dir, f'{fname}_curve.png')
+        plt.savefig(p, dpi=200, bbox_inches='tight')
+        plt.close()
+        saved.append(p)
+
+    return curves_dir, saved
+
+
+def plot_sub_loss_history(history, output_folder, total_epochs):
+    """
+    绘制子损失项历史曲线，保存为 sub_loss_history.png。
+    从 history['train_sub_losses'] 和 history['val_sub_losses'] 中读取。
+
+    每个子损失项一张子图，左右排布 Train vs Val。
+    """
+    train_subs = history.get('train_sub_losses', {})
+    val_subs = history.get('val_sub_losses', {})
+
+    if not train_subs:
+        return None
+
+    # 收集所有出现过的子损失键名（排除 'total'，因为已在主图中绘制）
+    all_keys = sorted(set(train_subs.keys()) | set(val_subs.keys()))
+    plot_keys = [k for k in all_keys if k != 'total']
+
+    if not plot_keys:
+        return None
+
+    n_cols = 3
+    n_rows = math.ceil(len(plot_keys) / n_cols)
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 4 * n_rows))
+    if n_rows == 1 and n_cols == 1:
+        axes = np.array([[axes]])
+    elif n_rows == 1:
+        axes = axes.reshape(1, -1)
+    elif n_cols == 1:
+        axes = axes.reshape(-1, 1)
+
+    epochs_range = range(1, len(history['train_losses']) + 1)
+
+    for idx, key in enumerate(plot_keys):
+        r, c = divmod(idx, n_cols)
+        ax = axes[r, c]
+
+        t_data = train_subs.get(key, [])
+        v_data = val_subs.get(key, [])
+        display_name = SUB_LOSS_DISPLAY_NAMES.get(key, key)
+
+        if t_data:
+            ax.plot(epochs_range, t_data, 'b-', label=f'Train', linewidth=1.5, alpha=0.8)
+        if v_data:
+            ax.plot(epochs_range, v_data, 'r-', label=f'Val', linewidth=1.5, alpha=0.8)
+
+        ax.set_title(display_name, fontsize=10, fontweight='bold')
+        ax.set_xlabel('Epoch', fontsize=9)
+        ax.legend(fontsize=8)
+        ax.grid(True, alpha=0.3)
+
+    # 隐藏多余的子图
+    for idx in range(len(plot_keys), n_rows * n_cols):
+        r, c = divmod(idx, n_cols)
+        axes[r, c].set_visible(False)
+
+    fig.suptitle(f'Sub-Loss History  ({total_epochs} epochs)',
+                 fontsize=14, fontweight='bold')
+    plt.tight_layout()
+
+    save_path = os.path.join(output_folder, 'sub_loss_history.png')
+    plt.savefig(save_path, dpi=200, bbox_inches='tight')
+    plt.close()
+    return save_path
+
+
+def plot_training_curves_realtime(history, output_folder, current_epoch):
+    """
+    轻量实时曲线（仅 Loss + SSIM），参考 train.py 中文标签风格。
+    保存为 training_curves_realtime.png。
     """
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
-    epochs = range(1, len(train_losses) + 1)
-    
-    # 绘制损失曲线
-    ax1.plot(epochs, train_losses, 'b-o', label='训练损失', linewidth=2, markersize=4)
-    ax1.plot(epochs, val_losses, 'r-s', label='验证损失', linewidth=2, markersize=4)
-    ax1.set_xlabel('Epoch', fontsize=12)
-    ax1.set_ylabel('损失值 (Loss)', fontsize=12)
-    ax1.set_title(f'训练和验证损失 (Epoch {current_epoch})', fontsize=14, fontweight='bold')
+    epochs = range(1, len(history['train_losses']) + 1)
+
+    # Loss
+    ax1.plot(epochs, history['train_losses'], 'b-o', label='训练损失', linewidth=2, markersize=3)
+    ax1.plot(epochs, history['val_losses'],   'r-s', label='验证损失', linewidth=2, markersize=3)
+    ax1.set_xlabel('Epoch', fontsize=11)
+    ax1.set_ylabel('损失值 (Loss)', fontsize=11)
+    ax1.set_title(f'训练和验证损失 (Epoch {current_epoch})', fontsize=13, fontweight='bold')
     ax1.legend(fontsize=10)
     ax1.grid(True, alpha=0.3)
-    
-    # 绘制精度曲线
-    ax2.plot(epochs, train_accs, 'b-o', label='训练精度 (SSIM)', linewidth=2, markersize=4)
-    ax2.plot(epochs, val_accs, 'r-s', label='验证精度 (SSIM)', linewidth=2, markersize=4)
-    ax2.set_xlabel('Epoch', fontsize=12)
-    ax2.set_ylabel('精度 (Accuracy)', fontsize=12)
-    ax2.set_title(f'训练和验证精度 (Epoch {current_epoch})', fontsize=14, fontweight='bold')
+
+    # SSIM
+    ax2.plot(epochs, history['train_ssims'], 'b-o', label='训练精度 (SSIM)', linewidth=2, markersize=3)
+    ax2.plot(epochs, history['val_ssims'],   'r-s', label='验证精度 (SSIM)', linewidth=2, markersize=3)
+    ax2.set_xlabel('Epoch', fontsize=11)
+    ax2.set_ylabel('精度 (Accuracy)', fontsize=11)
+    ax2.set_title(f'训练和验证精度 (Epoch {current_epoch})', fontsize=13, fontweight='bold')
     ax2.legend(fontsize=10)
     ax2.grid(True, alpha=0.3)
-    ax2.set_ylim([0, 1])  # SSIM范围为0-1
-    
+    ax2.set_ylim([0, 1])
+
     plt.tight_layout()
     save_path = os.path.join(output_folder, 'training_curves_realtime.png')
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
     plt.close()
 
-def visualize_sample_during_training(model, val_loader, device, output_folder, current_epoch):
-    """
-    训练过程中可视化样本结果
-    
-    参数:
-        model: 模型
-        val_loader: 验证数据加载器
-        device: 计算设备
-        output_folder: 输出文件夹
-        current_epoch: 当前epoch数
-    """
-    model.eval()
-    with torch.no_grad():
-        # 获取一个批次的数据
-        batch = next(iter(val_loader))
-        inputs, gt_diffuse, gt_specular, gt_gradient = [x.to(device) for x in batch]
-        
-        # 前向传播
-        estimations = model(inputs)
-        pred_diffuse = estimations['r']
-        pred_specular = estimations['b']
-        pred_gradient = estimations['g']
-        
-        # 转换为numpy
-        input_img = inputs[0, 0].cpu().numpy()
-        gt_diffuse_img = gt_diffuse[0, 0].cpu().numpy()
-        pred_diffuse_img = pred_diffuse[0, 0].cpu().numpy()
-        pred_specular_img = pred_specular[0, 0].cpu().numpy()
-        pred_gradient_img = pred_gradient[0, 0].cpu().numpy()
-        
-        # 创建可视化
-        fig, axes = plt.subplots(2, 3, figsize=(15, 10))
-        
-        axes[0, 0].imshow(input_img, cmap='gray')
-        axes[0, 0].set_title('输入图像', fontsize=12)
-        axes[0, 0].axis('off')
-        
-        axes[0, 1].imshow(gt_diffuse_img, cmap='gray')
-        axes[0, 1].set_title('真实漫反射', fontsize=12)
-        axes[0, 1].axis('off')
-        
-        axes[0, 2].imshow(pred_diffuse_img, cmap='gray')
-        axes[0, 2].set_title('预测漫反射', fontsize=12)
-        axes[0, 2].axis('off')
-        
-        axes[1, 0].imshow(pred_specular_img, cmap='gray')
-        axes[1, 0].set_title('预测镜面反射', fontsize=12)
-        axes[1, 0].axis('off')
-        
-        axes[1, 1].imshow(pred_gradient_img, cmap='gray')
-        axes[1, 1].set_title('预测梯度', fontsize=12)
-        axes[1, 1].axis('off')
-        
-        diff = np.abs(pred_diffuse_img - gt_diffuse_img)
-        im = axes[1, 2].imshow(diff, cmap='hot')
-        axes[1, 2].set_title('差异图', fontsize=12)
-        axes[1, 2].axis('off')
-        plt.colorbar(im, ax=axes[1, 2], fraction=0.046)
-        
-        fig.suptitle(f'Epoch {current_epoch} - 样本可视化', fontsize=16, fontweight='bold')
-        plt.tight_layout()
-        
-        save_path = os.path.join(output_folder, f'sample_epoch_{current_epoch}.png')
-        plt.savefig(save_path, dpi=150, bbox_inches='tight')
-        plt.close()
-    
-    model.train()  # 恢复训练模式
 
-def create_dummy_data(input_dir, target_dir, num_samples=100):
+# ════════════════════════════════════════════════════════════════════════
+# 结构化日志输出辅助函数
+# ════════════════════════════════════════════════════════════════════════
+
+def print_epoch_log(ep, total_epochs, epoch_time, avg_epoch_time, eta,
+                    tl, ts, tm, train_mse, train_psnr,
+                    vl, vs, vm, val_mse, val_psnr,
+                    train_subs, val_subs, weights, lr_groups, train_info, device,
+                    composite, best_val_ssim, best_val_loss):
+    """紧凑版 epoch 日志输出。"""
+    sep = '=' * 78
+    sep2 = '-' * 78
+
+    print(f"\n{sep}")
+    print(f"  Epoch [{ep+1:03d}/{total_epochs}]  耗时: {epoch_time:.1f}s | 均: {avg_epoch_time:.1f}s/ep | ETA: {eta}")
+    print(f"  LR Groups: {format_lr_groups(lr_groups)}")
+    print(f"  {sep2}")
+    print(f"  {'指标':<16s}  {'Train':>12s}  {'Val':>12s}  {'Gap':>12s}")
+    print(f"  {sep2}")
+    print(f"  {'Total Loss':<16s}  {tl:>12.6f}  {vl:>12.6f}  {abs(tl-vl):>12.6f}")
+    print(f"  {'SSIM':<16s}  {ts:>12.4f}  {vs:>12.4f}  {abs(ts-vs):>12.4f}")
+    train_msssim = metric_from_loss(train_subs.get('msssim'))
+    val_msssim = metric_from_loss(val_subs.get('msssim'))
+    train_ssim_mix = metric_from_loss(train_subs.get('ssim_mix'))
+    val_ssim_mix = metric_from_loss(val_subs.get('ssim_mix'))
+    if not math.isnan(train_msssim) and not math.isnan(val_msssim):
+        print(f"  {'MS-SSIM':<16s}  {train_msssim:>12.4f}  {val_msssim:>12.4f}  {abs(train_msssim-val_msssim):>12.4f}")
+    if not math.isnan(train_ssim_mix) and not math.isnan(val_ssim_mix):
+        print(f"  {'SSIM Mix':<16s}  {train_ssim_mix:>12.4f}  {val_ssim_mix:>12.4f}  {abs(train_ssim_mix-val_ssim_mix):>12.4f}")
+    print(f"  {'True MAE':<16s}  {tm:>12.6f}  {vm:>12.6f}  {abs(tm-vm):>12.6f}")
+    print(f"  {'MSE':<16s}  {train_mse:>12.6f}  {val_mse:>12.6f}  {abs(train_mse-val_mse):>12.6f}")
+    print(f"  {'PSNR (dB)':<16s}  {train_psnr:>12.2f}  {val_psnr:>12.2f}  {abs(train_psnr-val_psnr):>12.2f}")
+
+    # ── 子损失项分解（完整显示） ──
+    all_sub_keys = sorted(set(train_subs.keys()) | set(val_subs.keys()))
+    display_keys = [k for k in all_sub_keys if k != 'total']
+    if display_keys:
+        print(f"  {sep2}")
+        print(f"  {'子损失项':<20s}  {'Train':>10s}  {'Val':>10s}  {'Weight':>10s}")
+        print(f"  {sep2}")
+        for k in display_keys:
+            t_val = train_subs.get(k, 0.0)
+            v_val = val_subs.get(k, 0.0)
+            w_val = weights.get(f'lambda_{k}', None)
+            w_str = f'{w_val:.4f}' if w_val is not None else '--'
+            name = SUB_LOSS_DISPLAY_NAMES.get(k, k)
+            print(f"  {name:<20s}  {t_val:>10.6f}  {v_val:>10.6f}  {w_str:>10s}")
+
+    if train_info:
+        print(f"  {sep2}")
+        print(f"  Train steps: optimizer={train_info.get('optimizer_steps', 0)} | "
+              f"scheduler={train_info.get('scheduler_steps', 0)} | "
+              f"spike_skip={train_info.get('spike_batches', 0)} | "
+              f"nonfinite_skip={train_info.get('nonfinite_batches', 0)}")
+
+    # ── 最优 + 显存（合并为一行） ──
+    mem_str = ''
+    if device.type == 'cuda':
+        cur_mem = torch.cuda.memory_allocated(device) / 1024**3
+        peak_mem = torch.cuda.max_memory_allocated(device) / 1024**3
+        mem_str = f'  显存: {cur_mem:.1f}/{peak_mem:.1f}GB'
+    print(f"  {sep2}")
+    print(f"  最优: SSIM={best_val_ssim:.4f} Loss={best_val_loss:.6f} 综合={composite:.4f}{mem_str}")
+    print(sep)
+
+
+# ════════════════════════════════════════════════════════════════════════
+# 训练总结文件
+# ════════════════════════════════════════════════════════════════════════
+
+def save_training_summary(output_folder, cfg, history, best_info, total_time_str):
     """
-    创建虚拟数据集：生成带反射的输入与无反射的目标，用于快速测试训练流程
-    
+    生成 training_summary.txt，包含：
+      ① 训练配置
+      ② 三种最优模型指标
+      ③ 最终 epoch 指标（含子损失分解）
+      ④ 输出文件列表
+    """
+    os.makedirs(output_folder, exist_ok=True)
+    save_path = os.path.join(output_folder, 'training_summary.txt')
+
+    actual_epochs = len(history['train_losses'])
+    final_tr_loss = history['train_losses'][-1] if history['train_losses'] else float('nan')
+    final_vl_loss = history['val_losses'][-1]   if history['val_losses']   else float('nan')
+    final_tr_ssim = history['train_ssims'][-1]  if history['train_ssims']  else float('nan')
+    final_vl_ssim = history['val_ssims'][-1]    if history['val_ssims']    else float('nan')
+    final_tr_msssim = history['train_msssims'][-1] if history.get('train_msssims') else float('nan')
+    final_vl_msssim = history['val_msssims'][-1] if history.get('val_msssims') else float('nan')
+    final_tr_ssim_mix = history['train_ssim_mixes'][-1] if history.get('train_ssim_mixes') else float('nan')
+    final_vl_ssim_mix = history['val_ssim_mixes'][-1] if history.get('val_ssim_mixes') else float('nan')
+    final_tr_mae  = history['train_maes'][-1]   if history['train_maes']   else float('nan')
+    final_vl_mae  = history['val_maes'][-1]     if history['val_maes']     else float('nan')
+    final_vl_mse  = history['val_mses'][-1]     if history.get('val_mses') else None
+    final_vl_psnr = history['val_psnrs'][-1]    if history.get('val_psnrs') else None
+
+    sep = '=' * 64 + '\n'
+    sep2 = '-' * 64 + '\n'
+
+    with open(save_path, 'w', encoding='utf-8') as f:
+        # ① 训练配置
+        f.write(sep)
+        f.write('Training Summary  (Y-FFC V2)\n')
+        f.write(sep)
+        f.write(f'  Generated at      : {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n')
+        f.write(f'  Total Train Time  : {total_time_str}\n\n')
+        f.write('  [Hyperparameters]\n')
+        f.write(f'  Total Epochs      : {actual_epochs}\n')
+        f.write(f'  Batch Size        : {cfg["BATCH_SIZE"]}\n')
+        f.write(f'  Learning Rate     : {cfg["BASE_LR"]}\n')
+        f.write(f'  Seed              : {cfg.get("SEED")}\n')
+        final_lr_groups = cfg.get('FINAL_LR_GROUPS')
+        if final_lr_groups:
+            f.write(f'  Final LR Groups   : {format_lr_groups(final_lr_groups)}\n')
+        f.write(f'  Grad Accum Steps  : {cfg["ACCUMULATION_STEPS"]}'
+                f'  (effective batch = {cfg["BATCH_SIZE"] * cfg["ACCUMULATION_STEPS"]})\n')
+        f.write(f'  Scheduler Steps/Ep: {cfg.get("SCHEDULER_ITERS_PER_EPOCH")}\n')
+        # 格式化图像尺寸
+        img_sz = cfg['IMAGE_SIZE']
+        if img_sz is None:
+            sz_str = 'Original (no resize)'
+        elif isinstance(img_sz, (int, float)):
+            sz_str = f'{int(img_sz)} x {int(img_sz)}'
+        elif isinstance(img_sz, (tuple, list)) and len(img_sz) == 2:
+            sz_str = f'{img_sz[0]} x {img_sz[1]} (H x W)'
+        else:
+            sz_str = str(img_sz)
+        f.write(f'  Image Size        : {sz_str}\n')
+        f.write(f'  Use GN            : {cfg["USE_GN"]}\n')
+        f.write(f'  Use EMA           : {cfg["USE_EMA"]}\n')
+        f.write(f'  Use OHEM          : {cfg["USE_OHEM"]}\n')
+        f.write(f'  OHEM Ratio        : {cfg.get("OHEM_START_RATIO", 0.3)}'
+                f' -> {cfg.get("OHEM_FINAL_RATIO", 0.3)}'
+                f' (decay_start={cfg.get("OHEM_DECAY_START", 0.65)})\n')
+        f.write(f'  Raw/EMA Eval Intv : {cfg.get("RAW_EMA_EVAL_INTERVAL", 0)}\n')
+        f.write(f'  Tukey Window      : {cfg.get("USE_TUKEY_WINDOW", True)}'
+                f' (alpha={cfg.get("TUKEY_ALPHA", 0.25)})\n')
+        f.write(f'  Mixed Precision   : Enabled (AMP)\n')
+        f.write(f'  Val Vis Interval  : {cfg.get("VIS_EVERY_N_EPOCHS", 10)}\n')
+        f.write(f'  Val Vis Samples   : {cfg.get("VIS_NUM_SAMPLES", 2)}\n')
+        f.write(f'  Val Vis Seed Used : {cfg.get("VIS_SAMPLE_SEED_USED")}\n')
+        f.write(f'  Val Vis Indices   : {cfg.get("VIS_SAMPLE_INDICES", [])}\n\n')
+        pretrained_status = cfg.get('PRETRAINED_STATUS', [])
+        if pretrained_status:
+            f.write('  [Pretrained Status]\n')
+            for status in pretrained_status:
+                f.write(f'  - {status}\n')
+            f.write('\n')
+
+        # ② 最优模型
+        f.write(sep)
+        f.write('Best Models\n')
+        f.write(sep)
+        for tag, info in best_info.items():
+            f.write(f'  {tag}\n')
+            f.write(sep2)
+            f.write(f'  Epoch             : {info["epoch"]}\n')
+            f.write(f'  Val Loss          : {info["loss"]:.6f}\n')
+            f.write(f'  Val SSIM          : {info["ssim"]:.4f}\n')
+            if 'msssim' in info and info['msssim'] is not None:
+                f.write(f'  Val MS-SSIM       : {info["msssim"]:.4f}\n')
+            if 'ssim_mix' in info and info['ssim_mix'] is not None:
+                f.write(f'  Val SSIM Mix      : {info["ssim_mix"]:.4f}\n')
+            f.write(f'  Val True MAE      : {info["mae"]:.6f}\n')
+            if 'mse' in info and info['mse'] is not None:
+                f.write(f'  Val MSE           : {info["mse"]:.6f}\n')
+            if 'psnr' in info and info['psnr'] is not None:
+                f.write(f'  Val PSNR          : {info["psnr"]:.2f} dB\n')
+            f.write(f'  Saved Path        : {info["path"]}\n\n')
+
+        # ③ 最终 epoch（含子损失分解）
+        f.write(sep)
+        f.write('Final Epoch Result\n')
+        f.write(sep)
+        f.write(f'  Epoch             : {actual_epochs}\n')
+        f.write(f'  Train Loss        : {final_tr_loss:.6f}\n')
+        f.write(f'  Val   Loss        : {final_vl_loss:.6f}\n')
+        f.write(f'  Train SSIM        : {final_tr_ssim:.4f}\n')
+        f.write(f'  Val   SSIM        : {final_vl_ssim:.4f}\n')
+        f.write(f'  Train MS-SSIM     : {final_tr_msssim:.4f}\n')
+        f.write(f'  Val   MS-SSIM     : {final_vl_msssim:.4f}\n')
+        f.write(f'  Train SSIM Mix    : {final_tr_ssim_mix:.4f}\n')
+        f.write(f'  Val   SSIM Mix    : {final_vl_ssim_mix:.4f}\n')
+        f.write(f'  Train True MAE    : {final_tr_mae:.6f}\n')
+        f.write(f'  Val   True MAE    : {final_vl_mae:.6f}\n')
+        if final_vl_mse is not None:
+            f.write(f'  Val   MSE         : {final_vl_mse:.6f}\n')
+        if final_vl_psnr is not None:
+            f.write(f'  Val   PSNR        : {final_vl_psnr:.2f} dB\n')
+        total_spikes = sum(history.get('spike_batches', []))
+        total_nonfinite = sum(history.get('nonfinite_batches', []))
+        total_optimizer_steps = sum(history.get('optimizer_steps', []))
+        f.write(f'  Spike Batches     : {total_spikes}\n')
+        f.write(f'  Nonfinite Batches : {total_nonfinite}\n')
+        f.write(f'  Optimizer Steps   : {total_optimizer_steps}\n')
+        if history.get('ohem_ratios'):
+            f.write(f'  Final OHEM Ratio  : {history["ohem_ratios"][-1]:.4f}\n')
+        val_regions = history.get('val_region_metrics', {})
+        if val_regions:
+            f.write('\n  [Final Hard-Region Metrics]\n')
+            for k in sorted(val_regions.keys()):
+                vals = val_regions[k]
+                if vals:
+                    f.write(f'  {k:<24s}: {vals[-1]:.6f}\n')
+        raw_ssims = [x for x in history.get('raw_val_ssims', []) if not math.isnan(x)]
+        if raw_ssims:
+            last_idx = max(i for i, x in enumerate(history.get('raw_val_ssims', [])) if not math.isnan(x))
+            f.write('\n  [Last Raw vs EMA Validation]\n')
+            f.write(f'  Epoch             : {last_idx + 1}\n')
+            f.write(f'  Raw Val Loss      : {history["raw_val_losses"][last_idx]:.6f}\n')
+            f.write(f'  Raw Val SSIM      : {history["raw_val_ssims"][last_idx]:.4f}\n')
+            f.write(f'  EMA Val Loss      : {history["val_losses"][last_idx]:.6f}\n')
+            f.write(f'  EMA Val SSIM      : {history["val_ssims"][last_idx]:.4f}\n')
+
+        # 子损失分解（最终 epoch）
+        val_sub = history.get('val_sub_losses', {})
+        train_sub = history.get('train_sub_losses', {})
+        if val_sub:
+            f.write(f'\n  [Final Epoch Sub-Loss Breakdown]\n')
+            f.write(f'  {"Loss Item":<20s}  {"Train":>10s}  {"Val":>10s}\n')
+            f.write(f'  {"-"*50}\n')
+            all_keys = sorted(set(train_sub.keys()) | set(val_sub.keys()))
+            for k in all_keys:
+                if k == 'total':
+                    continue
+                t_list = train_sub.get(k, [])
+                v_list = val_sub.get(k, [])
+                t_val = t_list[-1] if t_list else 0.0
+                v_val = v_list[-1] if v_list else 0.0
+                display_name = SUB_LOSS_DISPLAY_NAMES.get(k, k)
+                f.write(f'  {display_name:<20s}  {t_val:>10.6f}  {v_val:>10.6f}\n')
+        f.write('\n')
+
+        # ④ 文件列表
+        f.write(sep)
+        f.write('Output Files\n')
+        f.write(sep)
+        f.write(f'  Training History  : {os.path.join(output_folder, "training_history.png")}\n')
+        f.write(f'  Individual Curves : {os.path.join(output_folder, "training_curves/")}\n')
+        f.write(f'  Sub-Loss History  : {os.path.join(output_folder, "sub_loss_history.png")}\n')
+        f.write(f'  Realtime Curves   : {os.path.join(output_folder, "training_curves_realtime.png")}\n')
+        f.write(f'  Val Visualization : {os.path.join(output_folder, "val_visualization/")}\n')
+        f.write(f'  This Summary      : {save_path}\n')
+        f.write(sep)
+
+    return save_path
+
+
+# ════════════════════════════════════════════════════════════════════════
+# 训练主函数
+# ════════════════════════════════════════════════════════════════════════
+
+def train_model(cfg):
+    """
+    执行完整训练流程：
+      1. 构建模型、数据集、损失、优化器
+      2. 多 epoch 训练 + 验证（含完整子损失追踪）
+      3. 多指标最优模型保存
+      4. 验证样本可视化
+      5. 训练曲线 + 子损失曲线 + 总结文件
+
     参数:
-        input_dir: 输入图像保存目录
-        target_dir: 目标图像保存目录
-        num_samples: 生成的样本数量
+        cfg: dict，所有训练配置集中于此
+
+    返回:
+        history: dict，包含全部训练历史与最优模型信息
     """
-    os.makedirs(input_dir, exist_ok=True)  # 创建输入目录
-    os.makedirs(target_dir, exist_ok=True)  # 创建目标目录
-    
-    print(f"开始生成{num_samples}个虚拟样本...")
-    
-    for i in range(num_samples):  # 生成指定数量的样本
-        # ==================== 生成基础条纹图案 ====================
-        size = 512  # 图像尺寸
-        x, y = np.meshgrid(np.linspace(0, 2*np.pi, size), np.linspace(0, 2*np.pi, size))  # 创建坐标网格
-        
-        # 基础正弦条纹图案（模拟真实条纹投影）
-        base_pattern = 0.5 + 0.3 * np.sin(10*x + 5*y)  # 基础正弦条纹
-        noise = np.random.normal(0, 0.05, (size, size))  # 添加高斯噪声（模拟真实环境）
-        
-        # 稀疏反射效果（模拟高反射表面的镜面反射）
-        reflection = np.random.uniform(0, 0.4, (size, size)) * (np.random.random((size, size)) > 0.8)
-        
-        # ==================== 生成输入和目标图像 ====================
-        input_pattern = np.clip(base_pattern + noise + reflection, 0, 1)  # 高反射输入（包含镜面反射）
-        target_pattern = np.clip(base_pattern + noise, 0, 1)              # 漫反射目标（无镜面反射）
-        
-        # 保存图像
-        input_img = Image.fromarray((input_pattern * 255).astype(np.uint8))
-        target_img = Image.fromarray((target_pattern * 255).astype(np.uint8))
-        input_img.save(os.path.join(input_dir, f'input_{i:04d}.png'))
-        target_img.save(os.path.join(target_dir, f'target_{i:04d}.png'))
-    
-    print(f"虚拟数据集生成完成！共{num_samples}个样本")
-    print(f"输入图像保存在: {input_dir}")
-    print(f"目标图像保存在: {target_dir}")
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    seed = cfg.get('SEED')
+    set_global_seed(seed)
+    if seed is not None:
+        print(f"随机种子: {int(seed)}")
+    if device.type == 'cuda':
+        torch.cuda.empty_cache()
+        print(f"已清理 CUDA 缓存，当前显存: {torch.cuda.memory_allocated(device)/1024**3:.2f} GB")
+
+    # 规范化 IMAGE_SIZE 为 (H, W) 元组
+    img_sz = cfg['IMAGE_SIZE']
+    if isinstance(img_sz, (int, float)):
+        img_hw = (int(img_sz), int(img_sz))
+    elif isinstance(img_sz, (tuple, list)) and len(img_sz) == 2:
+        img_hw = (int(img_sz[0]), int(img_sz[1]))
+    else:
+        raise ValueError(f"IMAGE_SIZE 格式不正确: {img_sz}，应为 int 或 (H, W)")
+
+    print(f"\n{'=' * 78}")
+    print(f"Y-FFC V2 训练 | 设备={device} | 分辨率={img_hw[0]}×{img_hw[1]}")
+    print(f"{'=' * 78}")
+
+    # ── 输出目录 ──
+    output_folder = cfg['OUTPUT_FOLDER']
+    models_dir = os.path.join(output_folder, 'models')
+    os.makedirs(output_folder, exist_ok=True)
+    os.makedirs(models_dir, exist_ok=True)
+    os.makedirs(os.path.join(output_folder, 'val_visualization'), exist_ok=True)
+    if cfg['SAVE_EVERY_N_EPOCHS'] > 0:
+        os.makedirs(os.path.join(output_folder, 'checkpoints'), exist_ok=True)
+
+    # ══════════ 1. 模型 ══════════
+    model = YFFC()
+    if cfg['USE_GN']:
+        print("[GN] BN -> GN 替换")
+        replace_bn_with_gn(model, 8)
+    tukey_changed = set_fourier_tukey_window(
+        model,
+        enabled=cfg.get('USE_TUKEY_WINDOW', True),
+        alpha=cfg.get('TUKEY_ALPHA', 0.25))
+    print(f"[FourierUnit] Tukey window={cfg.get('USE_TUKEY_WINDOW', True)} "
+          f"alpha={cfg.get('TUKEY_ALPHA', 0.25)} modules={tukey_changed}")
+    model.to(device)
+
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"模型参数: {total_params:,} ({total_params * 4 / 1024 / 1024:.1f} MB)")
+    print(f"  可训练: {trainable_params:,}  冻结: {total_params - trainable_params:,}")
+
+    # ══════════ 2. 数据集 ══════════
+    min_side = min(img_hw)  # 取短边计算高光半径
+    hl_aug = HighlightAugmentation(
+        p=0.4, num_range=(1, 6),
+        radius_range=(3, max(5, min_side // 20)),
+        intensity_range=(0.2, 0.7))
+    aug = EnhancedPairedTransform(highlight_aug=hl_aug)
+
+    full_ds = ImprovedFringeDataset(
+        cfg['INPUT_DIR'], cfg['TARGET_DIR'],
+        resize=img_hw, paired_transform=aug)
+
+    # 数据集划分
+    if cfg['VAL_INPUT_DIR'] and cfg['VAL_TARGET_DIR']:
+        train_ds = full_ds
+        val_ds = ImprovedFringeDataset(
+            cfg['VAL_INPUT_DIR'], cfg['VAL_TARGET_DIR'],
+            resize=img_hw)
+    else:
+        # [P8] 验证集不应有数据增强
+        full_ds_no_aug = ImprovedFringeDataset(
+            cfg['INPUT_DIR'], cfg['TARGET_DIR'],
+            resize=img_hw, paired_transform=None)
+        train_size = int(cfg['TRAIN_SPLIT_RATIO'] * len(full_ds))
+        val_size = len(full_ds) - train_size
+        g = make_generator(seed if seed is not None else 42)
+        rand_idx = torch.randperm(len(full_ds), generator=g).tolist()
+        train_ds = torch.utils.data.Subset(full_ds, rand_idx[:train_size])
+        val_ds = torch.utils.data.Subset(full_ds_no_aug, rand_idx[train_size:])
+
+    train_loader = DataLoader(
+        train_ds, batch_size=cfg['BATCH_SIZE'], shuffle=True,
+        num_workers=cfg['NUM_WORKERS'],
+        pin_memory=(device.type == 'cuda'), drop_last=False,
+        worker_init_fn=seed_worker if seed is not None else None,
+        generator=make_generator(seed, offset=101))
+    val_loader = DataLoader(
+        val_ds, batch_size=cfg['BATCH_SIZE'], shuffle=False,
+        num_workers=cfg['NUM_WORKERS'],
+        pin_memory=(device.type == 'cuda'),
+        worker_init_fn=seed_worker if seed is not None else None,
+        generator=make_generator(seed, offset=202))
+
+    print(f"数据集: 训练={len(train_ds)}, 验证={len(val_ds)}")
+    print(f"批次大小: {cfg['BATCH_SIZE']} × 累积{cfg['ACCUMULATION_STEPS']}"
+          f" = 等效 {cfg['BATCH_SIZE'] * cfg['ACCUMULATION_STEPS']}")
+
+    # 可视化使用单独固定样本集：每次训练随机抽一次，同一次训练全程不变
+    vis_interval = int(cfg.get('VIS_EVERY_N_EPOCHS', 10))
+    vis_num_samples = int(cfg.get('VIS_NUM_SAMPLES', 2))
+    vis_loader = None
+    if vis_interval > 0 and vis_num_samples > 0:
+        vis_seed_cfg = cfg.get('VIS_SAMPLE_SEED')
+        if vis_seed_cfg is None and seed is not None:
+            vis_seed_cfg = int(seed) + 303
+        vis_loader, vis_indices, vis_seed = build_fixed_visualization_loader(
+            val_ds,
+            num_samples=vis_num_samples,
+            num_workers=cfg['NUM_WORKERS'],
+            pin_memory=(device.type == 'cuda'),
+            seed=vis_seed_cfg)
+        cfg['VIS_SAMPLE_SEED_USED'] = vis_seed
+        cfg['VIS_SAMPLE_INDICES'] = vis_indices
+        print(f"可视化样本: 本次训练固定抽取 {len(vis_indices)} 张 "
+              f"(seed={vis_seed}, val_indices={vis_indices})")
+    else:
+        cfg['VIS_SAMPLE_SEED_USED'] = None
+        cfg['VIS_SAMPLE_INDICES'] = []
+        print("可视化样本: 已禁用")
+
+    # ══════════ 3. 损失函数 ══════════
+    criterion = EnhancedCompositeLoss(
+        use_perceptual=True, use_ohem=cfg['USE_OHEM']).to(device)
+    ws = ImprovedWeightScheduler(cfg['EPOCHS'])
+    pretrained_status = collect_pretrained_status(model, criterion)
+    cfg['PRETRAINED_STATUS'] = pretrained_status
+
+    # 打印损失函数结构
+    print(f"\n损失函数: EnhancedCompositeLoss")
+    print(f"  use_perceptual={True}, use_ohem={cfg['USE_OHEM']}")
+    print(f"  子损失项: {', '.join(SUB_LOSS_KEYS)}")
+    print("\n预训练权重状态:")
+    for status in pretrained_status:
+        print(f"  - {status}")
+
+    # ══════════ 4. 优化器 + 调度器 ══════════
+    print("\n分层学习率配置:")
+    optimizer = build_optimizer_v2(model, cfg['BASE_LR'], cfg['WEIGHT_DECAY'])
+    optimizer_steps_per_epoch = max(1, math.ceil(len(train_loader) / cfg['ACCUMULATION_STEPS']))
+    cfg['SCHEDULER_ITERS_PER_EPOCH'] = optimizer_steps_per_epoch
+    scheduler = build_scheduler(
+        optimizer,
+        warmup_iters=min(500, optimizer_steps_per_epoch * 3),
+        total_epochs=cfg['EPOCHS'],
+        iters_per_epoch=optimizer_steps_per_epoch)
+
+    # ══════════ 5. AMP + EMA ══════════
+    scaler = torch.amp.GradScaler('cuda', enabled=(device.type == 'cuda'))
+    ema = EMA(model, cfg['EMA_DECAY']) if cfg['USE_EMA'] else None
+
+    # ══════════ 6. 历史记录 + 最优模型跟踪 ══════════
+    history = {
+        'train_losses': [], 'val_losses': [],
+        'train_ssims':  [], 'val_ssims':  [],
+        'train_msssims': [], 'val_msssims': [],
+        'train_ssim_mixes': [], 'val_ssim_mixes': [],
+        'train_maes':   [], 'val_maes':   [],
+        'val_mses':     [], 'val_psnrs':  [],
+        # 训练阶段不额外计算 MSE/PSNR，用 placeholder 对齐
+        'train_mses':   [], 'train_psnrs': [],
+        # 子损失历史：{key: [epoch_1_avg, epoch_2_avg, ...]}
+        'train_sub_losses': defaultdict(list),
+        'val_sub_losses':   defaultdict(list),
+        'train_region_metrics': defaultdict(list),
+        'val_region_metrics': defaultdict(list),
+        'raw_val_losses': [], 'raw_val_ssims': [], 'raw_val_msssims': [],
+        'raw_val_ssim_mixes': [], 'raw_val_maes': [], 'raw_val_mses': [],
+        'lr_groups': [],
+        'spike_batches': [],
+        'nonfinite_batches': [],
+        'optimizer_steps': [],
+        'scheduler_steps': [],
+        'ohem_ratios': [],
+    }
+    epoch_times = []
+
+    # 多指标最优模型保存路径
+    best_composite_path = os.path.join(models_dir, 'best_model.pth')
+    best_ssim_path      = os.path.join(models_dir, 'best_model_best_ssim.pth')
+    best_loss_path      = os.path.join(models_dir, 'best_model_best_loss.pth')
+    last_model_path     = os.path.join(models_dir, 'last_model.pth')
+
+    COMPOSITE_SSIM_WEIGHT = 0.7
+    COMPOSITE_MAE_WEIGHT = 0.2
+    COMPOSITE_MSE_WEIGHT = 0.1
+    COMPOSITE_NAME = 'Best Overall (SSIM×0.7 + TrueMAE×0.2 + MSE×0.1)'
+    best_composite  = 0.0
+    best_val_ssim   = 0.0
+    best_val_loss   = float('inf')
+
+    best_info = {
+        COMPOSITE_NAME: {
+            'epoch': 0, 'loss': float('inf'), 'ssim': 0.0, 'mae': float('inf'),
+            'msssim': None, 'ssim_mix': None, 'mse': None, 'psnr': None, 'path': best_composite_path},
+        'Best SSIM': {
+            'epoch': 0, 'loss': float('inf'), 'ssim': 0.0, 'mae': float('inf'),
+            'msssim': None, 'ssim_mix': None, 'mse': None, 'psnr': None, 'path': best_ssim_path},
+        'Best Loss': {
+            'epoch': 0, 'loss': float('inf'), 'ssim': 0.0, 'mae': float('inf'),
+            'msssim': None, 'ssim_mix': None, 'mse': None, 'psnr': None, 'path': best_loss_path},
+    }
+
+    # 早停
+    early_stopping_counter = 0
+
+    # ══════════ 打印完整配置 ══════════
+    print(f"\n{'=' * 78}")
+    print("训练配置总览:")
+    print(f"  训练轮数    : {cfg['EPOCHS']}")
+    print(f"  学习率      : {cfg['BASE_LR']}")
+    print(f"  随机种子    : {seed}")
+    print(f"  图像分辨率  : {img_hw[0]} × {img_hw[1]} (H × W)")
+    print(f"  Use GN      : {cfg['USE_GN']}")
+    print(f"  Use EMA     : {cfg['USE_EMA']} (decay={cfg['EMA_DECAY']})")
+    print(f"  Use OHEM    : {cfg['USE_OHEM']} "
+          f"(ratio {cfg.get('OHEM_START_RATIO', 0.3)} -> {cfg.get('OHEM_FINAL_RATIO', 0.3)})")
+    print(f"  Tukey Window: {cfg.get('USE_TUKEY_WINDOW', True)} "
+          f"(alpha={cfg.get('TUKEY_ALPHA', 0.25)})")
+    print(f"  早停策略    : {'启用 (patience=' + str(cfg['EARLY_STOPPING_PATIENCE']) + ')' if cfg['USE_EARLY_STOPPING'] else '禁用'}")
+    print(f"  输出目录    : {os.path.abspath(output_folder)}")
+    print(f"\n模型保存路径:")
+    print(f"  综合最优 -> {best_composite_path}")
+    print(f"  SSIM最优 -> {best_ssim_path}")
+    print(f"  Loss最优 -> {best_loss_path}")
+    print(f"  最新模型 -> {last_model_path}")
+    print(f"  综合评分权重: SSIM×{COMPOSITE_SSIM_WEIGHT:.1f} + TrueMAE归一化×{COMPOSITE_MAE_WEIGHT:.1f} + MSE归一化×{COMPOSITE_MSE_WEIGHT:.1f}")
+
+    # ══════════ 7. 训练循环 ══════════
+    start_time_total = time.time()
+    print(f"\n训练开始: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"{'=' * 78}\n")
+
+    for ep in range(cfg['EPOCHS']):
+        epoch_start = time.time()
+
+        # 动态权重调度
+        w = ws.step(criterion, ep)
+        ohem_state = apply_ohem_schedule(criterion, ep, cfg['EPOCHS'], cfg)
+        if ohem_state:
+            w['ohem_ratio'] = ohem_state.get('ohem_ratio', 0.0)
+
+        # --- 训练 ---
+        tl, ts, tm, train_mse, train_psnr, train_subs, train_regions, train_info = train_one_epoch(
+            model, train_loader, criterion, optimizer, scheduler,
+            scaler, ema, device,
+            accum=cfg['ACCUMULATION_STEPS'],
+            max_norm=cfg['GRAD_CLIP_VALUE'],
+            epoch=ep, total_epochs=cfg['EPOCHS'])
+
+        # --- 验证 ---
+        _use_tta = False
+        raw_metrics = None
+        raw_interval = int(cfg.get('RAW_EMA_EVAL_INTERVAL', 0) or 0)
+        if ema and raw_interval > 0 and (ep == 0 or (ep + 1) % raw_interval == 0):
+            raw_metrics = validate(
+                model, val_loader, criterion, device,
+                epoch=ep, total_epochs=cfg['EPOCHS'], use_tta=_use_tta)
+
+        if ema:
+            ema.apply_shadow()
+        # [P15-FIX] TTA 会导致验证指标突变，训练过程中禁用以保持一致性
+        # TTA 仅在最终评估/推理时使用，不影响训练中的模型选择
+        vl, vs, vm, val_mse, val_psnr, val_subs, val_regions = validate(
+            model, val_loader, criterion, device,
+            epoch=ep, total_epochs=cfg['EPOCHS'], use_tta=_use_tta)
+        if ema:
+            ema.restore()
+
+        epoch_time = time.time() - epoch_start
+        epoch_times.append(epoch_time)
+
+        # 记录主指标历史
+        history['train_losses'].append(tl)
+        history['val_losses'].append(vl)
+        history['train_ssims'].append(ts)
+        history['val_ssims'].append(vs)
+        train_msssim = metric_from_loss(train_subs.get('msssim'))
+        val_msssim = metric_from_loss(val_subs.get('msssim'))
+        train_ssim_mix = metric_from_loss(train_subs.get('ssim_mix'))
+        val_ssim_mix = metric_from_loss(val_subs.get('ssim_mix'))
+        history['train_msssims'].append(train_msssim)
+        history['val_msssims'].append(val_msssim)
+        history['train_ssim_mixes'].append(train_ssim_mix)
+        history['val_ssim_mixes'].append(val_ssim_mix)
+        history['train_maes'].append(tm)
+        history['val_maes'].append(vm)
+        history['val_mses'].append(val_mse)
+        history['val_psnrs'].append(val_psnr)
+        history['train_mses'].append(train_mse)
+        history['train_psnrs'].append(train_psnr)
+        if raw_metrics is not None:
+            raw_vl, raw_vs, raw_vm, raw_mse, raw_psnr, raw_subs, raw_regions = raw_metrics
+            history['raw_val_losses'].append(raw_vl)
+            history['raw_val_ssims'].append(raw_vs)
+            history['raw_val_msssims'].append(metric_from_loss(raw_subs.get('msssim')))
+            history['raw_val_ssim_mixes'].append(metric_from_loss(raw_subs.get('ssim_mix')))
+            history['raw_val_maes'].append(raw_vm)
+            history['raw_val_mses'].append(raw_mse)
+        else:
+            raw_regions = {}
+            for key in ('raw_val_losses', 'raw_val_ssims', 'raw_val_msssims',
+                        'raw_val_ssim_mixes', 'raw_val_maes', 'raw_val_mses'):
+                history[key].append(float('nan'))
+        history['spike_batches'].append(train_info.get('spike_batches', 0))
+        history['nonfinite_batches'].append(train_info.get('nonfinite_batches', 0))
+        history['optimizer_steps'].append(train_info.get('optimizer_steps', 0))
+        history['scheduler_steps'].append(train_info.get('scheduler_steps', 0))
+        history['ohem_ratios'].append(w.get('ohem_ratio', float('nan')))
+
+        # 记录子损失历史
+        for k, v in train_subs.items():
+            history['train_sub_losses'][k].append(v)
+        for k, v in val_subs.items():
+            history['val_sub_losses'][k].append(v)
+        for k, v in train_regions.items():
+            history['train_region_metrics'][k].append(v)
+        for k, v in val_regions.items():
+            history['val_region_metrics'][k].append(v)
+
+        # ETA
+        avg_epoch_time = np.mean(epoch_times)
+        remaining = avg_epoch_time * (cfg['EPOCHS'] - ep - 1)
+        eta = timedelta(seconds=int(remaining))
+        lr_groups = get_lr_groups(optimizer)
+        history['lr_groups'].append(lr_groups.copy())
+
+        # [FIX] LR 回弹检测：若 LR 比上一 epoch 增加超过 50%，发出警告
+        if ep > 0 and hasattr(train_model, '_prev_lr_groups'):
+            for name, lr in lr_groups.items():
+                prev_lr = train_model._prev_lr_groups.get(name)
+                if prev_lr is not None and lr > prev_lr * 1.5 and lr > 1e-5:
+                    print(f"  ⚠️ [LR 异常] {name}: {prev_lr:.2e} -> {lr:.2e}")
+        train_model._prev_lr_groups = lr_groups.copy()
+
+        # ── 多指标最优模型保存 ──
+        composite = (
+            COMPOSITE_SSIM_WEIGHT * vs
+            + COMPOSITE_MAE_WEIGHT * (1.0 / (1.0 + vm))
+            + COMPOSITE_MSE_WEIGHT * (1.0 / (1.0 + val_mse))
+        )
+
+        # ── 结构化日志 ──
+        print_epoch_log(
+            ep, cfg['EPOCHS'], epoch_time, avg_epoch_time, eta,
+            tl, ts, tm, train_mse, train_psnr,
+            vl, vs, vm, val_mse, val_psnr,
+            train_subs, val_subs, w, lr_groups, train_info, device,
+            composite, best_val_ssim, best_val_loss)
+        if raw_metrics is not None:
+            print(f"  Raw vs EMA: raw_ssim={raw_metrics[1]:.4f}, ema_ssim={vs:.4f}, "
+                  f"raw_loss={raw_metrics[0]:.6f}, ema_loss={vl:.6f}")
+        if val_regions:
+            region_line = ', '.join(f'{k}={v:.6f}' for k, v in sorted(val_regions.items()))
+            print(f"  Hard-region metrics (Val): {region_line}")
+
+        # ── 模型保存逻辑 ──
+        improved_flags = []
+
+        def _save_best(state_dict, path):
+            sd = {
+                'epoch': ep + 1,
+                'model_state_dict': state_dict,
+                'optimizer_state_dict': optimizer.state_dict(),
+                'best_ssim': vs,
+                'val_loss': vl,
+            }
+            if ema:
+                sd['ema'] = ema.shadow
+                sd['ema_shadow'] = ema.shadow
+            if scaler is not None:
+                sd['scaler_state_dict'] = scaler.state_dict()
+            torch.save(sd, path)
+
+        # 策略 A：综合最优
+        if composite > best_composite:
+            best_composite = composite
+            early_stopping_counter = 0
+            _save_best(model.state_dict(), best_composite_path)
+            improved_flags.append(f'综合↑{composite:.4f}')
+            best_info[COMPOSITE_NAME].update(
+                {'epoch': ep + 1, 'loss': vl, 'ssim': vs, 'mae': vm,
+                 'msssim': val_msssim, 'ssim_mix': val_ssim_mix,
+                 'mse': val_mse, 'psnr': val_psnr})
+        else:
+            early_stopping_counter += 1
+
+        # 策略 B：SSIM 最优
+        if vs > best_val_ssim:
+            best_val_ssim = vs
+            _save_best(model.state_dict(), best_ssim_path)
+            improved_flags.append(f'SSIM↑{vs:.4f}')
+            best_info['Best SSIM'].update(
+                {'epoch': ep + 1, 'loss': vl, 'ssim': vs, 'mae': vm,
+                 'msssim': val_msssim, 'ssim_mix': val_ssim_mix,
+                 'mse': val_mse, 'psnr': val_psnr})
+
+        # 策略 C：Loss 最优
+        if vl < best_val_loss:
+            best_val_loss = vl
+            _save_best(model.state_dict(), best_loss_path)
+            improved_flags.append(f'Loss↓{vl:.6f}')
+            best_info['Best Loss'].update(
+                {'epoch': ep + 1, 'loss': vl, 'ssim': vs, 'mae': vm,
+                 'msssim': val_msssim, 'ssim_mix': val_ssim_mix,
+                 'mse': val_mse, 'psnr': val_psnr})
+
+        if improved_flags:
+            print(f"  ✅ 模型更新: {' | '.join(improved_flags)}")
+        else:
+            if cfg['USE_EARLY_STOPPING']:
+                print(f"  ⚠️ 未改善 ({early_stopping_counter}/{cfg['EARLY_STOPPING_PATIENCE']})")
+            else:
+                print(f"  -- 本轮无改善")
+
+        # ── 实时曲线 ──
+        if (ep + 1) % 5 == 0 or ep == 0:
+            plot_training_curves_realtime(history, output_folder, ep + 1)
+
+        # ── 验证样本可视化 ──
+        if vis_loader is not None and ((ep + 1) % vis_interval == 0 or ep == 0):
+            if ema:
+                ema.apply_shadow()
+            vis_path = visualize_sample_during_training(
+                model, vis_loader, device, output_folder,
+                current_epoch=ep + 1, num_samples=vis_num_samples)
+            if ema:
+                ema.restore()
+            print(f"  样本可视化已保存: {vis_path}")
+
+        # ── 定期检查点 ──
+        if cfg['SAVE_EVERY_N_EPOCHS'] > 0 and (ep + 1) % cfg['SAVE_EVERY_N_EPOCHS'] == 0:
+            ckpt_path = os.path.join(output_folder, 'checkpoints', f'checkpoint_epoch_{ep+1}.pth')
+            ckpt = {
+                'epoch': ep + 1,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'best_composite': best_composite,
+                'best_val_ssim': best_val_ssim,
+                'best_val_loss': best_val_loss,
+            }
+            if scheduler is not None:
+                ckpt['scheduler_state_dict'] = scheduler.state_dict()
+            if scaler is not None:
+                ckpt['scaler_state_dict'] = scaler.state_dict()
+            if ema:
+                ckpt['ema'] = ema.shadow
+                ckpt['ema_shadow'] = ema.shadow
+            torch.save(ckpt, ckpt_path)
+            print(f"  检查点已保存: {ckpt_path}")
+
+        # ── 早停 ──
+        if cfg['USE_EARLY_STOPPING'] and early_stopping_counter >= cfg['EARLY_STOPPING_PATIENCE']:
+            print(f"\n⛔ 早停触发！综合评分在 {cfg['EARLY_STOPPING_PATIENCE']} 轮内未改善。")
+            break
+
+    # ══════════ 8. 保存 last_model ══════════
+    last_ckpt = {
+        'epoch': ep + 1,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+    }
+    if scheduler is not None:
+        last_ckpt['scheduler_state_dict'] = scheduler.state_dict()
+    if scaler is not None:
+        last_ckpt['scaler_state_dict'] = scaler.state_dict()
+    if ema:
+        last_ckpt['ema'] = ema.shadow
+        last_ckpt['ema_shadow'] = ema.shadow
+    torch.save(last_ckpt, last_model_path)
+
+    # ══════════ 9. 训练总结 ══════════
+    total_time = time.time() - start_time_total
+    total_time_str = str(timedelta(seconds=int(total_time)))
+    actual_epochs = len(history['train_losses'])
+
+    print(f"\n{'=' * 78}")
+    print("训练完成！")
+    print(f"{'=' * 78}")
+    print(f"  总训练时间   : {total_time_str}")
+    print(f"  实际完成轮数 : {actual_epochs}")
+    print(f"  最佳综合评分 : {best_composite:.4f}"
+          f"  (Epoch {best_info[COMPOSITE_NAME]['epoch']})")
+    print(f"  最佳 SSIM    : {best_val_ssim:.4f}"
+          f"  (Epoch {best_info['Best SSIM']['epoch']})")
+    print(f"  最佳 Loss    : {best_val_loss:.6f}"
+          f"  (Epoch {best_info['Best Loss']['epoch']})")
+
+    # 最终 epoch 子损失总览
+    print(f"\n  最终 Epoch 子损失分解 (Val):")
+    val_sub = history['val_sub_losses']
+    for k in sorted(val_sub.keys()):
+        if k == 'total':
+            continue
+        vals = val_sub[k]
+        if vals:
+            display_name = SUB_LOSS_DISPLAY_NAMES.get(k, k)
+            print(f"    {display_name:<20s}: {vals[-1]:.6f}")
+
+    # 训练历史曲线
+    print("\n生成训练历史曲线...")
+    history_path = plot_training_history(history, output_folder, actual_epochs)
+    print(f"  -> {history_path}")
+
+    # 单独指标曲线
+    print("生成单独指标曲线...")
+    curves_dir, curves_list = plot_individual_curves(history, output_folder, actual_epochs)
+    for cp in curves_list:
+        print(f"  -> {cp}")
+
+    # 子损失历史曲线
+    print("生成子损失历史曲线...")
+    sub_loss_path = plot_sub_loss_history(history, output_folder, actual_epochs)
+    if sub_loss_path:
+        print(f"  -> {sub_loss_path}")
+
+    # 训练总结文件
+    print("生成训练总结文件...")
+    cfg['FINAL_LR_GROUPS'] = get_lr_groups(optimizer)
+    summary_path = save_training_summary(output_folder, cfg, history, best_info, total_time_str)
+    print(f"  -> {summary_path}")
+
+    # 文件结构
+    print(f"\n{'=' * 78}")
+    print(f"📁 所有结果已保存到: {os.path.abspath(output_folder)}")
+    print(f"{'=' * 78}")
+    print(f"  {output_folder}/")
+    print(f"  ├── models/")
+    print(f"  │   ├── best_model.pth             (综合评分最优)")
+    print(f"  │   ├── best_model_best_ssim.pth   (SSIM 最优)")
+    print(f"  │   ├── best_model_best_loss.pth   (Loss 最优)")
+    print(f"  │   └── last_model.pth             (最后一轮)")
+    print(f"  ├── training_curves/               (各指标独立曲线)")
+    print(f"  │   ├── loss_curve.png")
+    print(f"  │   ├── ssim_curve.png")
+    print(f"  │   ├── mae_curve.png")
+    print(f"  │   └── mse_curve.png")
+    print(f"  ├── val_visualization/              (验证样本可视化)")
+    print(f"  ├── training_history.png            (Loss / SSIM / True MAE / MSE 总览)")
+    print(f"  ├── sub_loss_history.png            (子损失项历史曲线)")
+    print(f"  ├── training_curves_realtime.png    (实时 Loss + SSIM)")
+    print(f"  └── training_summary.txt            (配置 / 最优 Epoch / 总结)")
+    if cfg['SAVE_EVERY_N_EPOCHS'] > 0:
+        print(f"  └── checkpoints/                   (定期检查点)")
+    print(f"{'=' * 78}")
+
+    history['best_info'] = best_info
+    history['total_time_str'] = total_time_str
+    history['actual_epochs'] = actual_epochs
+    return history
+
+
+# ════════════════════════════════════════════════════════════════════════
+# 主函数：参数集中配置区
+# ════════════════════════════════════════════════════════════════════════
 
 def main():
     """
-    主函数：执行完整的训练、测试和可视化流程
+    主函数：所有训练参数在此集中配置。
+    修改实验设置时只需修改这一个区域。
     """
     print("=" * 60)
-    print("Y-FFC Net 训练程序启动")
-    print("=" * 60)
-    
-    # ==================== 训练参数配置区域 ====================
-    # 在这里修改训练参数，无需深入代码内部
-    
-    # ========== 基础训练参数 ==========
-    # 训练轮数
-    EPOCHS = 200  # 训练轮数，建议范围：50-200
-    
-    # 学习率
-    LEARNING_RATE = 0.0005  # 初始学习率，建议范围：0.0001-0.01
-    
-    # 批次大小
-    BATCH_SIZE = 30  # 每批处理的样本数，显存不足时使用1，充足时可用2-4
-    
-    # 梯度累积步数（用于模拟更大的batch_size）
-    GRADIENT_ACCUMULATION_STEPS = 3  # 梯度累积步数，等效batch_size = BATCH_SIZE × GRADIENT_ACCUMULATION_STEPS
-    
-    # ========== 优化器参数 ==========
-    # 优化器类型：'adam', 'sgd', 'adamw'
-    OPTIMIZER_TYPE = 'adam'  # Adam: 自适应学习率，适合大多数任务
-    
-    # Adam优化器参数
-    ADAM_BETAS = (0.9, 0.999)  # Adam的beta参数，控制动量和二阶矩估计
-    ADAM_EPS = 1e-8  # Adam的epsilon，防止除零
-    ADAM_WEIGHT_DECAY = 0.0  # L2正则化系数，0表示不使用，建议范围：0-0.01
-    
-    # SGD优化器参数（仅当OPTIMIZER_TYPE='sgd'时使用）
-    SGD_MOMENTUM = 0.9  # SGD动量，建议范围：0.9-0.99
-    SGD_WEIGHT_DECAY = 0.0001  # SGD权重衰减
-    
-    # ========== 学习率调度器参数 ==========
-    # 学习率调度器类型：'step', 'cosine', 'plateau', 'exponential'
-    SCHEDULER_TYPE = 'step'  # step: 阶梯式衰减，cosine: 余弦退火，plateau: 自适应衰减
-    
-    # StepLR参数（阶梯式衰减）
-    STEP_SIZE = 30  # 每隔多少轮衰减一次学习率
-    GAMMA = 0.5  # 学习率衰减系数，新学习率 = 旧学习率 × gamma
-    
-    # CosineAnnealingLR参数（余弦退火）
-    T_MAX = 50  # 余弦周期，通常设置为总训练轮数
-    ETA_MIN = 1e-6  # 最小学习率
-    
-    # ReduceLROnPlateau参数（自适应衰减）
-    PATIENCE = 10  # 验证损失不下降的容忍轮数
-    PLATEAU_FACTOR = 0.5  # 衰减系数
-    
-    # ========== 损失函数参数 ==========
-    # SSIM损失函数参数
-    SSIM_WINDOW_SIZE = 11  # SSIM高斯窗口大小，建议范围：7-15（奇数）
-    SSIM_SIGMA = 1.5  # SSIM高斯标准差，建议范围：1.0-2.0
-    
-    # 损失权重配置
-    LOSS_WEIGHT_DIFFUSE = 1.0  # 漫反射损失权重
-    LOSS_WEIGHT_SPECULAR = 1.0  # 镜面反射损失权重
-    LOSS_WEIGHT_GRADIENT = 1.0  # 梯度损失权重
-    
-    # ========== 图像和数据参数 ==========
-    # 图像尺寸设置
-    # 选项1：正方形图像 - 设置为单个整数，例如：IMAGE_RESIZE = 1024
-    # 选项2：矩形图像 - 设置为元组 (高度, 宽度)，例如：IMAGE_RESIZE = (768, 1024)
-    # 选项3：使用原始尺寸 - 设置为 None
-    # 注意：图像尺寸越大，显存占用越多。建议从512开始，根据显存情况逐步增大
-    IMAGE_RESIZE = (160,128)  # 推荐尺寸：512(4GB显存), 768(8GB显存), 1024(12GB+显存)
-    
-    # 数据集划分比例
-    TRAIN_SPLIT_RATIO = 0.8  # 训练集比例，0.8表示80%训练，20%验证
-    
-    # 数据加载器参数
-    NUM_WORKERS = 0  # 数据加载工作进程数，Windows下建议使用0，Linux可以设置为2-4
-    PIN_MEMORY = True  # 是否将数据固定在内存中（加速GPU传输）
-    SHUFFLE_TRAIN = True  # 是否打乱训练数据
-    
-    # ========== 训练策略参数 ==========
-    # 混合精度训练（节省显存）
-    USE_AMP = True  # True=启用混合精度训练，False=使用全精度
-    
-    # 梯度裁剪（防止梯度爆炸）
-    USE_GRAD_CLIP = False  # 是否启用梯度裁剪
-    GRAD_CLIP_VALUE = 1.0  # 梯度裁剪阈值
-    
-    # 早停策略
-    USE_EARLY_STOPPING = False  # 是否启用早停
-    EARLY_STOPPING_PATIENCE = 20  # 验证损失不下降的最大容忍轮数
-    
-    # ==================== 模型保存和可视化 ==========
-    # 创建带时间戳的实验文件夹（与train_enhanced.py保持一致）
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    OUTPUT_FOLDER = f'experiments/original_yffc_{timestamp}'  # 主输出文件夹
-    
-    # 创建输出目录结构
-    os.makedirs(OUTPUT_FOLDER, exist_ok=True)
-    os.makedirs(f"{OUTPUT_FOLDER}/models", exist_ok=True)
-    os.makedirs(f"{OUTPUT_FOLDER}/logs", exist_ok=True)
-    os.makedirs(f"{OUTPUT_FOLDER}/visualizations", exist_ok=True)
-    
-    print(f"\n 实验输出目录: {os.path.abspath(OUTPUT_FOLDER)}")
-    print("   所有训练结果将保存在此文件夹中\n")
-    
-    # 模型保存路径（相对于OUTPUT_FOLDER）
-    MODEL_SAVE_PATH = 'best_model.pth'  # 最佳模型保存路径
-    CHECKPOINT_DIR = 'checkpoints'  # 检查点保存目录
-    SAVE_EVERY_N_EPOCHS = 5  # 每隔N轮保存一次检查点（0表示不保存）
-    
-    # 可视化样本数量
-    VISUALIZATION_SAMPLES = None  # 测试后可视化的样本数量
-    
-    # 虚拟数据生成数量（仅在数据目录不存在时使用）
-    # DUMMY_DATA_SAMPLES = 200  # 生成的虚拟样本数量
-    
-    # 更新路径为绝对路径
-    MODEL_SAVE_PATH = os.path.join(OUTPUT_FOLDER, 'models', MODEL_SAVE_PATH)
-    CHECKPOINT_DIR = os.path.join(OUTPUT_FOLDER, 'checkpoints')
-    
-    print("\n当前训练配置:")
-    print(f"  - 训练轮数: {EPOCHS}")
-    print(f"  - 学习率: {LEARNING_RATE}")
-    print(f"  - 批次大小: {BATCH_SIZE}")
-    print(f"  - 梯度累积步数: {GRADIENT_ACCUMULATION_STEPS} (等效batch_size: {BATCH_SIZE * GRADIENT_ACCUMULATION_STEPS})")
-    print(f"  - 图像尺寸: {IMAGE_RESIZE if IMAGE_RESIZE else '原始尺寸'}")
-    print(f"  - 训练集比例: {TRAIN_SPLIT_RATIO}")
-    print(f"  - 输出文件夹: {OUTPUT_FOLDER}")
-    print(f"  - 混合精度训练: {'启用' if USE_AMP else '禁用'}")
-    print("=" * 60)
-    
-    # ==================== 设备设置 ====================
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"使用设备: {device}")
-    
-    # ==================== 数据路径设置 ====================
-    input_dir = 'data/inputs'   # 输入图像目录
-    target_dir = 'data/targets' # 目标图像目录
-    
-    # 如果数据目录不存在，自动生成虚拟数据用于测试
-    if not os.path.exists(input_dir) or not os.path.exists(target_dir):
-        print("检测到数据目录不存在，正在生成虚拟数据集...")
-        create_dummy_data(input_dir, target_dir, num_samples=500)
-    
-    # ==================== 数据集构建与划分 ====================
-    print("构建数据集...")
-    train_dataset = FringeDataset(input_dir, target_dir, resize=IMAGE_RESIZE)
-    train_size = int(TRAIN_SPLIT_RATIO * len(train_dataset))
-    val_size = len(train_dataset) - train_size
-    train_dataset, val_dataset = torch.utils.data.random_split(train_dataset, [train_size, val_size])
-    
-    print(f"数据集大小: 训练集 {train_size}, 验证集 {val_size}")
-    if IMAGE_RESIZE:
-        print(f"图像已resize到: {IMAGE_RESIZE if isinstance(IMAGE_RESIZE, int) else f'{IMAGE_RESIZE[0]}x{IMAGE_RESIZE[1]}'}")
-    
-    # ==================== 数据加载器创建 ====================
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=SHUFFLE_TRAIN, num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY)
-    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY)
-    test_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY)
-    
-    print(f"批次大小: {BATCH_SIZE}, 梯度累积步数: {GRADIENT_ACCUMULATION_STEPS} (等效batch_size: {BATCH_SIZE * GRADIENT_ACCUMULATION_STEPS})")
-    
-    # ==================== 数据维度检查 ====================
-    print("检查数据维度...")
-    try:
-        sample_batch = next(iter(train_loader))
-        print('样本批次形状:', [tuple(x.shape) for x in sample_batch])
-        print('数据格式: [batch_size, channels, height, width]')
-    except Exception as e:
-        print('获取样本批次失败:', e)
-        return
-    
-    # ==================== 模型创建 ====================
-    print("创建Y-FFC网络模型...")
-    model = YFFC()
-    total_params = sum(p.numel() for p in model.parameters())
-    print(f"模型参数总数: {total_params:,}")
-    
-    # ==================== 准备配置字典 ====================
-    optimizer_config = {
-        'type': OPTIMIZER_TYPE,
-        'betas': ADAM_BETAS,
-        'eps': ADAM_EPS,
-        'weight_decay': ADAM_WEIGHT_DECAY,
-        'momentum': SGD_MOMENTUM
-    }
-    
-    scheduler_config = {
-        'type': SCHEDULER_TYPE,
-        'step_size': STEP_SIZE,
-        'gamma': GAMMA,
-        'T_max': T_MAX,
-        'eta_min': ETA_MIN,
-        'patience': PATIENCE,
-        'factor': PLATEAU_FACTOR
-    }
-    
-    loss_config = {
-        'ssim_window_size': SSIM_WINDOW_SIZE,
-        'ssim_sigma': SSIM_SIGMA,
-        'weight_diffuse': LOSS_WEIGHT_DIFFUSE,
-        'weight_specular': LOSS_WEIGHT_SPECULAR,
-        'weight_gradient': LOSS_WEIGHT_GRADIENT
-    }
-    
-    training_config = {
-        'use_grad_clip': USE_GRAD_CLIP,
-        'grad_clip_value': GRAD_CLIP_VALUE,
-        'use_early_stopping': USE_EARLY_STOPPING,
-        'early_stopping_patience': EARLY_STOPPING_PATIENCE,
-        'model_save_path': MODEL_SAVE_PATH,
-        'checkpoint_dir': CHECKPOINT_DIR,
-        'save_every_n_epochs': SAVE_EVERY_N_EPOCHS
-    }
-    
-    # ==================== 模型训练 ====================
-    print("\n" + "=" * 40)
-    print("开始模型训练...")
-    print("=" * 40)
-    train_losses, val_losses, train_accuracies, val_accuracies = train_model(
-        model, train_loader, val_loader, 
-        epochs=EPOCHS, 
-        lr=LEARNING_RATE,
-        device=device,
-        use_amp=USE_AMP,
-        gradient_accumulation_steps=GRADIENT_ACCUMULATION_STEPS,
-        optimizer_config=optimizer_config,
-        scheduler_config=scheduler_config,
-        loss_config=loss_config,
-        training_config=training_config
-    )
-    
-    # ==================== 模型测试 ====================
-    print("\n" + "=" * 40)
-    print("开始模型测试...")
-    print("=" * 40)
-    # 加载训练过程中保存的最佳模型权重
-    model.load_state_dict(torch.load(MODEL_SAVE_PATH))
-    test_model(model, test_loader, device=device)
-    
-    # ==================== 结果可视化 ====================
-    print("\n" + "=" * 40)
-    print("开始结果可视化...")
-    print("=" * 40)
-    visualize_results(model, test_loader, device=device, num_samples=VISUALIZATION_SAMPLES, output_folder=OUTPUT_FOLDER)
-    
-    # ==================== 训练历史可视化 ====================
-    print("保存最终训练历史曲线...")
-    
-    # 创建2x2子图：损失和精度
-    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 12))
-    epochs_range = range(1, len(train_losses) + 1)
-    
-    # 左上：训练和验证损失
-    ax1.plot(epochs_range, train_losses, 'b-o', label='训练损失', linewidth=2, markersize=3)
-    ax1.plot(epochs_range, val_losses, 'r-s', label='验证损失', linewidth=2, markersize=3)
-    ax1.set_xlabel('Epoch', fontsize=12)
-    ax1.set_ylabel('损失值 (Loss)', fontsize=12)
-    ax1.set_title('训练和验证损失', fontsize=14, fontweight='bold')
-    ax1.legend(fontsize=10)
-    ax1.grid(True, alpha=0.3)
-    
-    # 右上：训练和验证精度
-    ax2.plot(epochs_range, train_accuracies, 'b-o', label='训练精度 (SSIM)', linewidth=2, markersize=3)
-    ax2.plot(epochs_range, val_accuracies, 'r-s', label='验证精度 (SSIM)', linewidth=2, markersize=3)
-    ax2.set_xlabel('Epoch', fontsize=12)
-    ax2.set_ylabel('精度 (Accuracy)', fontsize=12)
-    ax2.set_title('训练和验证精度', fontsize=14, fontweight='bold')
-    ax2.legend(fontsize=10)
-    ax2.grid(True, alpha=0.3)
-    ax2.set_ylim([0, 1])
-    
-    # 左下：损失对比
-    ax3.plot(epochs_range, train_losses, 'b-', label='训练损失', linewidth=2, alpha=0.7)
-    ax3.plot(epochs_range, val_losses, 'r-', label='验证损失', linewidth=2, alpha=0.7)
-    ax3.fill_between(epochs_range, train_losses, val_losses, alpha=0.2)
-    ax3.set_xlabel('Epoch', fontsize=12)
-    ax3.set_ylabel('损失值 (Loss)', fontsize=12)
-    ax3.set_title('损失对比（填充区域）', fontsize=14, fontweight='bold')
-    ax3.legend(fontsize=10)
-    ax3.grid(True, alpha=0.3)
-    
-    # 右下：精度对比
-    ax4.plot(epochs_range, train_accuracies, 'b-', label='训练精度', linewidth=2, alpha=0.7)
-    ax4.plot(epochs_range, val_accuracies, 'r-', label='验证精度', linewidth=2, alpha=0.7)
-    ax4.fill_between(epochs_range, train_accuracies, val_accuracies, alpha=0.2)
-    ax4.set_xlabel('Epoch', fontsize=12)
-    ax4.set_ylabel('精度 (Accuracy)', fontsize=12)
-    ax4.set_title('精度对比（填充区域）', fontsize=14, fontweight='bold')
-    ax4.legend(fontsize=10)
-    ax4.grid(True, alpha=0.3)
-    ax4.set_ylim([0, 1])
-    
-    fig.suptitle('Y-FFC Net 训练历史总览', fontsize=16, fontweight='bold')
-    plt.tight_layout()
-    
-    # 保存到输出文件夹
-    history_path = os.path.join(OUTPUT_FOLDER, 'training_history.png')
-    plt.savefig(history_path, dpi=300, bbox_inches='tight')
-    plt.close()
-    print(f"训练历史曲线已保存: {history_path}")
-    
-    # ==================== 生成训练总结报告 ====================
-    summary_path = os.path.join(OUTPUT_FOLDER, 'training_summary.txt')
-    with open(summary_path, 'w', encoding='utf-8') as f:
-        f.write("=" * 60 + "\n")
-        f.write("Y-FFC Net 训练总结报告\n")
-        f.write("=" * 60 + "\n\n")
-        f.write("训练配置:\n")
-        f.write(f"  - 训练轮数: {EPOCHS}\n")
-        f.write(f"  - 学习率: {LEARNING_RATE}\n")
-        f.write(f"  - 批次大小: {BATCH_SIZE}\n")
-        f.write(f"  - 梯度累积步数: {GRADIENT_ACCUMULATION_STEPS}\n")
-        f.write(f"  - 图像尺寸: {IMAGE_RESIZE}\n")
-        f.write(f"  - 优化器: {OPTIMIZER_TYPE}\n")
-        f.write(f"  - 学习率调度器: {SCHEDULER_TYPE}\n")
-        f.write(f"  - 混合精度训练: {'启用' if USE_AMP else '禁用'}\n\n")
-        f.write("训练结果:\n")
-        f.write(f"  - 最终训练损失: {train_losses[-1]:.6f}\n")
-        f.write(f"  - 最终验证损失: {val_losses[-1]:.6f}\n")
-        f.write(f"  - 最佳验证损失: {min(val_losses):.6f}\n")
-        f.write(f"  - 最终训练精度: {train_accuracies[-1]:.4f}\n")
-        f.write(f"  - 最终验证精度: {val_accuracies[-1]:.4f}\n")
-        f.write(f"  - 最佳验证精度: {max(val_accuracies):.4f}\n\n")
-        f.write("输出文件:\n")
-        f.write(f"  - 最佳模型: {MODEL_SAVE_PATH}\n")
-        f.write(f"  - 训练历史: {history_path}\n")
-        f.write(f"  - 可视化结果: {os.path.join(OUTPUT_FOLDER, 'visualizations')}\n")
-        if SAVE_EVERY_N_EPOCHS > 0:
-            f.write(f"  - 检查点: {CHECKPOINT_DIR}\n")
-        f.write("\n" + "=" * 60 + "\n")
-    
-    print(f"\n训练总结报告已保存: {summary_path}")
-    
-    print("\n" + "=" * 60)
-    print("✅ 所有流程完成！")
-    print("=" * 60)
-    print(f"\n📁 所有结果已保存到: {os.path.abspath(OUTPUT_FOLDER)}")
-    print("\n文件结构:")
-    print(f"  {OUTPUT_FOLDER}/")
-    print(f"  ├── models/                 (模型文件)")
-    print(f"  │   └── best_model.pth      (最佳模型)")
-    print(f"  ├── logs/                   (日志文件)")
-    print(f"  ├── visualizations/         (可视化结果)")
-    print(f"  │   ├── results_sample_1.png")
-    print(f"  │   ├── results_sample_2.png")
-    print(f"  │   └── results_sample_3.png")
-    print(f"  ├── training_history.png    (训练曲线)")
-    print(f"  └── training_summary.txt    (训练总结)")
-    if SAVE_EVERY_N_EPOCHS > 0:
-        print(f"  └── checkpoints/            (训练检查点)")
+    print("Y-FFC V2 Net 训练程序启动（增强可观测性版）")
     print("=" * 60)
 
-if __name__ == '__main__':  # 脚本入口
-    # ========== Matplotlib 字体设置 ==========
-    # 解决中文显示为乱码以及坐标轴负号显示问题
-    # Windows 常见可用中文字体：Microsoft YaHei / SimHei
-    rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'WenQuanYi Micro Hei', 'Arial Unicode MS']
-    rcParams['axes.unicode_minus'] = False
-    main()  # 运行主流程
+    # ╔══════════════════════════════════════════════════════════════╗
+    # ║              ★ 训练参数集中配置区 ★                          ║
+    # ║  修改实验配置时，只需修改此区域内的变量                         ║
+    # ╚══════════════════════════════════════════════════════════════╝
+
+    # ========== 基础训练参数 ==========
+    EPOCHS                = 400       # 训练总轮数
+    BATCH_SIZE            = 4         # 384 分辨率推荐 2~4
+    BASE_LR               = 2e-4     # 基础学习率（分层 LR 以此为基准）
+    WEIGHT_DECAY          = 1e-4     # AdamW 权重衰减
+    ACCUMULATION_STEPS    = 4        # 梯度累积步数（等效 batch = BATCH_SIZE × 此值）
+    GRAD_CLIP_VALUE       = 0.5      # [FIX] 梯度裁剪阈值（从 1.0 降低到 0.5，更稳定）
+    SEED                  = 42       # None=不固定随机性；整数=固定数据划分和随机增强
+
+    # ========== 图像与数据参数 ==========
+    IMAGE_SIZE            = (160, 128)  # ⭐ 输入分辨率 (H, W)，支持任意矩形
+    TRAIN_SPLIT_RATIO     = 0.8      # 自动划分时训练集比例（有独立验证集时忽略）
+    NUM_WORKERS           = 4        # DataLoader 工作进程数
+
+    # ========== V2 特有开关 ==========
+    USE_GN                = True     # BN → GN（小 batch 必备）
+    USE_EMA               = True     # 指数移动平均
+    EMA_DECAY             = 0.9995   # [P16] EMA 衰减系数（调高增加平滑力度）
+    USE_OHEM              = True     # 在线难样本挖掘
+    OHEM_START_RATIO      = 0.30     # 前中期难样本比例
+    OHEM_DECAY_START      = 0.65     # 训练后期开始降低 OHEM 强度
+    OHEM_FINAL_RATIO      = 0.10     # 最后一轮难样本比例，0=后期关闭 OHEM
+    RAW_EMA_EVAL_INTERVAL = 10       # 每 N 轮额外验证 raw model；0=禁用
+    USE_TUKEY_WINDOW      = True     # FourierUnit Tukey 窗消融开关
+    TUKEY_ALPHA           = 0.25     # Tukey 窗过渡比例
+
+    # ========== 数据目录 ==========
+    INPUT_DIR             = 'data2/inputs'
+    TARGET_DIR            = 'data2/targets'
+    VAL_INPUT_DIR         = None     # 独立验证集输入目录（None 则自动划分）
+    VAL_TARGET_DIR        = None     # 独立验证集目标目录
+
+    # ========== 模型保存与检查点 ==========
+    SAVE_EVERY_N_EPOCHS   = 20       # 每 N 轮保存检查点（0=不保存）
+
+    # ========== 可视化间隔 ==========
+    VIS_EVERY_N_EPOCHS    = 10       # 每 N 轮保存验证样本可视化（0=不保存）
+    VIS_NUM_SAMPLES       = 2        # 每次保存几张固定验证样本
+    VIS_SAMPLE_SEED       = None     # None=每次训练随机抽样；填整数可复现同一批图像
+
+    # ========== 早停策略 ==========
+    USE_EARLY_STOPPING    = False
+    EARLY_STOPPING_PATIENCE = 30
+
+    # ========== 输出目录（自动带时间戳） ==========
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    OUTPUT_FOLDER = f'experiments/yffc_v2_{timestamp}'
+
+    # ╔══════════════════════════════════════════════════════════════╗
+    # ║              ★ 配置区结束 ★                                  ║
+    # ╚══════════════════════════════════════════════════════════════╝
+
+    # 将所有配置打包为字典，统一传递
+    cfg = {
+        'EPOCHS':                 EPOCHS,
+        'BATCH_SIZE':             BATCH_SIZE,
+        'BASE_LR':                BASE_LR,
+        'WEIGHT_DECAY':           WEIGHT_DECAY,
+        'ACCUMULATION_STEPS':     ACCUMULATION_STEPS,
+        'GRAD_CLIP_VALUE':        GRAD_CLIP_VALUE,
+        'SEED':                   SEED,
+        'IMAGE_SIZE':             IMAGE_SIZE,
+        'TRAIN_SPLIT_RATIO':      TRAIN_SPLIT_RATIO,
+        'NUM_WORKERS':            NUM_WORKERS,
+        'USE_GN':                 USE_GN,
+        'USE_EMA':                USE_EMA,
+        'EMA_DECAY':              EMA_DECAY,
+        'USE_OHEM':               USE_OHEM,
+        'OHEM_START_RATIO':       OHEM_START_RATIO,
+        'OHEM_DECAY_START':       OHEM_DECAY_START,
+        'OHEM_FINAL_RATIO':       OHEM_FINAL_RATIO,
+        'RAW_EMA_EVAL_INTERVAL':  RAW_EMA_EVAL_INTERVAL,
+        'USE_TUKEY_WINDOW':       USE_TUKEY_WINDOW,
+        'TUKEY_ALPHA':            TUKEY_ALPHA,
+        'INPUT_DIR':              INPUT_DIR,
+        'TARGET_DIR':             TARGET_DIR,
+        'VAL_INPUT_DIR':          VAL_INPUT_DIR,
+        'VAL_TARGET_DIR':         VAL_TARGET_DIR,
+        'SAVE_EVERY_N_EPOCHS':    SAVE_EVERY_N_EPOCHS,
+        'VIS_EVERY_N_EPOCHS':     VIS_EVERY_N_EPOCHS,
+        'VIS_NUM_SAMPLES':        VIS_NUM_SAMPLES,
+        'VIS_SAMPLE_SEED':        VIS_SAMPLE_SEED,
+        'USE_EARLY_STOPPING':     USE_EARLY_STOPPING,
+        'EARLY_STOPPING_PATIENCE': EARLY_STOPPING_PATIENCE,
+        'OUTPUT_FOLDER':          OUTPUT_FOLDER,
+    }
+
+    # 打印配置总览
+    print(f"\n实验输出目录: {os.path.abspath(OUTPUT_FOLDER)}")
+    print(f"\n当前训练配置:")
+    for k, v in cfg.items():
+        print(f"  {k:30s}: {v}")
+    print("=" * 60)
+
+    # 执行训练
+    history = train_model(cfg)
+
+    print("\n✅ 所有流程完成！")
+
+
+if __name__ == '__main__':
+    # Matplotlib 字体设置（支持中文）
+    plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'WenQuanYi Micro Hei', 'Arial Unicode MS']
+    plt.rcParams['axes.unicode_minus'] = False
+    main()

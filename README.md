@@ -1,937 +1,222 @@
-# Y-FFC Net for 3D Reconstruction of Highly Reflective Surfaces
+# Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces
 
-这是一个基于深度学习的Y形快速傅立叶卷积网络（Y-FFC）实现，用于高反射表面的3D重建。该网络能够从单张高反射条纹图案中分离出漫反射和镜面反射分量，并预测梯度信息，从而实现高质量的3D重建。
+## 项目概述
 
-## ✨ 项目特性
+该仓库围绕高反光条纹图像的预处理、去高光重建与相位分析展开，核心目标是为高反射表面的三维重建提供更稳定的输入与分析工具。仓库主体分为四块：
 
-- **创新的Y形架构**：共享编码器，双解码器设计，同时处理反射分离和梯度预测
-- **FFC模块**：快速傅立叶卷积，结合局部和全局信息处理
-- **多尺度特征提取**：1x1, 3x3, 7x7卷积核并行处理不同尺度特征
-- **注意力机制**：自适应特征融合，提升网络表达能力
-- **高度可配置**：所有关键参数均可通过命令行或代码灵活调整
-- **模块化设计**：网络定义、训练脚本和数据处理完全分离
-- **丰富的可视化工具**：支持模型结构可视化，便于理解网络架构
+- `Y_FFC_unified.py` / `train.py`：Y-FFC 主模型、损失函数、数据集、训练工具与训练入口。
+- `process_images.py`：使用训练好的 Y-FFC 权重对单张图像或整批图像做去高光推理。
+- `phase_analysis/`：三频相位计算、ROI 掩码生成、灰度剖面与相位可视化工具。
+- `comporison_model/`：HDRNet、DCUNet 等对比模型及其训练脚本。
 
-## 📁 项目结构
+如果你第一次进入这个仓库，建议按下面顺序阅读：
 
-```bash
-├── Y_FFC.py                    # 主要的网络实现（详细注释版本）
-├── Y_FFC_Net.py                # 网络结构显示工具（支持torchsummary/torchinfo）
-├── ffc.py                      # FFC（Fourier Feature Convolution）模块
-├── train.py                    # 训练脚本（带进度条和中文支持）
-├── inference.py                # ⭐ 单张图像推理脚本
-├── batch_inference.py          # ⭐ 批量图像推理脚本
-├── inference_example.py        # 推理代码示例
-├── test_inference.py           # 推理功能测试脚本
-├── demo_inference.py           # 一键演示脚本
-├── simple_test.py              # 简单测试脚本
-├── requirements.txt            # 项目依赖
-├── README.md                   # 项目说明（本文件）
-├── INFERENCE_GUIDE.md          # 推理详细使用指南
-├── QUICK_START_INFERENCE.md    # 推理快速开始指南
-├── PROJECT_OVERVIEW.md         # 项目概览
-├── best_model.pth              # 训练好的最佳模型（训练后生成）
-└── data/                       # 数据目录
-    ├── inputs/                 # 输入图像（高反射条纹）
-    └── targets/                # 目标图像（漫反射条纹）
-```
+1. 先看 [train.py](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/train.py) 理解默认训练流程与数据组织。
+2. 再看 [process_images.py](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/process_images.py) 了解模型推理输出。
+3. 需要做相位恢复与可视化时，再进入 [phase_analysis/README.md](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/phase_analysis/README.md)。
 
-## 项目功能说明
+## 仓库快速导览
 
-### 当前实现功能
+### 顶层目录
 
-Y-FFC Net 目前实现了**反射分离**功能，能够：
+- `data/`
+  默认训练数据目录，包含 `inputs/` 与 `targets/` 两个子目录。当前仓库内两侧各有 4802 张样本，脚本默认按文件名排序后一一配对。
+- `comporison_model/`
+  对比实验目录，包含 `HDRNet.py`、`DCUNet.py` 及对应训练脚本。
+- `phase_analysis/`
+  相位分析工具集，覆盖灰度剖面、三频绝对相位、ROI 掩码与 3D 可视化。
+- `integrated_results/`
+  已生成的相位分析结果目录，主要是掩码、相位数据和可视化图片，不是核心源码目录。
+- `__pycache__/`
+  Python 缓存目录，可忽略。
 
-- ✅ 从高反射条纹图中分离出漫反射部分
-- ✅ 输出镜面反射图
-- ✅ 输出梯度图
-- ✅ 去除物体表面的高反射干扰
+### 顶层关键文件
 
-### 3D重建完整流程
+- [train.py](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/train.py)
+  当前主训练脚本。默认从 `data/inputs` 和 `data/targets` 读取样本，输出到带时间戳的 `experiments/yffc_v2_*` 目录。
+- [Y_FFC_unified.py](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/Y_FFC_unified.py)
+  统一实现文件，包含 Y-FFC 网络结构、FFC 模块、数据集、损失、训练/测试工具，并带有命令行入口。
+- [process_images.py](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/process_images.py)
+  推理脚本。读取训练好的 checkpoint，输出去高光结果、镜面分量、梯度图和可视化对比图。
+- [点云误差比较文件.py](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/点云误差比较文件.py)
+  从文件名判断，主要用于点云误差对比分析，属于后处理/评估辅助脚本。
+- [X-FFC_V3_模型完整技术文档.md](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/X-FFC_V3_模型完整技术文档.md)
+  模型设计说明文档。
+- [Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces.pdf](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces.pdf)
+  论文或项目说明 PDF。
+- [KD-Tree详解.md](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/KD-Tree详解.md)
+  独立知识文档，与主训练链路关系较弱。
 
-完整的3D重建应该包含以下阶段：
+## 核心流程
 
-1. **阶段1：反射分离**（当前已实现）
+### 1. 数据准备
 
-   ```bash
-   高反射条纹图 → 漫反射条纹图 + 镜面反射图
-   ```
+训练脚本默认使用如下目录结构：
 
-2. **阶段2：相位提取**（需要扩展）
-
-   ```bash
-   漫反射条纹图 → 包裹相位图
-   ```
-
-3. **阶段3：相位解包裹**（需要扩展）
-
-   ```bash
-   包裹相位图 → 解包裹相位图
-   ```
-
-4. **阶段4：3D重建**（需要扩展）
-
-   ```bash
-   解包裹相位图 → 3D点云/网格
-   ```
-
-**注意**：当前版本只实现了阶段1，后续阶段需要额外的相位处理模块和训练数据。
-
-## 🏗️ 网络架构详解
-
-Y-FFC网络采用创新的Y形架构，结合了U-Net的编码器-解码器结构和FFC的频域处理能力。
-
-### 核心组件
-
-1. **编码器（Encoder）**: 基于VGG16-BN的5层特征提取网络
-2. **FFC模块**: 快速傅立叶卷积模块，用于频域特征增强
-3. **主解码器（Main Decoder）**: 生成镜面反射分量，融合多尺度特征
-4. **梯度解码器（Gradient Decoder）**: 预测梯度信息，辅助反射分离
-5. **增强层（Enhancement Layers）**: 对梯度分支特征进行逐级增强
-6. **注意力机制**: 门控注意力，自适应特征融合
-
-### 网络特点
-
-- **Y形架构**: 共享编码器，双解码器设计，同时处理反射分离和梯度预测
-- **FFC模块**: 结合局部和全局信息处理，频域特征增强
-- **多尺度卷积**: 1x1, 3x3, 7x7卷积核并行处理不同尺度特征
-- **注意力机制**: 门控注意力，自适应特征融合
-- **残差连接**: 保持梯度流动，避免梯度消失
-- **跳跃连接**: 保留低级空间细节，提高重建精度
-
-### 数据流动过程
-
-```bash
-输入图像 [B,1,H,W] 
-    ↓
-编码器 (VGG16-BN) → 多尺度特征 [x_bb_1, x_bb_2, x_bb_3, x_bb_4, x_c]
-    ↓
-梯度解码器 → 梯度图 x_g + 中间特征 [x_enhanced_1..4]
-    ↓
-增强层 → 增强特征 [x_enhanced_1..4]
-    ↓
-主解码器 (FFC + 注意力 + 上采样) → 镜面反射分量 b
-    ↓
-输出: {'r': x-b, 'g': x_g, 'b': b}
-```
-
-## 数据集准备
-
-### 数据集结构要求
-
-你的 `data` 文件夹需要包含以下结构：
-
-```bash
+```text
 data/
-├── inputs/          # 输入图像（高反射表面）
-│   ├── image_001.png
-│   ├── image_002.png
-│   ├── image_003.png
-│   └── ...
-└── targets/         # 目标图像（无反射表面）
-    ├── image_001.png
-    ├── image_002.png
-    ├── image_003.png
-    └── ...
+  inputs/
+  targets/
 ```
 
-### 数据要求详解
+- `inputs/`：含高反光条纹图像。
+- `targets/`：对应的目标图像，通常是去高光后的参考结果。
+- `train.py` 中的数据集会优先尝试同名配对，也兼容 `input_xxx -> target_xxx` 这种命名。
 
-#### 1. **输入图像 (inputs/)**
+### 2. 训练 Y-FFC 主模型
 
-- **内容**：包含高反射表面的条纹图案图像
-- **格式**：支持 `.png`, `.jpg`, `.jpeg`, `.bmp`, `.tif`, `.tiff`
-- **尺寸**：建议 512×512 或更大（代码中默认处理灰度图）
-- **数据类型**：灰度图像（单通道）
-- **像素值**：0-255（代码会自动归一化到 0-1）
+[train.py](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/train.py) 采用“集中参数配置区”风格，常用默认值包括：
 
-#### 2. **目标图像 (targets/)**
+- 输入尺寸：`(128, 160)`
+- 默认数据目录：`data/inputs`、`data/targets`
+- 输出目录：`experiments/yffc_v2_<timestamp>`
+- 训练产物：`models/`、`training_curves/`、`val_visualization/`、`training_summary.txt`
 
-- **内容**：对应的无反射表面图像（理想状态）
-- **要求**：与输入图像一一对应
-- **命名规则**：代码支持多种匹配方式：
-  - 同名匹配：`image_001.png` → `image_001.png`
-  - 前缀替换：`input_001.png` → `target_001.png`
-  - 数字匹配：`input_001.png` → `target_001.png`
+直接运行：
 
-### 如何准备真实数据
-
-#### 方法1：实际拍摄
-
-1. **拍摄高反射表面**：使用条纹投影仪照射金属、玻璃等反光表面
-2. **拍摄无反射版本**：在相同表面喷涂哑光漆或使用漫反射材料
-3. **确保对应关系**：每对图像必须对应相同的表面位置
-
-#### 方法2：数据增强
-
-1. **基础条纹图像**：获取干净的条纹图案
-2. **添加反射效果**：使用图像处理软件添加镜面反射
-3. **保持原图作为目标**：原始条纹图作为训练目标
-
-#### 方法3：混合数据
-
-1. **部分真实数据**：少量实际拍摄的高反射表面图像
-2. **部分合成数据**：基于真实条纹图案合成的反射图像
-3. **数据平衡**：确保训练集和验证集都有足够的样本
-
-### 数据准备建议
-
-1. **图像数量**：建议至少 200-500 张图像对
-2. **图像质量**：高分辨率，清晰的条纹图案
-3. **反射程度**：输入图像应包含明显的镜面反射
-4. **数据多样性**：不同表面材质、不同反射程度、不同条纹频率
-
-### 使用真实数据
-
-如果你想使用真实数据，只需要：
-
-1. 将你的图像放入 `data/inputs/` 和 `data/targets/` 文件夹
-2. 确保图像命名对应关系正确
-3. 运行训练脚本，代码会自动检测并使用你的真实数据
-
-## 🚀 快速开始
-
-### 环境设置
-
-1. **克隆仓库:**
-
-   ```bash
-   git clone <repository-url>
-   cd Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces
-   ```
-
-2. **安装依赖:**
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **安装可视化工具（可选）:**
-
-   ```bash
-   pip install torchinfo torchsummary
-   ```
-
-### 使用方法
-
-#### 1. 查看模型结构
-
-```bash
-# 基本使用（默认配置）
-python Y_FFC_Net.py
-
-# 自定义配置
-python Y_FFC_Net.py --input_channels 1 --image_size 512 --batch_size 1 --device cpu --show_params
-
-# 查看所有参数
-python Y_FFC_Net.py --help
-```
-
-#### 2. 准备数据
-
-将高反射条纹图像放在 `data/inputs/` 目录下，对应的漫反射条纹图像放在 `data/targets/` 目录下。
-
-如果没有真实数据，程序会自动生成虚拟数据集用于测试。
-
-#### 3. 训练模型
-
-```bash
+```powershell
 python train.py
 ```
 
-训练过程中会显示：
+如果你希望用命令行方式驱动统一脚本，也可以优先看 [Y_FFC_unified.py](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/Y_FFC_unified.py) 的 CLI 入口；从源码可见，`train` 子命令至少要求 `--input_dir` 和 `--target_dir`。
 
-- 实时进度条
-- 训练/验证损失
-- 模型性能指标
-- 结果可视化
+### 3. 用训练权重做去高光推理
 
-#### 4. 简单测试
+[process_images.py](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/process_images.py) 通过修改 `main()` 中的参数区运行，核心配置包括：
 
-```bash
-python simple_test.py
+- `INPUT_PATH`：单张图像或整个文件夹路径
+- `MODEL_PATH`：训练输出的模型权重
+- `OUTPUT_DIR`：推理结果保存目录
+- `PREFER_EMA`：如果 checkpoint 中有 EMA 权重，则优先加载
+
+直接运行：
+
+```powershell
+python process_images.py
 ```
 
-#### 5. 使用训练好的模型进行推理
+输出通常包括：
 
-训练完成后，你可以使用训练好的模型对新图像进行高反光去除：
+- `*_diffuse.png`：去高光后的主结果
+- `*_specular.png`：提取出的镜面反射分量
+- `*_gradient.png`：梯度分量
+- `*_visualization.png`：输入与输出对比图
 
-##### 单张图像推理
+### 4. 相位分析与可视化
 
-```bash
-# 基本用法（使用默认的 best_model.pth）
-python inference.py --input your_image.png
+`phase_analysis/` 适合在去高光之后继续做三频绝对相位恢复和结果分析。更完整的主链路是：
 
-# 指定模型路径
-python inference.py --input your_image.png --model best_model.pth
+1. 用 [process_images.py](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/process_images.py) 生成更干净的条纹图像。
+2. 用 [phase_analysis/integrated_absolute_phase_tool.py](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/phase_analysis/integrated_absolute_phase_tool.py) 做 ROI、掩码、绝对相位与可视化。
+3. 按需使用 [phase_analysis/fringe_gray_analysis.py](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/phase_analysis/fringe_gray_analysis.py) 或 [phase_analysis/three_frequency_phase_visualization.py](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/phase_analysis/three_frequency_phase_visualization.py) 做单项分析。
 
-# 指定输出目录
-python inference.py --input your_image.png --output my_results
+## 目录与关键文件说明
 
-# 使用CPU运行
-python inference.py --input your_image.png --device cpu
+### 主模型与训练
+
+- [Y_FFC_unified.py](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/Y_FFC_unified.py)
+  仓库最重要的逻辑文件。集成了 FFC 频域模块、ViT 编码器分支、镜面高光感知模块、数据增强、损失函数与训练辅助能力。适合作为“整体实现入口”阅读。
+- [train.py](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/train.py)
+  基于 `Y_FFC_unified.py` 的工程化训练脚本，增加了更完整的日志、可视化、EMA、动态损失权重、分层学习率等训练管理逻辑。
+
+### 推理与结果生成
+
+- [process_images.py](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/process_images.py)
+  负责加载模型并批量输出去高光结果，是从训练产物走向下游处理的关键桥梁。
+
+### 相位分析工具
+
+- [phase_analysis/integrated_absolute_phase_tool.py](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/phase_analysis/integrated_absolute_phase_tool.py)
+  一站式流程脚本，整合 ROI 选择、掩码生成、三频绝对相位计算、结果保存和 2D/3D 可视化。
+- [phase_analysis/three_frequency_phase_visualization.py](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/phase_analysis/three_frequency_phase_visualization.py)
+  更聚焦于三频相位读取、展开和可视化。
+- [phase_analysis/fringe_gray_analysis.py](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/phase_analysis/fringe_gray_analysis.py)
+  灰度剖面与 ROI 对比分析工具，适合观察条纹强度变化。
+- [phase_analysis/README.md](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/phase_analysis/README.md)
+  该子目录的详细使用说明。
+
+### 对比模型
+
+- [comporison_model/HDRNet.py](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/comporison_model/HDRNet.py)
+  单通道 U-Net 风格网络实现，用作对比基线之一。
+- [comporison_model/DCUNet.py](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/comporison_model/DCUNet.py)
+  DC-UNet 结构实现，用于高反光去除对比实验。
+- [comporison_model/train_hdrnet.py](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/comporison_model/train_hdrnet.py)
+  HDRNet 训练脚本。
+- [comporison_model/train_dcunet.py](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/comporison_model/train_dcunet.py)
+  DCUNet 训练脚本。
+- [comporison_model/Y_FFC_unified.py](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/comporison_model/Y_FFC_unified.py)
+  对比实验目录内保留的一份统一实现副本，通常不应优先于顶层版本维护。
+
+## 文件之间的依赖与关系
+
+- `train.py` 依赖 `Y_FFC_unified.py` 中的模型、增强和损失定义。
+- `process_images.py` 依赖 `Y_FFC_unified.py` 中的 `YFFC` 网络定义，并读取训练阶段保存的 checkpoint。
+- `phase_analysis/` 与训练脚本基本解耦，更像是下游分析工具链。
+- `comporison_model/*.py` 与主模型训练流程并行存在，用于横向实验对比，而不是主流程必经步骤。
+
+## 结果目录说明
+
+### `integrated_results/`
+
+该目录是已生成结果的汇总示例，不应视为源码目录。当前结构大致为：
+
+- `mask/`：ROI 掩码，如 `mask.bmp`、`mask.npy`
+- `phase_data/`：绝对相位、包裹相位、差频相位及 `mat/npy` 数据
+- `visualization/`：线剖面图、相位伪彩色图、3D 表面图
+
+这类目录适合保留少量样例用于复现说明，但不建议在 README 中逐个展开文件。
+
+## 运行环境
+
+仓库没有看到显式的 `requirements.txt`。从源码导入看，至少需要以下 Python 包：
+
+- `torch`
+- `torchvision`
+- `numpy`
+- `Pillow`
+- `matplotlib`
+- `tqdm`
+- `opencv-python`
+- `scipy`
+
+建议环境：
+
+- Python 3.8+
+- 有 CUDA 时优先使用 GPU 训练/推理
+
+一个可参考的安装方式：
+
+```powershell
+pip install torch torchvision numpy pillow matplotlib tqdm opencv-python scipy
 ```
 
-##### 批量图像推理
+## 最小使用路径
 
-```bash
-# 处理整个目录
-python batch_inference.py --input images_folder
+### 训练
 
-# 指定输出目录
-python batch_inference.py --input images_folder --output processed_results
-
-# 使用特定模型
-python batch_inference.py --input images_folder --model my_model.pth
+```powershell
+python train.py
 ```
 
-##### 输出文件说明
+### 推理
 
-推理完成后会生成以下文件：
+先在 [process_images.py](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/process_images.py) 里改好 `INPUT_PATH` 和 `MODEL_PATH`，再运行：
 
-- `*_diffuse.png` - ⭐ **主要结果**：去除高反光后的漫反射图像
-- `*_specular.png` - 提取的镜面反射（高反光部分）
-- `*_gradient.png` - 梯度图像（用于内部处理）
-- `*_visualization.png` - 完整的四宫格对比图
-
-详细使用说明请参考：[INFERENCE_GUIDE.md](INFERENCE_GUIDE.md)
-
-## 📊 输出说明
-
-网络输出包含三个分量：
-
-1. **漫反射分量（r）**: 去除镜面反射后的条纹图案，用于后续相位提取
-2. **镜面反射分量（b）**: 提取的镜面反射成分，用于分析反射特性
-3. **梯度分量（g）**: 预测的梯度信息，辅助反射分离和3D重建
-
-## ⚙️ 参数配置详解
-
-### 模型结构参数
-
-| 参数 | 默认值 | 说明 | 对性能/结构的影响 |
-|------|-------|------|------------------|
-| `input_channels` | 1 | 输入图像通道数 | **结构影响**: 决定网络第一层的输入维度。**性能影响**: 通常为1（灰度图像），增加通道数可处理彩色图像但会显著增加参数量 |
-| `image_size` | 512 | 输入图像尺寸 | **结构影响**: 影响所有卷积层的输出尺寸。**性能影响**: 更大的尺寸提供更多细节但增加计算量和显存消耗 |
-| `batch_size` | 1 | 批次大小 | **性能影响**: 影响训练稳定性和显存使用。**显存不足时优先降低此值** |
-
-### 训练超参数
-
-| 参数 | 默认值 | 说明 | 对性能/结构的影响 |
-|------|-------|------|------------------|
-| `epochs` | 50 | 训练轮数 | **性能影响**: 更多轮数可能提高精度但可能导致过拟合，需要根据验证损失调整 |
-| `lr` (learning_rate) | 0.001 | 学习率 | **性能影响**: 控制参数更新步长。过大会导致训练不稳定，过小会收敛缓慢 |
-| `weight_decay` | 1e-4 | 权重衰减 | **性能影响**: L2正则化系数，防止过拟合。增大可提高泛化能力但可能降低训练精度 |
-| `T_max` | 30 | 学习率调度周期 | **性能影响**: 余弦退火调度器的周期长度，影响学习率变化曲线 |
-
-### 网络架构参数
-
-#### FFC模块参数
-
-| 参数 | 默认值 | 说明 | 对性能/结构的影响 |
-|------|-------|------|------------------|
-| `ratio_gin` | 0.5 | 全局信息比例 | **结构影响**: 控制频域和空域信息的混合比例。**性能影响**: 0.5平衡局部和全局特征，增大可增强全局建模能力 |
-| `ratio_gout` | 0.5 | 输出全局信息比例 | **结构影响**: 控制输出中全局信息的比例。**性能影响**: 影响后续层的特征表达 |
-| `kernel_size` | 3 | FFC卷积核大小 | **结构影响**: 决定局部感受野大小。**性能影响**: 3x3平衡计算效率和特征提取能力 |
-
-#### 多尺度卷积参数
-
-| 参数 | 默认值 | 说明 | 对性能/结构的影响 |
-|------|-------|------|------------------|
-| `out_channels_branch` | 192/256 | 各分支输出通道数 | **结构影响**: 决定多分支特征的维度。**性能影响**: 增大可提高表达能力但增加计算量 |
-| 分支数量 | 3-4 | 并行分支数 | **结构影响**: 固定为3-4个分支。**性能影响**: 多尺度特征提取，平衡局部和全局信息 |
-| 卷积核大小 | 1x1, 3x3, 7x7 | 各分支卷积核尺寸 | **结构影响**: 决定感受野大小。**性能影响**: 不同尺寸捕获不同尺度的特征 |
-
-#### 注意力机制参数
-
-| 参数 | 默认值 | 说明 | 对性能/结构的影响 |
-|------|-------|------|------------------|
-| `F_g` | 768/384/192/96 | 全局特征通道数 | **结构影响**: 来自深层特征的通道数。**性能影响**: 影响注意力权重的计算复杂度 |
-| `F_l` | 512/256/128/64 | 局部特征通道数 | **结构影响**: 来自浅层特征的通道数。**性能影响**: 影响特征融合的效果 |
-| `F_int` | 640/320/160/80 | 中间特征通道数 | **结构影响**: 注意力计算的中间维度。**性能影响**: 影响注意力权重的表达能力 |
-
-### 损失函数参数
-
-| 参数 | 默认值 | 说明 | 对性能/结构的影响 |
-|------|-------|------|------------------|
-| `window_size` | 11 | SSIM窗口大小 | **性能影响**: 影响结构相似性计算的范围。增大可捕获更大范围的结构信息 |
-| `sigma` | 1.5 | SSIM高斯标准差 | **性能影响**: 控制高斯窗口的平滑程度。影响结构相似性的计算精度 |
-| `C1` | 0.01² | SSIM常数1 | **性能影响**: 防止除零的常数，影响亮度比较的稳定性 |
-| `C2` | 0.03² | SSIM常数2 | **性能影响**: 防止除零的常数，影响对比度比较的稳定性 |
-
-### 不同场景的推荐配置
-
-#### 🚀 **高性能GPU (RTX 4090, A100等)**
-
-```python
-# 训练参数
-epochs = 100
-batch_size = 8
-learning_rate = 0.001
-image_size = 512
-
-# 模型参数
-out_channels_branch = 256  # 增加分支通道数
-ratio_gin = 0.6           # 增强全局信息
-ratio_gout = 0.6
+```powershell
+python process_images.py
 ```
 
-#### 💻 **中等GPU (RTX 3060, RTX 4060等)**
+### 相位分析
 
-```python
-# 训练参数
-epochs = 50
-batch_size = 4
-learning_rate = 0.001
-image_size = 512
+先在 [phase_analysis/integrated_absolute_phase_tool.py](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/phase_analysis/integrated_absolute_phase_tool.py) 里改好 `PROJECTION_FOLDER`、`FREQ_COMBINATION`、`OUTPUT_DIR`，再运行：
 
-# 模型参数（默认配置）
-out_channels_branch = 192
-ratio_gin = 0.5
-ratio_gout = 0.5
+```powershell
+python phase_analysis\integrated_absolute_phase_tool.py
 ```
 
-#### 📱 **低端GPU或显存不足 (GTX 1660, RTX 3050等)**
-
-```python
-# 训练参数
-epochs = 30
-batch_size = 1
-learning_rate = 0.0005
-image_size = 256  # 减小图像尺寸
-
-# 模型参数
-out_channels_branch = 128  # 减少分支通道数
-ratio_gin = 0.4           # 减少全局信息比例
-ratio_gout = 0.4
-```
-
-#### 🖥️ **CPU训练 (仅用于测试)**
-
-```python
-# 训练参数
-epochs = 10
-batch_size = 1
-learning_rate = 0.0001
-image_size = 128  # 大幅减小图像尺寸
-
-# 模型参数
-out_channels_branch = 64   # 最小通道数
-ratio_gin = 0.3
-ratio_gout = 0.3
-```
-
-### 参数调优建议
-
-#### 提高精度
-
-- 增加 `epochs` 和 `out_channels_branch`
-- 调整学习率调度策略
-- 使用更大的 `image_size`（如果显存允许）
-- 增加 `ratio_gin` 和 `ratio_gout`
-
-#### 加快训练
-
-- 增加 `batch_size`（如果显存允许）
-- 减小 `image_size`
-- 减少 `out_channels_branch`
-- 使用GPU加速
-
-#### 防止过拟合
-
-- 增加 `weight_decay`
-- 使用数据增强
-- 早停机制
-- 减少模型复杂度
-
-#### 平衡精度与速度
-
-- 根据具体应用场景调整参数组合
-- 优先保证训练稳定性
-- 监控验证损失变化
-
----
-
-## 🎛️ 训练参数完整配置指南
-
-`train.py` 提供了 **30+ 个可配置参数**，涵盖训练的各个方面。所有参数都集中在配置区域（第424-517行），无需修改核心代码即可灵活调整。
-
-### 📋 参数分类总览
-
-#### 1️⃣ 基础训练参数
-
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `EPOCHS` | int | 50 | 训练轮数 |
-| `LEARNING_RATE` | float | 0.001 | 初始学习率 |
-| `BATCH_SIZE` | int | 1 | 批次大小 |
-| `GRADIENT_ACCUMULATION_STEPS` | int | 4 | 梯度累积步数 |
-
-**显存与配置关系**：
-- 4GB显存：`BATCH_SIZE=1`, `IMAGE_RESIZE=512`
-- 8GB显存：`BATCH_SIZE=2`, `IMAGE_RESIZE=768`
-- 12GB+显存：`BATCH_SIZE=4`, `IMAGE_RESIZE=1024`
-
-#### 2️⃣ 优化器参数
-
-| 参数 | 类型 | 默认值 | 可选值 |
-|------|------|--------|--------|
-| `OPTIMIZER_TYPE` | str | 'adam' | 'adam', 'sgd', 'adamw' |
-| `ADAM_BETAS` | tuple | (0.9, 0.999) | - |
-| `ADAM_EPS` | float | 1e-8 | - |
-| `ADAM_WEIGHT_DECAY` | float | 0.0 | 0-0.01 |
-| `SGD_MOMENTUM` | float | 0.9 | 0.9-0.99 |
-| `SGD_WEIGHT_DECAY` | float | 0.0001 | - |
-
-**优化器选择建议**：
-- **Adam**：自适应学习率，适合大多数任务（推荐）
-- **AdamW**：Adam + 权重衰减，更好的正则化
-- **SGD**：传统方法，需要手动调整学习率
-
-#### 3️⃣ 学习率调度器参数
-
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `SCHEDULER_TYPE` | str | 'step' | 调度器类型 |
-| `STEP_SIZE` | int | 30 | StepLR步长 |
-| `GAMMA` | float | 0.5 | 衰减系数 |
-| `T_MAX` | int | 50 | 余弦周期 |
-| `ETA_MIN` | float | 1e-6 | 最小学习率 |
-| `PATIENCE` | int | 10 | Plateau容忍轮数 |
-| `PLATEAU_FACTOR` | float | 0.5 | Plateau衰减系数 |
-
-**调度器类型说明**：
-- **step**：阶梯式衰减，每隔`STEP_SIZE`轮降低学习率
-- **cosine**：余弦退火，学习率按余弦曲线变化
-- **plateau**：自适应衰减，验证损失不下降时降低学习率
-- **exponential**：指数衰减，每轮按指数衰减
-
-#### 4️⃣ 损失函数参数
-
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `SSIM_WINDOW_SIZE` | int | 11 | SSIM窗口大小（必须是奇数） |
-| `SSIM_SIGMA` | float | 1.5 | SSIM高斯标准差 |
-| `LOSS_WEIGHT_DIFFUSE` | float | 1.0 | 漫反射损失权重 |
-| `LOSS_WEIGHT_SPECULAR` | float | 1.0 | 镜面反射损失权重 |
-| `LOSS_WEIGHT_GRADIENT` | float | 1.0 | 梯度损失权重 |
-
-**损失权重调优**：
-- 漫反射效果不好 → 增大 `LOSS_WEIGHT_DIFFUSE`
-- 镜面反射分离不好 → 增大 `LOSS_WEIGHT_SPECULAR`
-- 梯度是辅助监督 → 可适当降低 `LOSS_WEIGHT_GRADIENT`
-
-#### 5️⃣ 图像和数据参数
-
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `IMAGE_RESIZE` | int/tuple/None | (1024, 768) | 图像尺寸 |
-| `TRAIN_SPLIT_RATIO` | float | 0.8 | 训练集比例 |
-| `NUM_WORKERS` | int | 0 | 数据加载进程数 |
-| `PIN_MEMORY` | bool | True | 是否固定内存 |
-| `SHUFFLE_TRAIN` | bool | True | 是否打乱数据 |
-
-**图像尺寸设置**：
-- `512`：正方形512×512
-- `(768, 1024)`：矩形，高768宽1024
-- `None`：使用原始尺寸
-
-#### 6️⃣ 训练策略参数
-
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `USE_AMP` | bool | True | 混合精度训练 |
-| `USE_GRAD_CLIP` | bool | False | 梯度裁剪 |
-| `GRAD_CLIP_VALUE` | float | 1.0 | 梯度裁剪阈值 |
-| `USE_EARLY_STOPPING` | bool | False | 早停策略 |
-| `EARLY_STOPPING_PATIENCE` | int | 20 | 早停容忍轮数 |
-
-**训练策略建议**：
-- **混合精度训练**：节省显存，加速训练（推荐开启）
-- **梯度裁剪**：防止梯度爆炸，训练不稳定时开启
-- **早停策略**：验证损失不下降时自动停止，防止过拟合
-
-#### 7️⃣ 模型保存和可视化
-
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `MODEL_SAVE_PATH` | str | 'best_model.pth' | 最佳模型保存路径 |
-| `CHECKPOINT_DIR` | str | 'checkpoints' | 检查点目录 |
-| `SAVE_EVERY_N_EPOCHS` | int | 10 | 检查点保存频率 |
-| `VISUALIZATION_SAMPLES` | int | 3 | 可视化样本数 |
-
-### 🎯 推荐配置方案
-
-#### 🚀 快速开始配置（4GB显存）
-
-```python
-EPOCHS = 50
-LEARNING_RATE = 0.001
-BATCH_SIZE = 1
-GRADIENT_ACCUMULATION_STEPS = 4
-IMAGE_RESIZE = 512
-OPTIMIZER_TYPE = 'adam'
-SCHEDULER_TYPE = 'step'
-USE_AMP = True
-```
-
-#### 💪 高性能配置（12GB+显存）
-
-```python
-EPOCHS = 100
-LEARNING_RATE = 0.001
-BATCH_SIZE = 4
-GRADIENT_ACCUMULATION_STEPS = 2
-IMAGE_RESIZE = 1024
-OPTIMIZER_TYPE = 'adamw'
-ADAM_WEIGHT_DECAY = 0.01
-SCHEDULER_TYPE = 'cosine'
-USE_AMP = True
-USE_GRAD_CLIP = True
-GRAD_CLIP_VALUE = 1.0
-```
-
-#### 🎨 精细调优配置
-
-```python
-EPOCHS = 150
-LEARNING_RATE = 0.0005
-BATCH_SIZE = 2
-GRADIENT_ACCUMULATION_STEPS = 4
-IMAGE_RESIZE = (768, 1024)
-OPTIMIZER_TYPE = 'adamw'
-ADAM_WEIGHT_DECAY = 0.01
-SCHEDULER_TYPE = 'plateau'
-PATIENCE = 15
-LOSS_WEIGHT_DIFFUSE = 1.5  # 增强漫反射
-LOSS_WEIGHT_SPECULAR = 1.0
-LOSS_WEIGHT_GRADIENT = 0.5  # 降低梯度权重
-USE_AMP = True
-USE_GRAD_CLIP = True
-USE_EARLY_STOPPING = True
-EARLY_STOPPING_PATIENCE = 30
-SAVE_EVERY_N_EPOCHS = 10
-```
-
-### 📊 调优流程建议
-
-#### 第一阶段：快速验证（1-2小时）
-
-```python
-# 使用小图像和少量轮数快速验证
-IMAGE_RESIZE = 512
-EPOCHS = 20
-BATCH_SIZE = 1
-```
-
-**目标**：验证模型能否正常训练，损失是否下降
-
-#### 第二阶段：参数搜索（半天）
-
-```python
-# 尝试不同的学习率和优化器
-LEARNING_RATE = [0.0001, 0.0005, 0.001, 0.005]
-OPTIMIZER_TYPE = ['adam', 'adamw']
-SCHEDULER_TYPE = ['step', 'cosine', 'plateau']
-```
-
-**目标**：找到最佳的学习率和优化器组合
-
-#### 第三阶段：精细调优（1-2天）
-
-```python
-# 增大图像尺寸，增加训练轮数
-IMAGE_RESIZE = 1024
-EPOCHS = 100
-# 调整损失权重
-LOSS_WEIGHT_DIFFUSE = 1.5
-LOSS_WEIGHT_SPECULAR = 1.0
-LOSS_WEIGHT_GRADIENT = 0.5
-```
-
-**目标**：优化各分支的效果，提高整体性能
-
-#### 第四阶段：最终训练（2-3天）
-
-```python
-# 使用最佳参数组合完整训练
-EPOCHS = 150-200
-USE_EARLY_STOPPING = True
-SAVE_EVERY_N_EPOCHS = 10
-```
-
-**目标**：获得最佳模型，定期保存检查点
-
-### ⚠️ 常见问题与解决方案
-
-#### 问题1：显存不足（OOM）
-
-**症状**：训练时出现 CUDA out of memory 错误
-
-**解决方案**：
-```python
-# 方案1：减小图像尺寸
-IMAGE_RESIZE = 512  # 或更小
-
-# 方案2：减小批次大小
-BATCH_SIZE = 1
-
-# 方案3：启用混合精度训练
-USE_AMP = True
-
-# 方案4：增加梯度累积
-GRADIENT_ACCUMULATION_STEPS = 8
-```
-
-#### 问题2：训练不稳定
-
-**症状**：损失震荡，不收敛
-
-**解决方案**：
-```python
-# 方案1：降低学习率
-LEARNING_RATE = 0.0005  # 或更小
-
-# 方案2：启用梯度裁剪
-USE_GRAD_CLIP = True
-GRAD_CLIP_VALUE = 1.0
-
-# 方案3：增大批次大小
-BATCH_SIZE = 4  # 或使用梯度累积
-GRADIENT_ACCUMULATION_STEPS = 4
-```
-
-#### 问题3：过拟合
-
-**症状**：训练损失持续下降，验证损失上升
-
-**解决方案**：
-```python
-# 方案1：增大权重衰减
-ADAM_WEIGHT_DECAY = 0.01
-
-# 方案2：启用早停
-USE_EARLY_STOPPING = True
-EARLY_STOPPING_PATIENCE = 20
-
-# 方案3：使用AdamW优化器
-OPTIMIZER_TYPE = 'adamw'
-```
-
-#### 问题4：欠拟合
-
-**症状**：训练和验证损失都很高
-
-**解决方案**：
-```python
-# 方案1：增加训练轮数
-EPOCHS = 150
-
-# 方案2：提高学习率
-LEARNING_RATE = 0.001
-
-# 方案3：减小正则化
-ADAM_WEIGHT_DECAY = 0.0
-```
-
-#### 问题5：某个分支效果不好
-
-**症状**：漫反射或镜面反射分离效果差
-
-**解决方案**：
-```python
-# 调整损失权重
-LOSS_WEIGHT_DIFFUSE = 1.5   # 增强漫反射
-LOSS_WEIGHT_SPECULAR = 1.2  # 增强镜面反射
-LOSS_WEIGHT_GRADIENT = 0.5  # 降低梯度权重
-```
-
-### 💡 高级技巧
-
-#### 技巧1：学习率预热
-
-```python
-# 使用较小的初始学习率，逐渐增大
-LEARNING_RATE = 0.0001  # 前10轮
-# 然后手动调整为 0.001
-```
-
-#### 技巧2：周期性保存
-
-```python
-# 定期保存检查点，方便恢复训练
-SAVE_EVERY_N_EPOCHS = 10
-CHECKPOINT_DIR = 'checkpoints'
-```
-
-#### 技巧3：多阶段训练
-
-```python
-# 阶段1：快速收敛
-LEARNING_RATE = 0.001
-SCHEDULER_TYPE = 'step'
-
-# 阶段2：精细调优
-LEARNING_RATE = 0.0001
-SCHEDULER_TYPE = 'plateau'
-```
-
-#### 技巧4：损失权重动态调整
-
-```python
-# 初期：平衡各分支
-LOSS_WEIGHT_DIFFUSE = 1.0
-LOSS_WEIGHT_SPECULAR = 1.0
-LOSS_WEIGHT_GRADIENT = 1.0
-
-# 后期：根据效果调整
-# 如果漫反射不好，增大其权重
-LOSS_WEIGHT_DIFFUSE = 1.5
-```
-
-### 📝 配置文件位置
-
-所有参数都在 `train.py` 的配置区域（第424-517行）：
-
-```python
-# ==================== ⭐ 训练参数配置区 ⭐ ====================
-# 在这里修改所有训练相关的参数，无需深入代码内部
-
-# 基础训练参数
-EPOCHS = 50
-LEARNING_RATE = 0.001
-BATCH_SIZE = 1
-GRADIENT_ACCUMULATION_STEPS = 4
-
-# ... 更多参数
-```
-
-### 📚 参考资源
-
-- **完整配置指南**：`TRAINING_CONFIG_GUIDE.md`
-- **推理使用指南**：`INFERENCE_GUIDE.md`
-- **快速开始指南**：`QUICK_START_INFERENCE.md`
-- **项目概览**：`PROJECT_OVERVIEW.md`
-
-## 📈 损失函数与性能指标
-
-### 复合损失函数
-
-网络使用多分支复合损失函数，确保各分量都能得到有效训练：
-**总损失 = L_d + L_s + L_g**
-
-其中：
-
-- **L_d (漫反射损失)**: `SSIM_loss + MAE_loss + Statistical_loss`
-- **L_s (镜面反射损失)**: `SSIM_loss + Statistical_loss`  
-- **L_g (梯度损失)**: `SSIM_loss`
-
-#### 损失函数详解
-
-| 损失类型 | 公式 | 作用 | 权重 |
-|---------|------|------|------|
-| **SSIM损失** | `1 - SSIM(pred, gt)` | 保持结构相似性 | 所有分支 |
-| **MAE损失** | pred - gt| 像素级精度 | 仅漫反射分支 |
-| **统计损失** | μ_pred - μ_gt + σ_pred - σ_gt | 保持统计特性 | 漫反射+镜面反射 |
-
-### 性能指标
-
-| 指标 | 范围 | 说明 | 目标值 |
-|------|------|------|--------|
-| **SSIM** | [0, 1] | 结构相似性指数，越接近1越好 | > 0.9 |
-| **MAE** | [0, +∞) | 平均绝对误差，越接近0越好 | < 0.05 |
-| **PSNR** | [0, +∞) | 峰值信噪比，越大越好 | > 30 dB |
-
-## 🔧 技术特点
-
-### FFC模块优势
-
-- **频域处理**: 结合傅立叶变换，捕获全局频率信息
-- **局部-全局平衡**: 通过 `ratio_gin/ratio_gout` 控制信息混合比例
-- **多尺度特征**: 同时处理不同尺度的空间和频率特征
-- **计算效率**: 相比传统方法，FFC在保持精度的同时提高计算效率
-
-### 注意力机制设计
-
-- **门控注意力**: 使用Sigmoid激活生成0-1权重，自适应控制信息流
-- **多尺度融合**: 在不同层级应用注意力，融合不同抽象级别的特征
-- **计算高效**: 1x1卷积实现，计算开销小但效果显著
-
-### 梯度域处理策略
-
-- **辅助监督**: 梯度信息作为额外监督信号，提高训练稳定性
-- **非正弦检测**: 通过梯度信息识别条纹图案中的异常区域
-- **3D重建辅助**: 梯度信息可用于后续的相位解包裹和3D重建
-
-### Y形架构优势
-
-- **任务解耦**: 反射分离和梯度预测分别处理，避免任务间干扰
-- **特征共享**: 编码器特征被两个解码器共享，提高特征利用率
-- **端到端训练**: 整个网络可以端到端训练，无需分阶段优化
-
-## 🚀 扩展建议
-
-### 添加相位处理功能
-
-如果需要完整的3D重建功能，建议添加以下模块：
-
-1. **相位提取模块**：从漫反射条纹中提取包裹相位
-2. **相位解包裹模块**：解决相位跳变问题
-3. **3D重建模块**：生成最终的点云或网格
-
-### 修改训练目标
-
-```python
-# 添加相位分支训练
-phase_loss = phase_continuity_loss(pred_phase, gt_phase)
-total_loss = ld + ls + lg + phase_loss
-```
-
-### 模型优化建议
-
-1. **数据增强**：添加旋转、翻转、噪声等数据增强技术
-2. **多尺度训练**：使用不同分辨率的图像进行训练
-3. **损失函数改进**：添加感知损失、对抗损失等
-4. **网络结构优化**：尝试不同的注意力机制或特征融合方式
-
-## 🎯 应用场景
-
-- **工业检测**：金属、电镀表面的3D重建和缺陷检测
-- **精密测量**：高精度3D测量和轮廓术
-- **质量控制**：产品表面质量检测和评估
-- **逆向工程**：复杂曲面的数字化重建
-- **科研应用**：光学测量和表面分析
-
-## 📚 参考文献
-
-基于论文：Y-FFC Net for 3D Reconstruction of Highly Reflective Surfaces (IEEE Transactions on Industrial Informatics, 2024)
-
-## 📄 许可证
-
-本项目仅供学术研究使用。
-
-## 🤝 贡献指南
-
-欢迎提交Issue和Pull Request来改进项目！
-
-## 📞 联系方式
-
-如有问题，请提交Issue或联系开发者。
-
----
-
-## 📝 更新日志
-
-### v2.0 (最新) - 全面优化版本
-
-- ✅ **修复Y_FFC_Net.py**：修复bug，添加命令行接口和模型结构显示
-- ✅ **增强训练体验**：添加tqdm进度条，支持中文显示，优化可视化
-- ✅ **完善文档**：大幅扩展README，添加详细的参数配置说明
-- ✅ **模块化设计**：分离网络定义、训练脚本和结构显示工具
-- ✅ **参数调优指南**：提供不同硬件配置的推荐参数设置
-
-### v1.0 - 基础实现
-
-- ✅ **Y-FFC网络**：实现完整的Y形快速傅立叶卷积网络
-- ✅ **反射分离**：从高反射条纹中分离漫反射和镜面反射分量
-- ✅ **梯度预测**：预测梯度信息，辅助3D重建
-- ✅ **训练框架**：完整的训练、验证和测试流程
+## 维护建议
+
+- 优先维护顶层的 [Y_FFC_unified.py](/E:/code/Y-FFC_Net_for_3D_Reconstruction_of_Highly_Reflective_Surfaces/Y_FFC_unified.py)，避免与 `comporison_model/` 内副本漂移。
+- 训练脚本和推理脚本目前都偏“手动改参数区”的用法，做复现实验时建议记录当次配置。
+- `integrated_results/`、未来的 `experiments/`、`processed_results/` 都更接近输出目录，新增逻辑时不要把核心代码混放进去。
