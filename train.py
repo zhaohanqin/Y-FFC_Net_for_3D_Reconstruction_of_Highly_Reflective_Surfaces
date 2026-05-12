@@ -54,6 +54,7 @@ from Y_FFC_unified import (
     EnhancedCompositeLoss,
     EnhancedPairedTransform,
     HighlightAugmentation,
+    compute_input_gradient_target,
 )
 
 
@@ -66,7 +67,7 @@ class ImprovedFringeDataset(Dataset):
     改进版数据集：
       - 支持自定义分辨率 (H, W)，如 (160, 128)、(384, 384)
       - EnhancedPairedTransform（含高反光模拟）
-      - gt_gradient 使用梯度幅值
+      - gt_gradient 使用输入图像 Sobel 梯度幅值
 
     resize 参数说明：
       - int         : 正方形，如 384 → (384, 384)
@@ -141,11 +142,7 @@ class ImprovedFringeDataset(Dataset):
             inp, tgt, gt_spec, gt_grad = self.paired_transform(inp, tgt)
         else:
             gt_spec = (inp - tgt).clamp(0, 1)
-            gx, gy = torch.gradient(tgt, dim=(1, 2))
-            mag = torch.sqrt(gx ** 2 + gy ** 2 + 1e-8)
-            flat = mag.flatten()
-            p995 = torch.quantile(flat, 0.995) if flat.numel() > 0 else torch.tensor(1.0)
-            gt_grad = (mag / (p995 + 1e-8)).clamp(0, 1)
+            gt_grad = compute_input_gradient_target(inp)
 
         return inp, tgt, gt_spec, gt_grad
 
@@ -180,6 +177,7 @@ class ImprovedWeightScheduler:
             'lambda_spec':       0.5,
             'lambda_stat':       0.0,    # [P5] 移除冗余 stat 损失
             'lambda_grad':       max(0.3, 0.5 - 0.2 * p_clamped),
+            'lambda_grad_edge':  min(0.8, 0.3 + 0.5 * p_clamped),
             'lambda_focal':      min(0.8, 0.3 + 0.5 * p_clamped),         # 上限降低
             'lambda_dice':       min(0.3, 0.1 + 0.2 * p_clamped),         # 上限降低
             'lambda_gc':         min(0.2, 0.05 + 0.15 * p_clamped),       # 上限降低
@@ -255,7 +253,7 @@ def format_lr_groups(optimizer):
 SUB_LOSS_KEYS = [
     'total', 'ssim', 'ssim_single_loss', 'msssim_loss', 'ssim_mixed_loss',
     'l1', 'freq', 'perceptual',
-    'spec', 'stat', 'grad',
+    'spec', 'stat', 'grad', 'grad_edge',
     'focal', 'dice', 'gc', 'cs',
 ]
 
@@ -271,7 +269,8 @@ SUB_LOSS_DISPLAY_NAMES = {
     'perceptual': 'Perceptual Loss',
     'spec':       'Specular Loss',
     'stat':       'Statistical Loss',
-    'grad':       'Gradient Loss',
+    'grad':       'Gradient SSIM Loss',
+    'grad_edge':  'Gradient Edge Loss',
     'focal':      'Focal Loss',
     'dice':       'Dice Loss',
     'gc':         'Grad Consistency',
@@ -546,10 +545,12 @@ def visualize_sample_during_training(model, vis_loader, device, output_folder,
     actual_samples = min(num_samples, inputs.size(0))
 
     for s in range(actual_samples):
-        fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+        fig, axes = plt.subplots(2, 4, figsize=(20, 10))
 
         input_img = inputs[s, 0].cpu().numpy()
         gt_diff_img = gt_diffuse[s, 0].cpu().numpy()
+        gt_spec_img = gt_specular[s, 0].cpu().numpy()
+        gt_grad_img = gt_gradient[s, 0].cpu().numpy()
         pred_diff_img = pred_diffuse[s, 0].cpu().numpy()
         pred_spec_img = pred_specular[s, 0].cpu().numpy()
         pred_grad_img = pred_gradient[s, 0].cpu().numpy()
@@ -566,21 +567,28 @@ def visualize_sample_during_training(model, vis_loader, device, output_folder,
         axes[0, 2].imshow(pred_diff_img, cmap='gray', vmin=0, vmax=1)
         axes[0, 2].set_title('Pred Diffuse', fontsize=11)
         axes[0, 2].axis('off')
+        diff = np.abs(pred_diff_img - gt_diff_img)
+        im = axes[0, 3].imshow(diff, cmap='hot', vmin=0, vmax=0.3)
+        axes[0, 3].set_title('|Pred - GT| Difference', fontsize=11)
+        axes[0, 3].axis('off')
+        plt.colorbar(im, ax=axes[0, 3], fraction=0.046)
 
         # 第二行
-        axes[1, 0].imshow(pred_spec_img, cmap='gray', vmin=0, vmax=1)
-        axes[1, 0].set_title('Pred Specular', fontsize=11)
+        axes[1, 0].imshow(gt_spec_img, cmap='gray', vmin=0, vmax=1)
+        axes[1, 0].set_title('GT Specular', fontsize=11)
         axes[1, 0].axis('off')
 
-        axes[1, 1].imshow(pred_grad_img, cmap='gray', vmin=0, vmax=1)
-        axes[1, 1].set_title('Pred Gradient', fontsize=11)
+        axes[1, 1].imshow(pred_spec_img, cmap='gray', vmin=0, vmax=1)
+        axes[1, 1].set_title('Pred Specular', fontsize=11)
         axes[1, 1].axis('off')
 
-        diff = np.abs(pred_diff_img - gt_diff_img)
-        im = axes[1, 2].imshow(diff, cmap='hot', vmin=0, vmax=0.3)
-        axes[1, 2].set_title('|Pred - GT| Difference', fontsize=11)
+        axes[1, 2].imshow(gt_grad_img, cmap='gray', vmin=0, vmax=1)
+        axes[1, 2].set_title('GT Input Gradient', fontsize=11)
         axes[1, 2].axis('off')
-        plt.colorbar(im, ax=axes[1, 2], fraction=0.046)
+
+        axes[1, 3].imshow(pred_grad_img, cmap='gray', vmin=0, vmax=1)
+        axes[1, 3].set_title('Pred Gradient', fontsize=11)
+        axes[1, 3].axis('off')
 
         # 计算当前样本指标
         sample_mae = np.mean(diff)

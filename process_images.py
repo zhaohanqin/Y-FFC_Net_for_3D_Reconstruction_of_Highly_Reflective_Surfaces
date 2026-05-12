@@ -368,7 +368,7 @@ def visualize_results(input_img, output_dict, save_path):
     
     # 梯度输出
     axes[1, 1].imshow(gradient_array, cmap='gray')
-    axes[1, 1].set_title('Gradient Output', fontsize=14, fontweight='bold')
+    axes[1, 1].set_title('Pred Input Gradient', fontsize=14, fontweight='bold')
     axes[1, 1].axis('off')
     
     plt.tight_layout()

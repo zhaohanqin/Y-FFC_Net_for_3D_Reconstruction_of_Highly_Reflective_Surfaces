@@ -37,7 +37,7 @@ Y_FFC_unified.py - Y-FFC / X-FFC-Swin 去高反光网络
 ─────────────────────────────────────────────────
 
 输入保持灰度图 [B, 1, H, W]，输出保持：
-{"r": pred_diffuse, "g": gradient_map, "b": est_specular}
+{"r": pred_diffuse, "g": input_gradient_map, "b": est_specular}
 """
 
 # ╔════════════════════════════════════════════════════════════════════════════╗
@@ -1072,6 +1072,73 @@ def statistical_loss(pred, gt):
     return mean_loss + std_loss
 
 
+def _as_batched_4d(tensor):
+    if tensor.dim() == 2:
+        return tensor.unsqueeze(0).unsqueeze(0), 2
+    if tensor.dim() == 3:
+        return tensor.unsqueeze(0), 3
+    if tensor.dim() == 4:
+        return tensor, 4
+    raise ValueError(f"Expected a 2D, 3D, or 4D tensor, got shape {tuple(tensor.shape)}")
+
+
+def _restore_tensor_dim(tensor, original_dim):
+    if original_dim == 2:
+        return tensor.squeeze(0).squeeze(0)
+    if original_dim == 3:
+        return tensor.squeeze(0)
+    return tensor
+
+
+def sobel_magnitude(image):
+    image_b, original_dim = _as_batched_4d(image)
+    channels = image_b.size(1)
+    dtype = image_b.dtype
+    device = image_b.device
+
+    sx = torch.tensor(
+        [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]],
+        dtype=dtype,
+        device=device,
+    ).view(1, 1, 3, 3)
+    sy = sx.transpose(-1, -2)
+    sx = sx.repeat(channels, 1, 1, 1)
+    sy = sy.repeat(channels, 1, 1, 1)
+
+    padded = F.pad(image_b, (1, 1, 1, 1), mode="replicate")
+    gx = F.conv2d(padded, sx, groups=channels)
+    gy = F.conv2d(padded, sy, groups=channels)
+    mag = torch.sqrt((gx ** 2 + gy ** 2).clamp_min(0.0))
+    return _restore_tensor_dim(mag, original_dim)
+
+
+def normalize_per_sample(image, quantile=0.995):
+    image_b, original_dim = _as_batched_4d(image)
+    dtype = image_b.dtype
+    values = image_b.float()
+    flat = values.flatten(1)
+    scale = torch.quantile(flat, quantile, dim=1, keepdim=True)
+    scale = scale.view(-1, 1, 1, 1).clamp_min(1e-8)
+    normalized = (values / scale).clamp(0.0, 1.0).to(dtype)
+    return _restore_tensor_dim(normalized, original_dim)
+
+
+def normalized_sobel_magnitude(image, quantile=0.995):
+    return normalize_per_sample(sobel_magnitude(image), quantile=quantile)
+
+
+def compute_input_gradient_target(input_img):
+    """Input-image Sobel gradient target normalized per sample to [0, 1]."""
+    return normalized_sobel_magnitude(input_img, quantile=0.995)
+
+
+def compute_input_gradient_weight_map(gt_gradient, base_weight=1.0,
+                                      edge_weight=5.0):
+    grad_b, original_dim = _as_batched_4d(gt_gradient)
+    weight = base_weight + (edge_weight - base_weight) * grad_b.clamp(0.0, 1.0)
+    return _restore_tensor_dim(weight, original_dim)
+
+
 class PerceptualLoss(nn.Module):
     """
     感知损失（VGG16 特征匹配）。
@@ -1310,7 +1377,8 @@ class EnhancedCompositeLoss(nn.Module):
 
     def __init__(self, lambda_ssim=1.0, lambda_l1=1.0, lambda_freq=0.1,
                  lambda_perceptual=0.05, lambda_spec=0.5, lambda_stat=0.0,
-                 lambda_grad=0.5, use_edge_weight=True, use_perceptual=True,
+                 lambda_grad=0.5, lambda_grad_edge=0.5,
+                 use_edge_weight=True, use_perceptual=True,
                  lambda_focal=0.8, lambda_dice=0.3, lambda_gc=0.2,
                  lambda_cs=0.05, use_ohem=True, ohem_ratio=0.3):
         super().__init__()
@@ -1336,6 +1404,7 @@ class EnhancedCompositeLoss(nn.Module):
         self.lambda_spec = lambda_spec
         self.lambda_stat = lambda_stat     # [P5] 默认 0，移除冗余 stat
         self.lambda_grad = lambda_grad
+        self.lambda_grad_edge = lambda_grad_edge
         self.lambda_focal = lambda_focal
         self.lambda_dice = lambda_dice
         self.lambda_gc = lambda_gc
@@ -1392,6 +1461,11 @@ class EnhancedCompositeLoss(nn.Module):
             l_stat = statistical_loss(pred_diffuse, target)
 
         l_grad = 1.0 - self.ssim_fn(pred_grad.float(), gt_grad.float())
+        grad_w = compute_input_gradient_weight_map(gt_grad.detach()).to(
+            device=pred_grad.device, dtype=pred_grad.dtype)
+        l_grad_edge = (
+            torch.sqrt((pred_grad - gt_grad) ** 2 + 1e-12) * grad_w
+        ).mean()
 
         if self.use_ohem:
             l_focal = specular_ohem_loss(est_b, gt_sc, self.focal, self.ohem_ratio)
@@ -1408,7 +1482,9 @@ class EnhancedCompositeLoss(nn.Module):
         total = (self.lambda_ssim * l_ssim + self.lambda_l1 * l_l1 +
                  self.lambda_freq * l_freq + self.lambda_perceptual * l_percep +
                  self.lambda_spec * l_spec + self.lambda_stat * l_stat +
-                 self.lambda_grad * l_grad + self.lambda_focal * l_focal +
+                 self.lambda_grad * l_grad +
+                 self.lambda_grad_edge * l_grad_edge +
+                 self.lambda_focal * l_focal +
                  self.lambda_dice * l_dice + self.lambda_gc * l_gc +
                  self.lambda_cs * l_cs)
 
@@ -1420,6 +1496,7 @@ class EnhancedCompositeLoss(nn.Module):
                       ('l1', l_l1),
                       ('freq', l_freq), ('perceptual', l_percep),
                       ('spec', l_spec), ('stat', l_stat), ('grad', l_grad),
+                      ('grad_edge', l_grad_edge),
                       ('focal', l_focal), ('dice', l_dice), ('gc', l_gc),
                       ('cs', l_cs)]:
             d[k] = v.item() if isinstance(v, torch.Tensor) else v
@@ -1627,7 +1704,7 @@ class EnhancedPairedTransform:
     """
     增强版配对变换。
     在 PairedTransform 基础上集成 HighlightAugmentation。
-    返回 4 项：input, target, gt_specular, gt_gradient。
+    返回 4 项：input, target, gt_specular, gt_gradient（输入图像 Sobel 梯度）。
     """
 
     def __init__(self, p_flip=0.5, p_rotate=0.3, p_crop=0.5,
@@ -1679,11 +1756,7 @@ class EnhancedPairedTransform:
         input_img, target_img, gt_specular = self.hl_aug(
             input_img, target_img, gt_specular)
 
-        gx, gy = torch.gradient(target_img, dim=(1, 2))
-        mag = torch.sqrt(gx ** 2 + gy ** 2 + 1e-8)
-        flat = mag.flatten()
-        p995 = torch.quantile(flat, 0.995) if flat.numel() > 0 else torch.tensor(1.0)
-        gt_gradient = (mag / (p995 + 1e-8)).clamp(0, 1)
+        gt_gradient = compute_input_gradient_target(input_img)
 
         return input_img, target_img, gt_specular, gt_gradient
 
@@ -1691,7 +1764,7 @@ class EnhancedPairedTransform:
 class FringeDataset(Dataset):
     """
     条纹图数据集。
-    支持 PairedTransform 数据增强，gt_gradient 使用梯度幅值。
+    支持 PairedTransform 数据增强，gt_gradient 使用输入图像 Sobel 梯度幅值。
     """
 
     def __init__(self, input_dir, target_dir, transform=None, resize=None,
@@ -1768,12 +1841,7 @@ class FringeDataset(Dataset):
 
         gt_specular = (input_img - target_img).clamp(0, 1)
 
-        # 梯度幅值作为 gt_gradient
-        gx, gy = torch.gradient(target_img, dim=(1, 2))
-        gt_gradient_mag = torch.sqrt(gx ** 2 + gy ** 2 + 1e-8)
-        flat = gt_gradient_mag.flatten()
-        p995 = torch.quantile(flat, 0.995) if flat.numel() > 0 else torch.tensor(1.0)
-        gt_gradient = (gt_gradient_mag / (p995 + 1e-8)).clamp(0.0, 1.0)
+        gt_gradient = compute_input_gradient_target(input_img)
 
         return input_img, target_img, gt_specular, gt_gradient
 
@@ -1973,10 +2041,10 @@ class GradientDecoder(nn.Module):
         self.block_4_conv_transpose = Conv2D_BN_activa(32, 32, 4, 2, 1, transpose=True)
 
         self.block_5_conv_1 = Conv2D_BN_activa(32 + 64, 64, 4, 2, 1, transpose=True)
-        self.block_5_conv_2 = Conv2D_BN_activa(64, 1, 5, 1, 2, activation=None, if_bn=False)
+        self.block_5_conv_2 = Conv2D_BN_activa(65, 1, 5, 1, 2, activation=None, if_bn=False)
         self.sigmoid_layer = nn.Sigmoid()
 
-    def forward(self, backbone_features, x_c):
+    def forward(self, backbone_features, x_c, original_input=None):
         x_bb_1, x_bb_2, x_bb_3, x_bb_4 = backbone_features
 
         if x_c.shape[-2:] != x_bb_4.shape[-2:]:
@@ -2032,6 +2100,17 @@ class GradientDecoder(nn.Module):
         x = torch.cat([x_to_be_enhanced_4, x_bb_1], dim=1)
 
         x = self.block_5_conv_1(x)
+        if original_input is None:
+            original_input = torch.zeros(
+                x.size(0), 1, x.size(2), x.size(3),
+                device=x.device, dtype=x.dtype)
+        else:
+            if original_input.shape[-2:] != x.shape[-2:]:
+                original_input = F.interpolate(
+                    original_input, size=x.shape[-2:],
+                    mode='bilinear', align_corners=False)
+            original_input = original_input.to(device=x.device, dtype=x.dtype)
+        x = torch.cat([x, original_input], dim=1)
         x = self.block_5_conv_2(x)
         x_g = self.sigmoid_layer(x)
 
@@ -2262,7 +2341,7 @@ class YFFC(nn.Module):
 
     def forward(self, x):
         c_feat = self.encoder(x)
-        g_feat = self.gradient_decoder(c_feat[:-1], c_feat[-1])
+        g_feat = self.gradient_decoder(c_feat[:-1], c_feat[-1], original_input=x)
         enh = self.enhancement_layers(g_feat[:-1])
         est_b = self.main_decoder(c_feat, enh, g_feat[-1], original_input=x)
         if est_b.shape[-2:] != x.shape[-2:]:
@@ -2335,6 +2414,7 @@ class DynamicLossWeightScheduler:
             'lambda_spec':       0.5,
             'lambda_stat':       0.0,     # 移除冗余 stat
             'lambda_grad':       max(0.3, 0.5 - 0.2 * p),
+            'lambda_grad_edge':  min(0.8, 0.3 + 0.5 * p),
             'lambda_focal':      min(0.8, 0.3 + 0.5 * p),
             'lambda_dice':       min(0.3, 0.1 + 0.2 * p),
             'lambda_gc':         min(0.2, 0.05 + 0.15 * p),

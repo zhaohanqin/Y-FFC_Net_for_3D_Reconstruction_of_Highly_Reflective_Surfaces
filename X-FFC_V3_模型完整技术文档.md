@@ -76,7 +76,7 @@ X-FFC 是一个专为**图像高光分解任务**设计的深度学习模型。�
 
 ```python
 {'r': pred_diffuse,    # [B, 1, H, W]  漫反射分量（主输出）
- 'g': gradient_map,    # [B, 1, H, W]  梯度图（辅助输出）
+ 'g': gradient_map,    # [B, 1, H, W]  输入图像 Sobel 梯度图（辅助输出）
  'b': est_specular,    # [B, 1, H, W]  镜面反射分量
  'cs': cs_loss}        # 标量，仅训练使用的跨尺度一致性辅助项
 ```
@@ -87,7 +87,7 @@ X-FFC V3 / X-FFC-Swin 的整体架构可概括为 **"双编码 → 多尺度自�
 
 1. **双编码器主干（EncoderSwin）**：ResNet50（空洞卷积版）负责局部纹理与条纹边界，Swin-Tiny 负责窗口上下文和层级特征。Swin 分支输出 H/4、H/8、H/16；H/4/H/8 通过 AdaptiveSkipFusion 增强中层 skip，H/16 通过 CrossModalFusion 与 `x_bb_4` 做瓶颈层双向交互。融合特征经 FFC 瓶颈层和 HighFrequencyEnhancement 高频增强后输出 5 级编码特征。
 
-2. **梯度解码分支（GradientDecoder + EnhancementLayers）**：执行辅助任务——预测梯度图，并输出 4 级中间特征经 EnhancementLayers 频域精炼后供主解码器使用。
+2. **梯度解码分支（GradientDecoder + EnhancementLayers）**：执行辅助任务——由网络预测输入图像梯度图，并输出 4 级中间特征经 EnhancementLayers 频域精炼后供主解码器使用。训练监督目标由原始高反光输入的 Sobel 梯度生成，但推理时的 `g` 由 GradientDecoder 输出，不直接调用 Sobel 后处理。
 
 3. **主解码分支（MainDecoder）**：执行核心任务——重建镜面反射分量。融合编码器跳跃特征（经 Attention\_block 门控加权）、增强特征、梯度门控注入 \[P10\]，并在每一级应用 SpecularAwareAttention 高光感知注意力。输出头采用扩展设计 \[P2\]（4 层卷积 + 膨胀卷积 + skip connection）。
 
@@ -816,11 +816,11 @@ MS-SSIM 在 3 个尺度上评估结构相似性，对多尺度结构变化更敏
 
 对镜面反射分量 \(est\_b\) 直接施加 Charbonnier + SSIM 联合监督，确保网络不仅在漫反射输出端表现好，在镜面反射的预测精度上也有保障。
 
-**6. 梯度分支 SSIM 损失**
+**6. 输入梯度分支监督损失**
 
 \[l_{grad} = 1 - \text{SSIM}(pred\_grad, gt\_grad)\]
 
-对梯度预测辅助任务的直接监督。梯度真值由目标图像的 Sobel 梯度幅值归一化到 \([0,1]\) 得到。
+对梯度预测辅助任务的直接监督。梯度真值由输入图像 `input` 的 Sobel 梯度幅值计算，并按样本归一化到 \([0,1]\)。因此 `g` 的学习目标是原始高反光输入中的边缘、条纹突变和高光边界，而不再来自 `target/diffuse`。Sobel 只用于生成训练标签；推理输出 `pred_grad` 由 GradientDecoder 预测。训练中还加入基于 `gt_gradient` 高响应区域的 Charbonnier/L1 加权项，直接约束 `pred_grad` 在输入强边缘处更准确。
 
 **7. SpecularFocalLoss（高光焦点损失）**
 
@@ -852,7 +852,7 @@ MS-SSIM 在 3 个尺度上评估结构相似性，对多尺度结构变化更敏
 
 #### 总损失计算
 
-\[l_{total} = \lambda_{ssim} l_{ssim} + \lambda_{l1} l_{l1} + \lambda_{freq} l_{freq} + \lambda_{percep} l_{percep} + \lambda_{spec} l_{spec} + \lambda_{grad} l_{grad} + \lambda_{focal} l_{focal} + \lambda_{dice} l_{dice} + \lambda_{gc} l_{gc} + \lambda_{cs} l_{cs}\]
+\[l_{total} = \lambda_{ssim} l_{ssim} + \lambda_{l1} l_{l1} + \lambda_{freq} l_{freq} + \lambda_{percep} l_{percep} + \lambda_{spec} l_{spec} + \lambda_{grad} l_{grad} + \lambda_{grad\_edge} l_{grad\_edge} + \lambda_{focal} l_{focal} + \lambda_{dice} l_{dice} + \lambda_{gc} l_{gc} + \lambda_{cs} l_{cs}\]
 
 所有项 \(\geq 0\)，\(\lambda_{stat}\) 默认为 0（\[P5\] 移除冗余统计损失）。不使用可学习权重（这是导致早期版本出现负数损失的根源），所有权重完全由 \(\lambda\_*\) 和动态调度器控制。
 
@@ -879,6 +879,7 @@ MS-SSIM 在 3 个尺度上评估结构相似性，对多尺度结构变化更敏
 | \(\lambda_{gc}\) | 0.05 | 0.2（上升） |
 | \(\lambda_{cs}\) | 0.02 | 0.05（上升） |
 | \(\lambda_{grad}\) | 0.5 | 0.3（下降） |
+| \(\lambda_{grad\_edge}\) | 0.3 | 0.8（上升） |
 
 ---
 
@@ -940,7 +941,7 @@ shadow[name] = decay * shadow[name] + (1 - decay) * param.data
 4. **随机裁剪+缩放**（p=0.5）：裁剪比例 0.7\~1.0，裁剪后插值回原始尺寸
 5. **亮度增强**（0.9\~1.1 倍）：同步应用于 input、target 和 gt\_specular
 6. **HighlightAugmentation（合成高光增强）**（p=0.5）：随机叠加 1-6 个高斯 blob 高光（半径 3\~min\_side/20，强度 0.2\~0.7），同步更新 input 和 gt\_specular
-7. **梯度真值计算**：对 target 计算空间梯度幅值，以 99.5% 分位数归一化到 \([0,1]\)
+7. **梯度真值计算**：对增强后的 input 计算 Sobel 梯度幅值，并按样本归一化到 \([0,1]\)，得到输入图像梯度图。
 
 ### 8.7 多指标最优模型保存
 
