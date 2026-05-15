@@ -59,6 +59,19 @@ import math
 import time
 
 
+def _safe_tensor(tensor, nan=0.0, posinf=1.0e4, neginf=-1.0e4, clamp=None):
+    """Numerical guard used only at high-risk boundaries.
+
+    It prevents one unstable FFT/attention activation from turning the whole
+    training run into persistent NaN/Inf while keeping normal finite values
+    unchanged.
+    """
+    tensor = torch.nan_to_num(tensor, nan=nan, posinf=posinf, neginf=neginf)
+    if clamp is not None:
+        tensor = tensor.clamp(clamp[0], clamp[1])
+    return tensor
+
+
 def truncated_normal_(tensor, mean=0.0, std=1.0):
     """
     截断正态分布初始化函数。
@@ -226,6 +239,8 @@ class FourierUnit(nn.Module):
         if self.spatial_scale_factor is not None:
             output = F.interpolate(output, size=orig_size,
                                    mode=self.spatial_scale_mode, align_corners=False)
+
+        output = _safe_tensor(output, nan=0.0, posinf=1.0e4, neginf=-1.0e4, clamp=(-1.0e4, 1.0e4))
 
         if orig_dtype == torch.float16:
             output = output.half()
@@ -991,8 +1006,9 @@ class SSIM(nn.Module):
         C2 = (0.03) ** 2
         eps = 1e-8
 
-        ssim_map = ((2 * mu12 + C1) * (2 * sigma12 + C2)) / (
-            (mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2) + eps)
+        denom = ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2)).clamp_min(eps)
+        ssim_map = ((2 * mu12 + C1) * (2 * sigma12 + C2)) / denom
+        ssim_map = _safe_tensor(ssim_map, nan=0.0, posinf=1.0, neginf=-0.5)
         # [P12-FIX] 训练时用 soft clamp 保护：允许梯度流但限制在合理范围
         # 原版 as_loss=True 完全不 clamp，可能出现 >1 的值使 1-ssim 变负
         if not self.as_loss:
@@ -1032,8 +1048,10 @@ class MSSSIM(nn.Module):
         s1_sq = torch.clamp(s1_sq, min=0)
         s2_sq = torch.clamp(s2_sq, min=0)
         C1, C2 = 0.01**2, 0.03**2
-        lum = (2*mu12 + C1) / (mu1_sq + mu2_sq + C1)
-        cs = (2*s12 + C2) / (s1_sq + s2_sq + C2)
+        lum = (2 * mu12 + C1) / (mu1_sq + mu2_sq + C1).clamp_min(1e-8)
+        cs = (2 * s12 + C2) / (s1_sq + s2_sq + C2).clamp_min(1e-8)
+        lum = _safe_tensor(lum, nan=0.0, posinf=1.0, neginf=-0.5, clamp=(-0.5, 1.0))
+        cs = _safe_tensor(cs, nan=0.0, posinf=1.0, neginf=0.0, clamp=(0.0, 1.0))
         return lum.mean(), cs.mean()
 
     def forward(self, img1, img2):
@@ -1055,8 +1073,12 @@ class MSSSIM(nn.Module):
         return msssim
 
 
-def charbonnier_loss(pred, gt, eps=1e-6):
-    """[P13] Charbonnier 损失：误差 0 处光滑可导，后期梯度更稳定。"""
+def charbonnier_loss(pred, gt, eps=1e-3):
+    """[P13][SAFE] Charbonnier 损失：误差 0 处光滑可导，后期梯度更稳定。
+
+    eps 由 1e-6 提升至 1e-3：在 fp16 下 1e-6 已接近下溢，反向梯度被 1/eps 放大
+    可达 1e6 量级；1e-3 在精度损失可忽略（典型误差 0.01~0.5）的同时显著稳定反向。
+    """
     return torch.sqrt((pred - gt)**2 + eps**2).mean()
 
 
@@ -1091,6 +1113,11 @@ def _restore_tensor_dim(tensor, original_dim):
 
 
 def sobel_magnitude(image):
+    """[SAFE] Sobel 幅值，反向稳定。
+
+    原版 sqrt(gx²+gy²) 在零梯度区域 sqrt(0) 的反向导数是 ∞。
+    加入 eps=1e-6 保护：sqrt(gx²+gy²+1e-6) 在 0 处梯度为 0，反向安全。
+    """
     image_b, original_dim = _as_batched_4d(image)
     channels = image_b.size(1)
     dtype = image_b.dtype
@@ -1108,17 +1135,25 @@ def sobel_magnitude(image):
     padded = F.pad(image_b, (1, 1, 1, 1), mode="replicate")
     gx = F.conv2d(padded, sx, groups=channels)
     gy = F.conv2d(padded, sy, groups=channels)
-    mag = torch.sqrt((gx ** 2 + gy ** 2).clamp_min(0.0))
+    mag = torch.sqrt(gx ** 2 + gy ** 2 + 1e-6)  # [SAFE] eps=1e-6 防 sqrt(0) 反向爆炸
     return _restore_tensor_dim(mag, original_dim)
 
 
 def normalize_per_sample(image, quantile=0.995):
+    """[SAFE] 按样本对幅值图按分位数归一化到 [0,1]。
+
+    数值安全要点：
+      原版 scale.clamp_min(1e-8) 在反向时，对 `values / scale` 求导会得到
+      `-values / scale²` 量级的梯度；当 scale ≈ 1e-8 时反向梯度会被放大 1e16 倍。
+      改成 clamp_min(1e-3) 是相对安全的（典型 Sobel 幅值在 [0, sqrt(8)] 之间，
+      1e-3 远小于正常 scale，但远大于致命的反向爆炸阈值）。
+    """
     image_b, original_dim = _as_batched_4d(image)
     dtype = image_b.dtype
     values = image_b.float()
     flat = values.flatten(1)
     scale = torch.quantile(flat, quantile, dim=1, keepdim=True)
-    scale = scale.view(-1, 1, 1, 1).clamp_min(1e-8)
+    scale = scale.view(-1, 1, 1, 1).clamp_min(1e-3)
     normalized = (values / scale).clamp(0.0, 1.0).to(dtype)
     return _restore_tensor_dim(normalized, original_dim)
 
@@ -1137,6 +1172,16 @@ def compute_input_gradient_weight_map(gt_gradient, base_weight=1.0,
     grad_b, original_dim = _as_batched_4d(gt_gradient)
     weight = base_weight + (edge_weight - base_weight) * grad_b.clamp(0.0, 1.0)
     return _restore_tensor_dim(weight, original_dim)
+
+
+def compute_highlight_prior(input_img, threshold=0.7, softness=0.1):
+    """Soft highlight prior from input brightness, smoothed for stable weighting."""
+    img_b, original_dim = _as_batched_4d(input_img)
+    img_b = img_b.clamp(0.0, 1.0)
+    softness = max(float(softness), 1e-6)
+    prior = torch.sigmoid((img_b - threshold) / softness)
+    prior = F.avg_pool2d(prior, kernel_size=5, stride=1, padding=2)
+    return _restore_tensor_dim(prior.clamp(0.0, 1.0), original_dim)
 
 
 class PerceptualLoss(nn.Module):
@@ -1190,12 +1235,16 @@ class PerceptualLoss(nn.Module):
 
 
 def compute_edge_weight_map(gt_specular, sigma=3.0, base_weight=1.0, edge_weight=3.0):
-    """根据镜面反射分量的梯度生成边缘权重图，用于边缘感知加权 L1 损失。"""
+    """根据镜面反射分量的梯度生成边缘权重图，用于边缘感知加权 L1 损失。
+
+    [SAFE] sqrt eps 由 1e-8 提升至 1e-4，避免低梯度区反向爆炸；
+    输入通常已 detach（gt_specular），但保持稳定性约定。
+    """
     gx = gt_specular[:, :, :, 1:] - gt_specular[:, :, :, :-1]
     gy = gt_specular[:, :, 1:, :] - gt_specular[:, :, :-1, :]
     gx = F.pad(gx, (0, 1, 0, 0), mode='replicate')
     gy = F.pad(gy, (0, 0, 0, 1), mode='replicate')
-    edge_mag = torch.sqrt(gx ** 2 + gy ** 2 + 1e-8)
+    edge_mag = torch.sqrt(gx ** 2 + gy ** 2 + 1e-4)
 
     k = max(3, int(6 * sigma + 1) | 1)
     pad_size = k // 2
@@ -1204,7 +1253,7 @@ def compute_edge_weight_map(gt_specular, sigma=3.0, base_weight=1.0, edge_weight
         kernel_size=k, stride=1, padding=0)
 
     batch_max = edge_mag.flatten(1).max(dim=1, keepdim=True)[0].unsqueeze(-1).unsqueeze(-1)
-    edge_mag = edge_mag / (batch_max + 1e-8)
+    edge_mag = edge_mag / batch_max.clamp_min(1e-4)
     weight_map = base_weight + (edge_weight - base_weight) * edge_mag
     return weight_map
 
@@ -1255,6 +1304,11 @@ class GradientConsistencyLoss(nn.Module):
         self.register_buffer('sobel_y', sx.t().unsqueeze(0).unsqueeze(0))
 
     def forward(self, pred, gt):
+        """[SAFE] 反向稳定的梯度一致性损失。
+
+        原版 eps=1e-8 在 fp32 下也接近下溢边缘；改为 1e-4 大大提升反向稳定性，
+        同时对损失的精度影响可忽略（典型梯度幅值在 1e-2~1.0 量级）。
+        """
         sx = self.sobel_x.to(pred.dtype)
         sy = self.sobel_y.to(pred.dtype)
 
@@ -1263,20 +1317,29 @@ class GradientConsistencyLoss(nn.Module):
         ggx = F.conv2d(gt, sx, padding=1)
         ggy = F.conv2d(gt, sy, padding=1)
 
-        pm = torch.sqrt(pgx ** 2 + pgy ** 2 + 1e-8)
-        gm = torch.sqrt(ggx ** 2 + ggy ** 2 + 1e-8)
+        # [SAFE] eps=1e-4：sqrt(0+1e-4)=0.01，远离反向爆炸点
+        pm = torch.sqrt(pgx ** 2 + pgy ** 2 + 1e-4)
+        gm = torch.sqrt(ggx ** 2 + ggy ** 2 + 1e-4)
 
         mag_loss = F.l1_loss(pm, gm)
 
-        mask = (gm > gm.mean() * 0.5).float()
-        cos = (pgx * ggx + pgy * ggy) / (pm * gm + 1e-8)
-        dir_loss = ((1.0 - cos) * mask).sum() / (mask.sum() + 1e-8)
+        # [SAFE] 用 detach mask + 较大下界，反向只走 cos 数值通道
+        with torch.no_grad():
+            mask = (gm > gm.mean() * 0.5).float()
+            mask_sum = mask.sum().clamp_min(1.0)
+        cos = (pgx * ggx + pgy * ggy) / (pm * gm + 1e-4)
+        cos = _safe_tensor(cos, nan=1.0, posinf=1.0, neginf=-1.0, clamp=(-1.0, 1.0))
+        dir_loss = ((1.0 - cos) * mask).sum() / mask_sum
 
         return mag_loss + 0.3 * dir_loss
 
 
 def specular_ohem_loss(pred, gt, base_fn, ratio=0.3):
-    """在线难样本挖掘（OHEM）：只对误差最大的 top-k 像素额外加权。"""
+    """在线难样本挖掘（OHEM）：只对误差最大的 top-k 像素额外加权。
+
+    [SAFE] mask.sum() 实际至少为 k = ratio*H*W (远大于 1)，
+    但保持显式 clamp_min(1.0) 防御性下界，避免极小 patch 上的数值病态。
+    """
     with torch.no_grad():
         err = torch.abs(pred - gt)
         B = err.shape[0]
@@ -1287,7 +1350,7 @@ def specular_ohem_loss(pred, gt, base_fn, ratio=0.3):
         mask.scatter_(1, idx, 1.0)
         mask = mask.view_as(err)
     base = base_fn(pred, gt)
-    hard = (torch.abs(pred - gt) * mask).sum() / (mask.sum() + 1e-8)
+    hard = (torch.abs(pred - gt) * mask).sum() / mask.sum().clamp_min(1.0)
     return 0.5 * base + 0.5 * hard
 
 
@@ -1297,11 +1360,16 @@ class CompositeLoss(nn.Module):
     """
     多目标复合损失。
     整合 SSIM / L1 / 频域 / 感知 / 镜面直接监督 / 统计 / 梯度 / 边缘加权。
+
+    [NEW] 新增 spec_likelihood 监督项 l_s_lik：
+        对 GradientDecoder 输出的高光概率图 pred_s_lik 用 gt_specular 软监督，
+        使梯度分支的中间特征获得"任务化"语义信号。
     """
 
     def __init__(self, lambda_ssim=1.0, lambda_l1=1.0, lambda_freq=0.1,
                  lambda_perceptual=0.05, lambda_spec=0.5, lambda_stat=0.1,
-                 lambda_grad=0.5, use_edge_weight=True, use_perceptual=True):
+                 lambda_grad=0.5, lambda_s_lik=0.3,
+                 use_edge_weight=True, use_perceptual=True):
         super(CompositeLoss, self).__init__()
         self.ssim = SSIM()
         self.lambda_ssim = lambda_ssim
@@ -1311,6 +1379,7 @@ class CompositeLoss(nn.Module):
         self.lambda_spec = lambda_spec
         self.lambda_stat = lambda_stat
         self.lambda_grad = lambda_grad
+        self.lambda_s_lik = lambda_s_lik
         self.use_edge_weight = use_edge_weight
         self.use_perceptual = use_perceptual
         if self.use_perceptual:
@@ -1322,7 +1391,7 @@ class CompositeLoss(nn.Module):
         return F.l1_loss(torch.abs(pred_fft), torch.abs(gt_fft))
 
     def forward(self, pred_diffuse, target, est_b, gt_specular,
-                pred_grad, gt_grad):
+                pred_grad, gt_grad, pred_s_lik=None):
         l_ssim = 1.0 - self.ssim(pred_diffuse.float(), target.float())
 
         if self.use_edge_weight:
@@ -1345,15 +1414,23 @@ class CompositeLoss(nn.Module):
         l_stat = statistical_loss(pred_diffuse, target)
         l_grad = 1.0 - self.ssim(pred_grad.float(), gt_grad.float())
 
+        # [NEW] spec_likelihood 头损失
+        if pred_s_lik is None:
+            l_s_lik = torch.tensor(0.0, device=pred_diffuse.device)
+        else:
+            l_s_lik = F.l1_loss(pred_s_lik, gt_specular_clamped) + \
+                      0.5 * (1.0 - self.ssim(pred_s_lik.float(), gt_specular_clamped.float()))
+
         total = (self.lambda_ssim * l_ssim + self.lambda_l1 * l_l1 +
                  self.lambda_freq * l_freq + self.lambda_perceptual * l_perceptual +
                  self.lambda_spec * l_spec + self.lambda_stat * l_stat +
-                 self.lambda_grad * l_grad)
+                 self.lambda_grad * l_grad + self.lambda_s_lik * l_s_lik)
 
         loss_dict = {}
         for k, v in [('total', total), ('ssim', l_ssim), ('l1', l_l1),
                       ('freq', l_freq), ('perceptual', l_perceptual),
-                      ('spec', l_spec), ('stat', l_stat), ('grad', l_grad)]:
+                      ('spec', l_spec), ('stat', l_stat), ('grad', l_grad),
+                      ('s_lik', l_s_lik)]:
             loss_dict[k] = v.item() if isinstance(v, torch.Tensor) else v
 
         return total, loss_dict
@@ -1373,6 +1450,8 @@ class EnhancedCompositeLoss(nn.Module):
           ★ 注意：不再使用可学习权重，这是导致负数损失的根源 ★
     [P12] SSIM as_loss=True 保留梯度
     [P13] L1 → Charbonnier 平滑损失
+    [NEW S1] l_s_lik   : GradientDecoder 高光头与 gt_specular 的 Charbonnier+SSIM 监督
+    [NEW S2] l_s_cons  : pred_s_lik 与 est_b 在高光区域的弱一致性约束（小权重）
     """
 
     def __init__(self, lambda_ssim=1.0, lambda_l1=1.0, lambda_freq=0.1,
@@ -1380,7 +1459,10 @@ class EnhancedCompositeLoss(nn.Module):
                  lambda_grad=0.5, lambda_grad_edge=0.5,
                  use_edge_weight=True, use_perceptual=True,
                  lambda_focal=0.8, lambda_dice=0.3, lambda_gc=0.2,
-                 lambda_cs=0.05, use_ohem=True, ohem_ratio=0.3):
+                 lambda_cs=0.05, lambda_grad_spec=0.05,
+                 lambda_s_lik=0.3, lambda_s_cons=0.02,
+                 highlight_prior_gamma=1.0,
+                 use_ohem=True, ohem_ratio=0.3):
         super().__init__()
 
         self.ssim_fn = SSIM(as_loss=True)       # [P12]
@@ -1409,27 +1491,54 @@ class EnhancedCompositeLoss(nn.Module):
         self.lambda_dice = lambda_dice
         self.lambda_gc = lambda_gc
         self.lambda_cs = lambda_cs
+        self.lambda_grad_spec = lambda_grad_spec
+        # [NEW] spec_likelihood 相关权重
+        self.lambda_s_lik = lambda_s_lik
+        self.lambda_s_cons = lambda_s_cons
+        self.highlight_prior_gamma = highlight_prior_gamma
         self.use_ohem = use_ohem
         self.ohem_ratio = ohem_ratio
         # ★ P5 修复：不再有可学习损失权重 ★
         # ★ 所有损失项的权重完全由 lambda_* 和 ImprovedWeightScheduler 控制 ★
 
     def frequency_loss(self, p, g):
-        """[P4-FIX] 幅度谱 + 相位一致性联合损失（修复数值稳定性）。"""
+        """[P4-FIX2] 幅度谱 + 能量加权相位一致性。
+
+        关键稳定性修复：
+          原版 cos_diff = Re(p·conj(g)) / (|p|·|g|) 在反向时会出现 1/|p|²·|g| 项，
+          频谱低能量频点会导致梯度爆炸 → NaN/Inf。
+
+        改造：
+          1) 用 "能量加权的实部内积差" 替代角度差：
+             phase = mean( |Re(p·conj(g)) - |p|·|g|| )
+             - Re(p·conj(g)) = |p||g| cos(θp - θg)
+             - 当 p≈g 时该值接近 |p||g|，phase ≈ 0
+             - 完全避开了除法，没有反向爆炸点
+          2) 用 detach 的 mask 屏蔽零能量频点（前向后向都剪枝）。
+        """
+        p = _safe_tensor(p.float(), nan=0.0, posinf=1.0, neginf=0.0, clamp=(0.0, 1.0))
+        g = _safe_tensor(g.float(), nan=0.0, posinf=1.0, neginf=0.0, clamp=(0.0, 1.0))
         p_fft = torch.fft.rfft2(p, norm='ortho')
         g_fft = torch.fft.rfft2(g, norm='ortho')
-        amp_loss = F.l1_loss(torch.abs(p_fft), torch.abs(g_fft))
-        # 修复：用复数乘法代替 torch.angle() 的不连续梯度
-        # cos(angle_p - angle_g) = Re(p_fft * conj(g_fft)) / (|p_fft| * |g_fft|)
-        p_norm = torch.abs(p_fft).clamp(min=1e-8)
-        g_norm = torch.abs(g_fft).clamp(min=1e-8)
-        cross = p_fft * g_fft.conj()
-        cos_diff = cross.real / (p_norm * g_norm)
-        phase_loss = (1.0 - cos_diff).mean()
-        return amp_loss + 0.5 * phase_loss
+        p_abs = torch.abs(p_fft)
+        g_abs = torch.abs(g_fft)
+        amp_loss = F.l1_loss(p_abs, g_abs)
+
+        # [SAFE] 能量加权的"准相位"差（无除法，反向稳定）
+        # Re(p·conj(g)) ≤ |p|·|g|，等号当且仅当两者同相
+        re_inner = (p_fft * g_fft.conj()).real
+        amp_prod = p_abs * g_abs
+        # 用 GT 频谱的能量作 detach mask，屏蔽几乎为零的高频
+        with torch.no_grad():
+            energy_mask = (g_abs > g_abs.mean() * 0.01).float()
+            denom_mask = energy_mask.sum().clamp_min(1.0)
+        phase_loss = (torch.abs(amp_prod - re_inner) * energy_mask).sum() / denom_mask
+        phase_loss = _safe_tensor(phase_loss, nan=0.0, posinf=0.0, neginf=0.0)
+        return amp_loss + 0.25 * phase_loss
 
     def forward(self, pred_diffuse, target, est_b, gt_specular,
-                pred_grad, gt_grad, cross_scale_consistency=None):
+                pred_grad, gt_grad, cross_scale_consistency=None,
+                input_img=None, pred_s_lik=None):
         gt_sc = gt_specular.clamp(0, 1)
 
         # [P3] MS-SSIM + SSIM 混合
@@ -1437,10 +1546,12 @@ class EnhancedCompositeLoss(nn.Module):
         l_msssim = 1.0 - self.msssim_fn(pred_diffuse.float(), target.float())
         l_ssim = 0.8 * l_msssim + 0.2 * l_ssim_single
 
-        # [P13] Charbonnier 替代 L1
+        # [P13][SAFE] Charbonnier 替代 L1（eps 1e-12 -> 1e-6）
+        # 1e-12 在反向 d/dx sqrt(x²+eps²) ≈ x/sqrt(x²+eps²) 在 x≈0 处梯度变化
+        # 极其陡峭，相当于不稳定的 L1。1e-6 让 0 附近的反向梯度连续平滑。
         if self.use_edge_weight:
             wm = self._ew_fn(gt_specular.detach())
-            l_l1 = (torch.sqrt((pred_diffuse - target)**2 + 1e-12) * wm).mean()
+            l_l1 = (torch.sqrt((pred_diffuse - target)**2 + 1e-6) * wm).mean()
         else:
             l_l1 = charbonnier_loss(pred_diffuse, target)
 
@@ -1463,9 +1574,65 @@ class EnhancedCompositeLoss(nn.Module):
         l_grad = 1.0 - self.ssim_fn(pred_grad.float(), gt_grad.float())
         grad_w = compute_input_gradient_weight_map(gt_grad.detach()).to(
             device=pred_grad.device, dtype=pred_grad.dtype)
+        highlight_prior = None
+        if input_img is not None:
+            highlight_prior = compute_highlight_prior(input_img.detach()).to(
+                device=pred_grad.device, dtype=pred_grad.dtype)
+            if highlight_prior.shape[-2:] != pred_grad.shape[-2:]:
+                highlight_prior = F.interpolate(
+                    highlight_prior, size=pred_grad.shape[-2:],
+                    mode='bilinear', align_corners=False)
+            grad_w = grad_w * (1.0 + self.highlight_prior_gamma * highlight_prior)
+        # [SAFE] sqrt eps 1e-12 -> 1e-6，反向稳定
         l_grad_edge = (
-            torch.sqrt((pred_grad - gt_grad) ** 2 + 1e-12) * grad_w
+            torch.sqrt((pred_grad - gt_grad) ** 2 + 1e-6) * grad_w
         ).mean()
+
+        if highlight_prior is None:
+            l_grad_spec = torch.tensor(0.0, device=pred_grad.device)
+        else:
+            # [SAFE] est_b_grad 应当 detach：l_grad_spec 是用 est_b 的边缘
+            # 作"伪标签"约束 pred_grad，est_b 端不需要梯度反传，避免反向时
+            # 经过 sobel sqrt + quantile 归一化分母（normalize_per_sample 的 scale）
+            # 产生 1/scale 的爆炸性梯度。
+            est_b_grad = normalized_sobel_magnitude(
+                est_b.detach().float(), quantile=0.995).to(
+                device=pred_grad.device, dtype=pred_grad.dtype)
+            if est_b_grad.shape[-2:] != pred_grad.shape[-2:]:
+                est_b_grad = F.interpolate(
+                    est_b_grad, size=pred_grad.shape[-2:],
+                    mode='bilinear', align_corners=False)
+            # [SAFE] 用 mean 而非 sum/sum：当 highlight_prior 平均很小时，
+            # 原版 sum / max(sum, 1e-6) 会把 loss 放大到 1e5~1e6 量级。
+            # mean 等价于"每像素加权平均"，量纲与其他损失一致。
+            l_grad_spec = (
+                torch.abs(pred_grad - est_b_grad) * highlight_prior
+            ).mean()
+
+        # ── [NEW S1] spec_likelihood 头主监督：与 gt_specular 软对齐 ──
+        if pred_s_lik is None:
+            l_s_lik = torch.tensor(0.0, device=pred_diffuse.device)
+        else:
+            # 与 est_b 对齐到同一空间尺寸（通常一致，此处稳健起见做检查）
+            if pred_s_lik.shape[-2:] != gt_sc.shape[-2:]:
+                pred_s_lik = F.interpolate(
+                    pred_s_lik, size=gt_sc.shape[-2:],
+                    mode='bilinear', align_corners=False)
+            l_s_lik = (charbonnier_loss(pred_s_lik, gt_sc) +
+                       0.5 * (1.0 - self.ssim_fn(pred_s_lik.float(), gt_sc.float())))
+
+        # ── [NEW S2] pred_s_lik 与 est_b 弱一致性（跨任务一致性，小权重） ──
+        # 让"梯度分支高光估计"和"主解码器高光估计"在高光软掩码内结构对齐，
+        # 不要求像素值精确相等（用 detach 任一端避免相互拉扯）。
+        if pred_s_lik is None:
+            l_s_cons = torch.tensor(0.0, device=pred_diffuse.device)
+        else:
+            # [SAFE] 用 gt_specular 作软掩码（高光区域权重大）
+            # 改用 mean 而非 sum/sum：原版 sum / max(sum, 1e-6) 在 batch 内
+            # 几乎无高光（如暗场景）时会把 loss 放大到 1e5~1e6 量级，
+            # 直接打爆梯度。mean 等价于"每像素加权平均"，量纲稳定。
+            soft_mask = gt_sc.detach()
+            l_s_cons = (torch.abs(pred_s_lik - est_b.detach()) * soft_mask).mean()
 
         if self.use_ohem:
             l_focal = specular_ohem_loss(est_b, gt_sc, self.focal, self.ohem_ratio)
@@ -1484,9 +1651,12 @@ class EnhancedCompositeLoss(nn.Module):
                  self.lambda_spec * l_spec + self.lambda_stat * l_stat +
                  self.lambda_grad * l_grad +
                  self.lambda_grad_edge * l_grad_edge +
+                 self.lambda_grad_spec * l_grad_spec +
                  self.lambda_focal * l_focal +
                  self.lambda_dice * l_dice + self.lambda_gc * l_gc +
-                 self.lambda_cs * l_cs)
+                 self.lambda_cs * l_cs +
+                 self.lambda_s_lik * l_s_lik +
+                 self.lambda_s_cons * l_s_cons)
 
         d = {}
         for k, v in [('total', total), ('ssim', l_ssim_single),
@@ -1496,9 +1666,10 @@ class EnhancedCompositeLoss(nn.Module):
                       ('l1', l_l1),
                       ('freq', l_freq), ('perceptual', l_percep),
                       ('spec', l_spec), ('stat', l_stat), ('grad', l_grad),
-                      ('grad_edge', l_grad_edge),
+                      ('grad_edge', l_grad_edge), ('grad_spec', l_grad_spec),
                       ('focal', l_focal), ('dice', l_dice), ('gc', l_gc),
-                      ('cs', l_cs)]:
+                      ('cs', l_cs),
+                      ('s_lik', l_s_lik), ('s_cons', l_s_cons)]:
             d[k] = v.item() if isinstance(v, torch.Tensor) else v
         return total, d
 
@@ -1545,6 +1716,9 @@ class SpecularAwareAttention(nn.Module):
             nn.BatchNorm2d(in_channels),
             nn.Sigmoid(),
         )
+        # Keep the brightness-aware attention as a residual hint rather than
+        # multiplying every decoder stage by up to 2× at initialization.
+        self.att_scale = nn.Parameter(torch.tensor(0.20))
 
     def forward(self, features, original_input):
         inp = original_input
@@ -1561,7 +1735,8 @@ class SpecularAwareAttention(nn.Module):
             masks.append(torch.sigmoid(self.steepness * (spec_prior - eff_t)))
         multi_mask = torch.cat(masks, dim=1)
         att = self.modulation(torch.cat([features, multi_mask], dim=1))
-        return features * (1.0 + att)
+        scale = self.att_scale.clamp(0.0, 0.5)
+        return _safe_tensor(features * (1.0 + scale * att), nan=0.0, posinf=1.0e4, neginf=-1.0e4, clamp=(-1.0e4, 1.0e4))
 
 
 class HighFrequencyEnhancement(nn.Module):
@@ -1607,6 +1782,8 @@ class HighFrequencyEnhancement(nn.Module):
             nn.Conv2d(se_mid, channels, 1, bias=False),
             nn.Sigmoid(),
         )
+        # HF branch is useful but should start as a small residual correction.
+        self.gamma = nn.Parameter(torch.tensor(0.10))
 
     def forward(self, x):
         B, C, H, W = x.shape
@@ -1615,7 +1792,8 @@ class HighFrequencyEnhancement(nn.Module):
         learn_hf = self.hf_branch(x)
         fused = self.fusion(torch.cat([x, lap_hf, learn_hf], dim=1))
         fused = fused * self.se(fused)
-        return x + fused
+        out = x + self.gamma.clamp(0.0, 0.3) * fused
+        return _safe_tensor(out, nan=0.0, posinf=1.0e4, neginf=-1.0e4, clamp=(-1.0e4, 1.0e4))
 
 
 # ╔════════════════════════════════════════════════════════════════════════════╗
@@ -2015,8 +2193,27 @@ class Encoder(nn.Module):
 
 class GradientDecoder(nn.Module):
     """
-    梯度解码器：接收编码器特征，输出梯度图 x_g 和 4 级待增强特征。
-    各级都穿插 FFC 模块以捕获频域全局信息。
+    梯度解码器：接收编码器特征，输出
+        - 梯度图 x_g（监督目标 = Sobel(I)，输入图像梯度幅值）
+        - [新增] 高反光软概率图 x_s（监督目标 = gt_specular，[0, 1] 软标签）
+        - 4 级待增强特征 xe1, xe2, xe3, xe4
+
+    任务化辅助头设计动机：
+    ─────────────────────────────────────────────────
+    梯度分支的监督已经从 `Sobel(Id)` 改为 `Sobel(I)`，但纯梯度语义会包含大量
+    "非高光"边缘（条纹边、物体轮廓、噪声）。仅靠 `pred_grad ≈ Sobel(I)` 这一
+    监督，无法保证梯度分支学到的中间特征对"高反光分量重建"任务有效。
+
+    解决方案：在 GradientDecoder 尾部并列一个 `specular_likelihood` 辅助头，
+    与梯度头共享前面所有特征，但用 `gt_specular` 直接监督。这强制梯度分支
+    的深层特征同时编码两种语义：
+        - "哪里是边界"（梯度头）
+        - "哪里是高光"（高光概率头）
+
+    这个 `x_s` 还会被馈送到 EnhancementLayers 的 `specular_gate` 和
+    MainDecoder 的 `joint_gate/spec_lik_gate`，作为显式监督下的高光先验，
+    替代原来仅依赖"亮度+梯度"启发式的隐式估计。
+    ─────────────────────────────────────────────────
     """
 
     def __init__(self):
@@ -2041,8 +2238,30 @@ class GradientDecoder(nn.Module):
         self.block_4_conv_transpose = Conv2D_BN_activa(32, 32, 4, 2, 1, transpose=True)
 
         self.block_5_conv_1 = Conv2D_BN_activa(32 + 64, 64, 4, 2, 1, transpose=True)
+        # 梯度头（保留原结构）：输入 = 64ch 上采特征 + 1ch 原图 = 65ch
         self.block_5_conv_2 = Conv2D_BN_activa(65, 1, 5, 1, 2, activation=None, if_bn=False)
         self.sigmoid_layer = nn.Sigmoid()
+
+        # ── [NEW] 高反光软概率辅助头（与梯度头并列）──
+        # 输入：64ch 上采特征 + 1ch 原图 = 65ch；输出：1ch 全分辨率高光概率图 [0, 1]
+        # 该头比梯度头稍微深一些，因为"是否高光"比"是否边缘"判别难度更高，
+        # 需要同时利用亮度、边界形态与高频纹理。
+        self.spec_lik_conv_a = Conv2D_BN_activa(65, 32, 3, 1, 1)
+        self.spec_lik_conv_b = Conv2D_BN_activa(32, 16, 3, 1, 1)
+        self.spec_lik_conv_c = Conv2D_BN_activa(16, 1, 5, 1, 2, activation=None, if_bn=False)
+        self.spec_lik_sigmoid = nn.Sigmoid()
+        self._init_spec_lik_head()
+
+    def _init_spec_lik_head(self):
+        """让 spec_lik 头初始预测 ≈ 0（即"无高光"），避免训练初期向下游注入噪声。
+
+        通过将最后一个 conv 的权重清零、bias 设为 -2.0，使 pre-sigmoid 输出 ≈ -2，
+        sigmoid(-2) ≈ 0.12。随着 `l_s_lik` 监督的引导，模型会逐步把高光区域抬起。
+        """
+        last = self.spec_lik_conv_c.conv2d
+        nn.init.zeros_(last.weight)
+        if last.bias is not None:
+            nn.init.constant_(last.bias, -2.0)
 
     def forward(self, backbone_features, x_c, original_input=None):
         x_bb_1, x_bb_2, x_bb_3, x_bb_4 = backbone_features
@@ -2110,11 +2329,20 @@ class GradientDecoder(nn.Module):
                     original_input, size=x.shape[-2:],
                     mode='bilinear', align_corners=False)
             original_input = original_input.to(device=x.device, dtype=x.dtype)
-        x = torch.cat([x, original_input], dim=1)
-        x = self.block_5_conv_2(x)
-        x_g = self.sigmoid_layer(x)
+        # 梯度头与 spec_likelihood 头共享 [block_5_conv_1 特征 + 原图] 输入
+        x_concat = torch.cat([x, original_input], dim=1)
 
-        return x_to_be_enhanced_1, x_to_be_enhanced_2, x_to_be_enhanced_3, x_to_be_enhanced_4, x_g
+        # 梯度头：预测 Sobel(I)（即输入图像梯度幅值）
+        x_g_logits = self.block_5_conv_2(x_concat)
+        x_g = self.sigmoid_layer(x_g_logits)
+
+        # [NEW] 高光概率头：预测 gt_specular 的软概率图
+        x_s_feat = self.spec_lik_conv_a(x_concat)
+        x_s_feat = self.spec_lik_conv_b(x_s_feat)
+        x_s_logits = self.spec_lik_conv_c(x_s_feat)
+        x_s = self.spec_lik_sigmoid(x_s_logits)
+
+        return x_to_be_enhanced_1, x_to_be_enhanced_2, x_to_be_enhanced_3, x_to_be_enhanced_4, x_g, x_s
 
 
 class MainDecoder(nn.Module):
@@ -2161,12 +2389,46 @@ class MainDecoder(nn.Module):
         self.sa3 = SpecularAwareAttention(64 * 3, threshold=0.8)
         self.sa4 = SpecularAwareAttention(32 * 3, threshold=0.8)
 
-        # [P10] 梯度图调制门控
+        # [P10 + NEW] 三条并行调制通道：
+        #   grad_gate_i    ← 仅 x_g（梯度先验：哪里是边界）
+        #   joint_gate_i   ← concat(x_g, input, x_s) 3 通道：高光相关联合判别
+        #   spec_lik_gate_i← 仅 x_s（监督下的高光概率，独立 scale 控制）
+        # 三条通道相加再乘到特征上，让主解码器既保留泛边缘提示，也获得显式高光定位。
         self.grad_gate_2 = nn.Sequential(nn.Conv2d(1, 1, 3, 1, 1, bias=True), nn.Sigmoid())
         self.grad_gate_3 = nn.Sequential(nn.Conv2d(1, 1, 3, 1, 1, bias=True), nn.Sigmoid())
         self.grad_gate_4 = nn.Sequential(nn.Conv2d(1, 1, 3, 1, 1, bias=True), nn.Sigmoid())
+        # joint_gate: 输入由原来 2 通道(g, input) → 3 通道(g, input, s)
+        self.joint_gate_2 = nn.Sequential(nn.Conv2d(3, 1, 3, 1, 1, bias=True), nn.Sigmoid())
+        self.joint_gate_3 = nn.Sequential(nn.Conv2d(3, 1, 3, 1, 1, bias=True), nn.Sigmoid())
+        self.joint_gate_4 = nn.Sequential(nn.Conv2d(3, 1, 3, 1, 1, bias=True), nn.Sigmoid())
+        # [NEW] spec_lik_gate: 1 通道(s)，独立 scale，专门反映监督下的高光概率
+        self.spec_lik_gate_2 = nn.Sequential(nn.Conv2d(1, 1, 3, 1, 1, bias=True), nn.Sigmoid())
+        self.spec_lik_gate_3 = nn.Sequential(nn.Conv2d(1, 1, 3, 1, 1, bias=True), nn.Sigmoid())
+        self.spec_lik_gate_4 = nn.Sequential(nn.Conv2d(1, 1, 3, 1, 1, bias=True), nn.Sigmoid())
+        # Learnable but bounded modulation scales. 0.15 is deliberately below
+        # the design upper bound 0.3 to avoid early multiplicative blow-up.
+        self.grad_gate_scale = nn.Parameter(torch.tensor(0.15))
+        self.joint_gate_scale = nn.Parameter(torch.tensor(0.15))
+        self.spec_lik_gate_scale = nn.Parameter(torch.tensor(0.15))
+        self._init_aux_gates()
 
-    def forward(self, c_features, enhanced_features, x_g, original_input):
+    def _init_aux_gates(self):
+        for gate in (self.grad_gate_2, self.grad_gate_3, self.grad_gate_4,
+                     self.joint_gate_2, self.joint_gate_3, self.joint_gate_4,
+                     self.spec_lik_gate_2, self.spec_lik_gate_3, self.spec_lik_gate_4):
+            conv = gate[0]
+            nn.init.zeros_(conv.weight)
+            nn.init.constant_(conv.bias, -1.0)
+
+    @staticmethod
+    def _resize_prior(prior, size, device, dtype):
+        if prior.shape[1] != 1:
+            prior = prior.mean(dim=1, keepdim=True)
+        if prior.shape[-2:] != size:
+            prior = F.interpolate(prior, size=size, mode='bilinear', align_corners=False)
+        return prior.to(device=device, dtype=dtype)
+
+    def forward(self, c_features, enhanced_features, x_g, x_s, original_input):
         x_bb_1, x_bb_2, x_bb_3, x_bb_4, x_c = c_features
         xe1, xe2, xe3, xe4 = enhanced_features
 
@@ -2191,9 +2453,14 @@ class MainDecoder(nn.Module):
         nl = 384 - int(384 * 0.25)
         fo = self.ffc_h8((x[:, :nl], x[:, nl:]))
         x = torch.cat([fo[0], fo[1]], 1) + x
-        # [P10] 梯度注入 Level 2
+        # [P10 + NEW] 三通道联合调制：grad + joint(g,i,s) + spec_lik
         _xg2 = F.interpolate(x_g, x.shape[-2:], mode='bilinear', align_corners=False) if x_g.shape[-2:] != x.shape[-2:] else x_g
-        x = x * (1.0 + self.grad_gate_2(_xg2))
+        _xs2 = F.interpolate(x_s, x.shape[-2:], mode='bilinear', align_corners=False) if x_s.shape[-2:] != x.shape[-2:] else x_s
+        _inp2 = self._resize_prior(original_input, x.shape[-2:], x.device, x.dtype)
+        x = x * (1.0 +
+                 self.grad_gate_scale.clamp(0.0, 0.3) * self.grad_gate_2(_xg2) +
+                 self.joint_gate_scale.clamp(0.0, 0.3) * self.joint_gate_2(torch.cat([_xg2, _inp2, _xs2], dim=1)) +
+                 self.spec_lik_gate_scale.clamp(0.0, 0.3) * self.spec_lik_gate_2(_xs2))
         x = self.sa2(x, original_input)
         if x_bb_3.shape[-2:] != x.shape[-2:]:
             x_bb_3 = F.interpolate(x_bb_3, x.shape[-2:], mode='bilinear', align_corners=False)
@@ -2208,9 +2475,14 @@ class MainDecoder(nn.Module):
         nl4 = 192 - int(192 * 0.25)
         fo4 = self.ffc_h4((x[:, :nl4], x[:, nl4:]))
         x = torch.cat([fo4[0], fo4[1]], 1) + x
-        # [P10] 梯度注入 Level 3
+        # [P10 + NEW] 三通道联合调制 Level 3
         _xg3 = F.interpolate(x_g, x.shape[-2:], mode='bilinear', align_corners=False) if x_g.shape[-2:] != x.shape[-2:] else x_g
-        x = x * (1.0 + self.grad_gate_3(_xg3))
+        _xs3 = F.interpolate(x_s, x.shape[-2:], mode='bilinear', align_corners=False) if x_s.shape[-2:] != x.shape[-2:] else x_s
+        _inp3 = self._resize_prior(original_input, x.shape[-2:], x.device, x.dtype)
+        x = x * (1.0 +
+                 self.grad_gate_scale.clamp(0.0, 0.3) * self.grad_gate_3(_xg3) +
+                 self.joint_gate_scale.clamp(0.0, 0.3) * self.joint_gate_3(torch.cat([_xg3, _inp3, _xs3], dim=1)) +
+                 self.spec_lik_gate_scale.clamp(0.0, 0.3) * self.spec_lik_gate_3(_xs3))
         x = self.sa3(x, original_input)
         if x_bb_2.shape[-2:] != x.shape[-2:]:
             x_bb_2 = F.interpolate(x_bb_2, x.shape[-2:], mode='bilinear', align_corners=False)
@@ -2221,9 +2493,14 @@ class MainDecoder(nn.Module):
 
         # Level 4
         x = self.transposed_block_4(x)
-        # [P10] 梯度注入 Level 4
+        # [P10 + NEW] 三通道联合调制 Level 4
         _xg4 = F.interpolate(x_g, x.shape[-2:], mode='bilinear', align_corners=False) if x_g.shape[-2:] != x.shape[-2:] else x_g
-        x = x * (1.0 + self.grad_gate_4(_xg4))
+        _xs4 = F.interpolate(x_s, x.shape[-2:], mode='bilinear', align_corners=False) if x_s.shape[-2:] != x.shape[-2:] else x_s
+        _inp4 = self._resize_prior(original_input, x.shape[-2:], x.device, x.dtype)
+        x = x * (1.0 +
+                 self.grad_gate_scale.clamp(0.0, 0.3) * self.grad_gate_4(_xg4) +
+                 self.joint_gate_scale.clamp(0.0, 0.3) * self.joint_gate_4(torch.cat([_xg4, _inp4, _xs4], dim=1)) +
+                 self.spec_lik_gate_scale.clamp(0.0, 0.3) * self.spec_lik_gate_4(_xs4))
         x = self.sa4(x, original_input)
         if x_bb_1.shape[-2:] != x.shape[-2:]:
             x_bb_1 = F.interpolate(x_bb_1, x.shape[-2:], mode='bilinear', align_corners=False)
@@ -2248,11 +2525,27 @@ class MainDecoder(nn.Module):
 
 
 class _SpectralDecompositionUnit(nn.Module):
-    """梯度分解单元，仅用于 EnhancementLayers 内部。"""
+    """梯度分解单元，仅用于 EnhancementLayers 内部。
 
-    def __init__(self, in_c: int, out_c: int):
+    本单元的职责是：把"通用梯度特征"转化为"高反光相关增强特征"。
+
+    门控设计（[NEW] 引入 s_map 后的 3 输入版本）：
+    ─────────────────────────────────────────────────
+        - edge_gate     ← g_map（输入梯度图）：定位"哪里有结构突变"
+        - specular_gate ← concat(g_map, original_input, s_map)：
+                          联合判别"哪些突变是高反光相关"
+        - final_gate    = edge_gate * specular_gate
+        - feature_out   = specular_refined * (1 + beta * final_gate)
+
+    `s_map` 由 GradientDecoder 的高光概率辅助头提供（gt_specular 监督）。
+    相比旧版仅靠"亮度+梯度"启发式估计，新版获得了显式监督下的高光语义。
+    ─────────────────────────────────────────────────
+    """
+
+    def __init__(self, in_c: int, out_c: int, beta: float = 0.3):
         super(_SpectralDecompositionUnit, self).__init__()
         self.out_c = out_c
+        self.beta = nn.Parameter(torch.tensor(float(beta)))
         self.projection_branch = Conv2D_BN_activa(in_c, out_c, 7, 1, 3)
         self.specular_branch = Conv2D_BN_activa(in_c, out_c, 3, 1, 1)
         self.ffc_specular = FFC_BN_ACT(out_c, out_c, 3, ratio_gin=0.25, ratio_gout=0.25, padding=1)
@@ -2260,8 +2553,38 @@ class _SpectralDecompositionUnit(nn.Module):
             nn.Conv2d(out_c * 2, out_c, kernel_size=1, stride=1, padding=0, bias=True),
             nn.Sigmoid(),
         )
+        # edge_gate：1 通道（梯度图） → out_c 通道门控
+        self.edge_gate = nn.Sequential(
+            nn.Conv2d(1, out_c, kernel_size=3, stride=1, padding=1, bias=True),
+            nn.Sigmoid(),
+        )
+        # specular_gate：[NEW] 3 通道输入（g_down + input_down + s_down）
+        # 旧版只有 g_down + input_down，是靠 "亮+强梯度=高光" 的启发式；
+        # 现在直接接入监督下的高光概率 s_down，使高光语义判别更可靠。
+        self.specular_gate = nn.Sequential(
+            nn.Conv2d(3, out_c, kernel_size=3, stride=1, padding=1, bias=True),
+            nn.Sigmoid(),
+        )
+        self._init_prior_gates()
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def _init_prior_gates(self):
+        # Start as a conservative high-reflection prior and learn stronger
+        # responses only when useful for specular reconstruction.
+        for gate in (self.edge_gate, self.specular_gate):
+            conv = gate[0]
+            nn.init.zeros_(conv.weight)
+            nn.init.constant_(conv.bias, -1.0)
+
+    @staticmethod
+    def _prepare_prior(prior: torch.Tensor, size, device, dtype) -> torch.Tensor:
+        if prior.shape[1] != 1:
+            prior = prior.mean(dim=1, keepdim=True)
+        if prior.shape[-2:] != size:
+            prior = F.interpolate(prior, size=size, mode='bilinear', align_corners=False)
+        return prior.to(device=device, dtype=dtype)
+
+    def forward(self, x: torch.Tensor, g_map: torch.Tensor,
+                original_input: torch.Tensor, s_map: torch.Tensor) -> torch.Tensor:
         projection = self.projection_branch(x)
         specular = self.specular_branch(x)
 
@@ -2271,11 +2594,27 @@ class _SpectralDecompositionUnit(nn.Module):
 
         gate = self.gate_conv(torch.cat([projection, specular], dim=1))
         specular_refined = specular + specular * gate
-        return specular_refined
+
+        size = specular_refined.shape[-2:]
+        device, dtype = specular_refined.device, specular_refined.dtype
+        g_down = self._prepare_prior(g_map, size, device, dtype)
+        input_down = self._prepare_prior(original_input, size, device, dtype)
+        s_down = self._prepare_prior(s_map, size, device, dtype)
+        edge_gate = self.edge_gate(g_down)
+        # 3 输入：梯度 + 亮度 + 高光概率（显式监督先验）
+        spec_gate = self.specular_gate(torch.cat([g_down, input_down, s_down], dim=1))
+        final_gate = edge_gate * spec_gate
+        return specular_refined + self.beta.clamp(0.0, 1.0) * specular_refined * final_gate
 
 
 class EnhancementLayers(nn.Module):
-    """增强层：对 GradientDecoder 输出的 4 级特征做频域精炼。"""
+    """增强层：把梯度分支的多尺度特征转化为"高反光相关增强特征"。
+
+    [改造] 接口由 (features, g_map, original_input) 升级为
+            (features, g_map, original_input, s_map)。
+    `s_map` 即 GradientDecoder 输出的高光软概率图（gt_specular 监督），
+    会进入每一级 _SpectralDecompositionUnit 的 specular_gate 联合判别。
+    """
 
     def __init__(self):
         super(EnhancementLayers, self).__init__()
@@ -2284,11 +2623,11 @@ class EnhancementLayers(nn.Module):
         self.decomp_unit_3 = _SpectralDecompositionUnit(in_c=64, out_c=32)
         self.decomp_unit_4 = _SpectralDecompositionUnit(in_c=32, out_c=16)
 
-    def forward(self, to_be_enhanced_features):
-        x1 = self.decomp_unit_1(to_be_enhanced_features[0])
-        x2 = self.decomp_unit_2(to_be_enhanced_features[1])
-        x3 = self.decomp_unit_3(to_be_enhanced_features[2])
-        x4 = self.decomp_unit_4(to_be_enhanced_features[3])
+    def forward(self, to_be_enhanced_features, g_map, original_input, s_map):
+        x1 = self.decomp_unit_1(to_be_enhanced_features[0], g_map, original_input, s_map)
+        x2 = self.decomp_unit_2(to_be_enhanced_features[1], g_map, original_input, s_map)
+        x3 = self.decomp_unit_3(to_be_enhanced_features[2], g_map, original_input, s_map)
+        x4 = self.decomp_unit_4(to_be_enhanced_features[3], g_map, original_input, s_map)
         return x1, x2, x3, x4
 
 
@@ -2311,7 +2650,8 @@ def cross_scale_consistency_loss(features):
     """约束 H/4、H/8、H/16 融合特征对结构区域的响应保持一致。"""
     maps = []
     for feat in features:
-        response = feat.float().abs().mean(dim=1, keepdim=True)
+        feat = _safe_tensor(feat.float(), nan=0.0, posinf=1.0e4, neginf=-1.0e4, clamp=(-1.0e4, 1.0e4))
+        response = feat.abs().mean(dim=1, keepdim=True)
         mean = response.mean(dim=(2, 3), keepdim=True)
         std = response.std(dim=(2, 3), keepdim=True, unbiased=False).clamp_min(1e-6)
         maps.append((response - mean) / std)
@@ -2328,7 +2668,12 @@ def cross_scale_consistency_loss(features):
 
 
 class YFFC(nn.Module):
-    """Y-FFC 主网络（V3 优化版）。含 P1 残差精修头。"""
+    """Y-FFC 主网络（V3 优化版）。含 P1 残差精修头。
+
+    [NEW] GradientDecoder 现在并列输出梯度图 `g` 和高光软概率图 `s`；
+          EnhancementLayers 和 MainDecoder 都接收 `s` 作为显式监督下的高光先验。
+          forward 返回 {r, g, b, s, cs}。
+    """
 
     def __init__(self, swin_pretrained=True, debug_shapes=False):
         super().__init__()
@@ -2341,19 +2686,34 @@ class YFFC(nn.Module):
 
     def forward(self, x):
         c_feat = self.encoder(x)
+        # GradientDecoder 现在返回 6-tuple: (xe1, xe2, xe3, xe4, x_g, x_s)
         g_feat = self.gradient_decoder(c_feat[:-1], c_feat[-1], original_input=x)
-        enh = self.enhancement_layers(g_feat[:-1])
-        est_b = self.main_decoder(c_feat, enh, g_feat[-1], original_input=x)
+        xe_feats = g_feat[:-2]              # (xe1, xe2, xe3, xe4)
+        g_raw = g_feat[-2]                  # 梯度预测图（低分辨率，进入下游）
+        s_raw = g_feat[-1]                  # 高光软概率图（低分辨率，进入下游）
+        enh = self.enhancement_layers(
+            xe_feats, g_map=g_raw, original_input=x, s_map=s_raw)
+        est_b = self.main_decoder(c_feat, enh, g_raw, s_raw, original_input=x)
         if est_b.shape[-2:] != x.shape[-2:]:
             est_b = F.interpolate(est_b, size=x.shape[-2:], mode='bilinear', align_corners=False)
-        if g_feat[-1].shape[-2:] != x.shape[-2:]:
-            g_map = F.interpolate(g_feat[-1], size=x.shape[-2:], mode='bilinear', align_corners=False)
+        est_b = _safe_tensor(est_b, nan=0.0, posinf=1.0, neginf=0.0, clamp=(0.0, 1.0))
+        # 上采输出的梯度图和高光概率图，统一到原图尺寸
+        if g_raw.shape[-2:] != x.shape[-2:]:
+            g_map = F.interpolate(g_raw, size=x.shape[-2:], mode='bilinear', align_corners=False)
         else:
-            g_map = g_feat[-1]
+            g_map = g_raw
+        g_map = _safe_tensor(g_map, nan=0.0, posinf=1.0, neginf=0.0, clamp=(0.0, 1.0))
+        if s_raw.shape[-2:] != x.shape[-2:]:
+            s_map = F.interpolate(s_raw, size=x.shape[-2:], mode='bilinear', align_corners=False)
+        else:
+            s_map = s_raw
+        s_map = _safe_tensor(s_map, nan=0.0, posinf=1.0, neginf=0.0, clamp=(0.0, 1.0))
         coarse = torch.clamp(x - est_b, 0.0, 1.0)
         pred_diffuse = self.refinement_head(coarse, x)  # [P1]
+        pred_diffuse = _safe_tensor(pred_diffuse, nan=0.0, posinf=1.0, neginf=0.0, clamp=(0.0, 1.0))
         cs_loss = cross_scale_consistency_loss((c_feat[1], c_feat[2], c_feat[3]))
-        return {"r": pred_diffuse, "g": g_map, "b": est_b, "cs": cs_loss}
+        cs_loss = _safe_tensor(cs_loss, nan=0.0, posinf=0.0, neginf=0.0)
+        return {"r": pred_diffuse, "g": g_map, "b": est_b, "s": s_map, "cs": cs_loss}
 
 
 # ╔════════════════════════════════════════════════════════════════════════════╗
@@ -2397,7 +2757,12 @@ class EMA:
 
 
 class DynamicLossWeightScheduler:
-    """根据训练进度动态调整各 loss 项的权重（修复版：60% 后冻结）。"""
+    """根据训练进度动态调整各 loss 项的权重（修复版：60% 后冻结）。
+
+    [NEW] 加入 lambda_s_lik / lambda_s_cons 调度：
+        - 前期 spec_likelihood 监督温和（避免梯度分支过早被强约束）；
+        - 中后期逐步提升，使梯度分支真正学到任务化高光语义。
+    """
 
     def __init__(self, total_epochs):
         self.total_epochs = max(total_epochs, 1)
@@ -2415,9 +2780,13 @@ class DynamicLossWeightScheduler:
             'lambda_stat':       0.0,     # 移除冗余 stat
             'lambda_grad':       max(0.3, 0.5 - 0.2 * p),
             'lambda_grad_edge':  min(0.8, 0.3 + 0.5 * p),
+            'lambda_grad_spec':  min(0.05, 0.02 + 0.03 * p),
             'lambda_focal':      min(0.8, 0.3 + 0.5 * p),
             'lambda_dice':       min(0.3, 0.1 + 0.2 * p),
             'lambda_gc':         min(0.2, 0.05 + 0.15 * p),
+            # [NEW] spec_likelihood 相关
+            'lambda_s_lik':      min(0.4, 0.1 + 0.3 * p),
+            'lambda_s_cons':     min(0.05, 0.01 + 0.04 * p),
         }
         return weights
 
@@ -2555,13 +2924,15 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scheduler,
             pred_diffuse = output['r']
             pred_grad = output['g']
             est_b = output['b']
+            pred_s_lik = output.get('s')
 
             with torch.amp.autocast(device_type='cuda', enabled=False):
                 loss, loss_dict = criterion(
                     pred_diffuse.float(), target_img.float(),
                     est_b.float(), gt_specular.float(),
                     pred_grad.float(), gt_gradient.float(),
-                    output.get('cs'))
+                    output.get('cs'), input_img=input_img.float(),
+                    pred_s_lik=pred_s_lik.float() if pred_s_lik is not None else None)
 
             loss = loss / accumulation_steps
 
@@ -2618,7 +2989,8 @@ def validate(model, dataloader, criterion, device):
         output = model(input_img)
         loss, loss_dict = criterion(
             output['r'], target_img, output['b'], gt_specular,
-            output['g'], gt_gradient, output.get('cs'))
+            output['g'], gt_gradient, output.get('cs'), input_img=input_img,
+            pred_s_lik=output.get('s'))
 
         running_loss += loss_dict['total']
         running_ssim += (1.0 - loss_dict['ssim'])
@@ -2893,10 +3265,12 @@ def main():
         try:
             with torch.no_grad():
                 out = model(test_input)
-            print(f"前向传播成功: r={out['r'].shape}, g={out['g'].shape}, b={out['b'].shape}")
+            print(f"前向传播成功: r={out['r'].shape}, g={out['g'].shape}, "
+                  f"b={out['b'].shape}, s={out['s'].shape}")
             assert out["r"].shape == test_input.shape
             assert out["g"].shape == test_input.shape
             assert out["b"].shape == test_input.shape
+            assert out["s"].shape == test_input.shape
             print("输出 shape 校验通过")
         except Exception as e:
             print(f"前向传播失败: {e}")
@@ -2913,8 +3287,10 @@ def main():
             gt_gradient = torch.rand_like(out['g'])
             with torch.no_grad():
                 loss, loss_dict = criterion(
-                    out['r'], target, out['b'], gt_specular, out['g'], gt_gradient)
-            print(f"CompositeLoss 前向成功, total={loss.item():.4f}")
+                    out['r'], target, out['b'], gt_specular,
+                    out['g'], gt_gradient, pred_s_lik=out['s'])
+            print(f"CompositeLoss 前向成功, total={loss.item():.4f}, "
+                  f"keys={list(loss_dict.keys())}")
         except Exception as e:
             print(f"损失函数测试失败: {e}")
 
@@ -2940,6 +3316,7 @@ def main():
             with torch.no_grad():
                 out_gn = model_gn(test_input)
             assert out_gn["r"].shape == test_input.shape
+            assert out_gn["s"].shape == test_input.shape
             print("BN->GN 替换后前向传播正常")
             del model_gn
         except Exception as e:

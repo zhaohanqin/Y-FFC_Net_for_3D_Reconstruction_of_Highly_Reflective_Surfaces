@@ -178,10 +178,18 @@ class ImprovedWeightScheduler:
             'lambda_stat':       0.0,    # [P5] 移除冗余 stat 损失
             'lambda_grad':       max(0.3, 0.5 - 0.2 * p_clamped),
             'lambda_grad_edge':  min(0.8, 0.3 + 0.5 * p_clamped),
+            'lambda_grad_spec':  min(0.05, 0.02 + 0.03 * p_clamped),
             'lambda_focal':      min(0.8, 0.3 + 0.5 * p_clamped),         # 上限降低
             'lambda_dice':       min(0.3, 0.1 + 0.2 * p_clamped),         # 上限降低
             'lambda_gc':         min(0.2, 0.05 + 0.15 * p_clamped),       # 上限降低
             'lambda_cs':         min(0.05, 0.02 + 0.03 * p_clamped),
+            # [NEW] spec_likelihood 监督权重调度
+            # l_s_lik:  pred_s_lik <- gt_specular 直接监督
+            #   - 起步偏小 0.1, 60% 进度收敛到 0.4, 防止前期辅助任务压制主任务
+            # l_s_cons: pred_s_lik 与 est_b 的弱一致性约束（gt_specular 软掩码加权, est_b detach）
+            #   - 始终小权重, 0.01 -> 0.05, 仅作微调
+            'lambda_s_lik':      min(0.4,  0.1 + 0.3 * p_clamped),
+            'lambda_s_cons':     min(0.05, 0.01 + 0.04 * p_clamped),
         }
 
     def step(self, criterion, ep):
@@ -253,8 +261,10 @@ def format_lr_groups(optimizer):
 SUB_LOSS_KEYS = [
     'total', 'ssim', 'ssim_single_loss', 'msssim_loss', 'ssim_mixed_loss',
     'l1', 'freq', 'perceptual',
-    'spec', 'stat', 'grad', 'grad_edge',
+    'spec', 'stat', 'grad', 'grad_edge', 'grad_spec',
     'focal', 'dice', 'gc', 'cs',
+    # [NEW] spec_likelihood 监督相关
+    's_lik', 's_cons',
 ]
 
 # 用于日志输出时的友好名称映射
@@ -271,10 +281,13 @@ SUB_LOSS_DISPLAY_NAMES = {
     'stat':       'Statistical Loss',
     'grad':       'Gradient SSIM Loss',
     'grad_edge':  'Gradient Edge Loss',
+    'grad_spec':  'Gradient-Specular Consistency',
     'focal':      'Focal Loss',
     'dice':       'Dice Loss',
     'gc':         'Grad Consistency',
     'cs':         'Cross-scale Consistency',
+    's_lik':      'Spec-Likelihood Sup',
+    's_cons':     'Spec-Likelihood Cons',
 }
 
 
@@ -366,11 +379,88 @@ class MetricTracker:
 
 
 # ════════════════════════════════════════════════════════════════════════
+# 数值稳定性辅助：防止一次非有限梯度污染后续所有 batch
+# ════════════════════════════════════════════════════════════════════════
+
+def _tensors_are_finite(*items):
+    for item in items:
+        if isinstance(item, torch.Tensor) and not torch.isfinite(item).all():
+            return False
+        if isinstance(item, dict):
+            for value in item.values():
+                if isinstance(value, torch.Tensor) and not torch.isfinite(value).all():
+                    return False
+    return True
+
+
+def _repair_nonfinite_model(model, ema=None):
+    """Restore non-finite parameters from EMA when possible, else sanitize.
+
+    If one optimizer step corrupts parameters, simply skipping later NaN losses
+    is not enough.  This function makes the next batch recoverable.
+    """
+    repaired = 0
+    ema_shadow = getattr(ema, 'shadow', None) if ema is not None else None
+    with torch.no_grad():
+        for name, param in model.named_parameters():
+            if not torch.isfinite(param).all():
+                if ema_shadow is not None and name in ema_shadow and torch.isfinite(ema_shadow[name]).all():
+                    param.data.copy_(ema_shadow[name].to(device=param.device, dtype=param.dtype))
+                else:
+                    param.data.copy_(torch.nan_to_num(param.data, nan=0.0, posinf=1.0, neginf=-1.0))
+                repaired += 1
+        for buffer in model.buffers():
+            if torch.is_floating_point(buffer) and not torch.isfinite(buffer).all():
+                buffer.copy_(torch.nan_to_num(buffer, nan=0.0, posinf=1.0, neginf=-1.0))
+                repaired += 1
+    return repaired
+
+
+def _sanitize_optimizer_state(optimizer):
+    """Clear non-finite Adam/AdamW state tensors after a repaired step."""
+    repaired = 0
+    with torch.no_grad():
+        for state in optimizer.state.values():
+            for key, value in state.items():
+                if isinstance(value, torch.Tensor) and torch.is_floating_point(value) and not torch.isfinite(value).all():
+                    value.copy_(torch.nan_to_num(value, nan=0.0, posinf=0.0, neginf=0.0))
+                    repaired += 1
+    return repaired
+
+
+def _format_loss_diag(loss_dict, top_k=8):
+    """[DIAG] 把 loss_dict 格式化为紧凑诊断字符串，按值降序排前 top_k 项。
+
+    grad NaN/Inf 时调用，帮助定位是哪个具体子损失项数值异常。
+    若某个项是 nan/inf，会用 'NaN' / 'Inf' 标记。
+    """
+    if not isinstance(loss_dict, dict) or not loss_dict:
+        return '<empty>'
+    items = []
+    for k, v in loss_dict.items():
+        try:
+            fv = float(v)
+            if math.isnan(fv):
+                items.append((k, float('inf'), 'NaN'))
+            elif math.isinf(fv):
+                items.append((k, float('inf'), 'Inf'))
+            else:
+                items.append((k, abs(fv), f'{fv:.4g}'))
+        except (TypeError, ValueError):
+            items.append((k, 0.0, str(v)))
+    # 按绝对值降序，并把 NaN/Inf 排在最前
+    items.sort(key=lambda t: t[1], reverse=True)
+    parts = [f'{k}={s}' for k, _, s in items[:top_k]]
+    return '{' + ', '.join(parts) + '}'
+
+
+# ════════════════════════════════════════════════════════════════════════
 # 训练核心（一个 epoch）—— 增强版：返回全部子损失分量 + MSE/PSNR
 # ════════════════════════════════════════════════════════════════════════
 
 def train_one_epoch(model, loader, criterion, optimizer, scheduler,
-                    scaler, ema, device, accum=4, max_norm=1.0, epoch=0, total_epochs=0):
+                    scaler, ema, device, accum=4, max_norm=1.0, epoch=0, total_epochs=0,
+                    use_amp=True):
     """
     执行一个 epoch 的训练。
 
@@ -384,7 +474,7 @@ def train_one_epoch(model, loader, criterion, optimizer, scheduler,
     """
     model.train()
     tracker = MetricTracker()
-    optimizer.zero_grad()
+    optimizer.zero_grad(set_to_none=True)
 
     pbar = tqdm(enumerate(loader), total=len(loader),
                 desc=f'Train {epoch+1}/{total_epochs}', leave=False)
@@ -392,20 +482,39 @@ def train_one_epoch(model, loader, criterion, optimizer, scheduler,
         inp, tgt = inp.to(device), tgt.to(device)
         gt_s, gt_g = gt_s.to(device), gt_g.to(device)
 
-        with torch.amp.autocast('cuda', enabled=(device.type == 'cuda')):
+        if not _tensors_are_finite(inp, tgt, gt_s, gt_g):
+            tqdm.write(f'[WARNING] Epoch {epoch+1} Batch {i+1}: input/target NaN/Inf, 跳过')
+            optimizer.zero_grad(set_to_none=True)
+            continue
+
+        amp_enabled = (device.type == 'cuda' and bool(use_amp))
+        with torch.amp.autocast('cuda', enabled=amp_enabled):
             out = model(inp)
-            with torch.amp.autocast('cuda', enabled=False):
-                loss, ld = criterion(
-                    out['r'].float(), tgt.float(),
-                    out['b'].float(), gt_s.float(),
-                    out['g'].float(), gt_g.float(),
-                    out.get('cs'))
+
+        if not _tensors_are_finite(out):
+            repaired = _repair_nonfinite_model(model, ema)
+            repaired += _sanitize_optimizer_state(optimizer)
+            tqdm.write(f'[WARNING] Epoch {epoch+1} Batch {i+1}: output NaN/Inf, 跳过; repaired={repaired}')
+            optimizer.zero_grad(set_to_none=True)
+            continue
+
+        with torch.amp.autocast('cuda', enabled=False):
+            # [NEW] 取出 spec_likelihood 头的输出 pred_s_lik (可能不存在, 用 .get 兼容)
+            pred_s_lik = out.get('s')
+            loss, ld = criterion(
+                out['r'].float(), tgt.float(),
+                out['b'].float(), gt_s.float(),
+                out['g'].float(), gt_g.float(),
+                out.get('cs'), input_img=inp.float(),
+                pred_s_lik=pred_s_lik.float() if pred_s_lik is not None else None)
             loss = loss / accum
 
         # NaN / Inf 保护
         if not torch.isfinite(loss):
-            tqdm.write(f'[WARNING] Epoch {epoch+1} Batch {i+1}: loss NaN/Inf, 跳过')
-            optimizer.zero_grad()
+            repaired = _repair_nonfinite_model(model, ema)
+            repaired += _sanitize_optimizer_state(optimizer)
+            tqdm.write(f'[WARNING] Epoch {epoch+1} Batch {i+1}: loss NaN/Inf, 跳过; repaired={repaired}')
+            optimizer.zero_grad(set_to_none=True)
             continue
 
         # [FIX] 损失尖峰保护：如果单批损失超过历史均值的 10 倍，跳过该批次
@@ -416,26 +525,48 @@ def train_one_epoch(model, loader, criterion, optimizer, scheduler,
             if _avg_so_far > 0 and _current_loss_val > _avg_so_far * 10.0:
                 tqdm.write(f'[WARNING] Epoch {epoch+1} Batch {i+1}: '
                            f'loss spike {_current_loss_val:.4f} >> avg {_avg_so_far:.4f}, 跳过')
-                optimizer.zero_grad()
+                optimizer.zero_grad(set_to_none=True)
                 continue
 
-        if device.type == 'cuda':
+        if device.type == 'cuda' and bool(use_amp):
             scaler.scale(loss).backward()
         else:
             loss.backward()
 
         if (i + 1) % accum == 0 or (i + 1) == len(loader):
-            if device.type == 'cuda':
+            if device.type == 'cuda' and bool(use_amp):
                 scaler.unscale_(optimizer)
-                nn.utils.clip_grad_norm_(model.parameters(), max_norm)
+                grad_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm, error_if_nonfinite=False)
+                if not torch.isfinite(grad_norm):
+                    repaired = _repair_nonfinite_model(model, ema)
+                    repaired += _sanitize_optimizer_state(optimizer)
+                    # [DIAG] 打印各子损失值,辅助定位 NaN 源
+                    _diag = _format_loss_diag(ld)
+                    tqdm.write(f'[WARNING] Epoch {epoch+1} Batch {i+1}: grad NaN/Inf, '
+                               f'跳过 step; repaired={repaired}; sub_losses={_diag}')
+                    optimizer.zero_grad(set_to_none=True)
+                    scaler.update()
+                    continue
                 scaler.step(optimizer)
                 scaler.update()
             else:
-                nn.utils.clip_grad_norm_(model.parameters(), max_norm)
+                grad_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm, error_if_nonfinite=False)
+                if not torch.isfinite(grad_norm):
+                    repaired = _repair_nonfinite_model(model, ema)
+                    repaired += _sanitize_optimizer_state(optimizer)
+                    _diag = _format_loss_diag(ld)
+                    tqdm.write(f'[WARNING] Epoch {epoch+1} Batch {i+1}: grad NaN/Inf, '
+                               f'跳过 step; repaired={repaired}; sub_losses={_diag}')
+                    optimizer.zero_grad(set_to_none=True)
+                    continue
                 optimizer.step()
+            repaired = _repair_nonfinite_model(model, ema)
+            repaired += _sanitize_optimizer_state(optimizer)
+            if repaired:
+                tqdm.write(f'[WARNING] Epoch {epoch+1} Batch {i+1}: optimizer 后发现非有限参数/状态，已修复 {repaired} 项')
             if scheduler:
                 scheduler.step()
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
             if ema:
                 ema.update()
 
@@ -498,7 +629,14 @@ def validate(model, loader, criterion, device, epoch=0, total_epochs=0,
         gt_s, gt_g = gt_s.to(device), gt_g.to(device)
 
         out = _tta_forward(model, inp) if use_tta else model(inp)  # [P15]
-        loss, ld = criterion(out['r'], tgt, out['b'], gt_s, out['g'], gt_g, out.get('cs'))
+        if not _tensors_are_finite(out):
+            continue
+        # [NEW] spec_likelihood 头输出
+        pred_s_lik = out.get('s')
+        loss, ld = criterion(
+            out['r'], tgt, out['b'], gt_s, out['g'], gt_g,
+            out.get('cs'), input_img=inp,
+            pred_s_lik=pred_s_lik)
 
         if not torch.isfinite(loss):
             continue
@@ -518,9 +656,10 @@ def visualize_sample_during_training(model, vis_loader, device, output_folder,
     """
     训练过程中可视化验证样本结果。
 
-    布局：每个样本一行 2×3 子图
-        第一行：输入图像 | GT 漫反射 | 预测漫反射
-        第二行：预测镜面反射 | 预测梯度 | 差异图（热力图）
+    布局：每个样本一行 3×4 子图
+        第一行：输入图像 | GT 漫反射 | 预测漫反射 | |Pred - GT| 差异图
+        第二行：GT 镜面反射 | 预测镜面反射 | GT 输入梯度 | 预测梯度
+        第三行：Pred SpecLikelihood (新辅助头) | |SpecLik - GT_Spec| 差异图 | 与 Pred Specular 叠加比较 | (空)
 
     参数:
         model          : 当前模型
@@ -541,11 +680,13 @@ def visualize_sample_during_training(model, vis_loader, device, output_folder,
     pred_diffuse = estimations['r']
     pred_specular = estimations['b']
     pred_gradient = estimations['g']
+    # [NEW] spec_likelihood 头输出 (可能为 None, 用 .get 兼容旧检查点)
+    pred_spec_lik = estimations.get('s')
 
     actual_samples = min(num_samples, inputs.size(0))
 
     for s in range(actual_samples):
-        fig, axes = plt.subplots(2, 4, figsize=(20, 10))
+        fig, axes = plt.subplots(3, 4, figsize=(20, 15))
 
         input_img = inputs[s, 0].cpu().numpy()
         gt_diff_img = gt_diffuse[s, 0].cpu().numpy()
@@ -554,6 +695,8 @@ def visualize_sample_during_training(model, vis_loader, device, output_folder,
         pred_diff_img = pred_diffuse[s, 0].cpu().numpy()
         pred_spec_img = pred_specular[s, 0].cpu().numpy()
         pred_grad_img = pred_gradient[s, 0].cpu().numpy()
+        pred_slik_img = (pred_spec_lik[s, 0].cpu().numpy()
+                         if pred_spec_lik is not None else None)
 
         # 第一行
         axes[0, 0].imshow(input_img, cmap='gray', vmin=0, vmax=1)
@@ -590,15 +733,55 @@ def visualize_sample_during_training(model, vis_loader, device, output_folder,
         axes[1, 3].set_title('Pred Gradient', fontsize=11)
         axes[1, 3].axis('off')
 
+        # 第三行（新增）：spec_likelihood 相关
+        if pred_slik_img is not None:
+            # (3,0) Pred SpecLikelihood 热力图 - 显示梯度分支辅助头的预测
+            im_slik = axes[2, 0].imshow(pred_slik_img, cmap='hot', vmin=0, vmax=1)
+            axes[2, 0].set_title('Pred SpecLikelihood (Aux)', fontsize=11)
+            axes[2, 0].axis('off')
+            plt.colorbar(im_slik, ax=axes[2, 0], fraction=0.046)
+
+            # (3,1) SpecLikelihood 与 GT Specular 的绝对误差
+            slik_err = np.abs(pred_slik_img - gt_spec_img)
+            im_err = axes[2, 1].imshow(slik_err, cmap='hot', vmin=0, vmax=0.3)
+            axes[2, 1].set_title('|SpecLik - GT_Spec|', fontsize=11)
+            axes[2, 1].axis('off')
+            plt.colorbar(im_err, ax=axes[2, 1], fraction=0.046)
+
+            # (3,2) SpecLikelihood 与 Pred Specular 的对比（两个估计的差异）
+            slik_vs_pred = np.abs(pred_slik_img - pred_spec_img)
+            im_cmp = axes[2, 2].imshow(slik_vs_pred, cmap='hot', vmin=0, vmax=0.3)
+            axes[2, 2].set_title('|SpecLik - Pred_Spec|', fontsize=11)
+            axes[2, 2].axis('off')
+            plt.colorbar(im_cmp, ax=axes[2, 2], fraction=0.046)
+
+            # (3,3) SpecLikelihood 阈值化 (0.5) 后的二值化图, 直观看高光区
+            slik_binary = (pred_slik_img > 0.5).astype(np.float32)
+            axes[2, 3].imshow(slik_binary, cmap='gray', vmin=0, vmax=1)
+            axes[2, 3].set_title('SpecLik > 0.5 (Binary)', fontsize=11)
+            axes[2, 3].axis('off')
+        else:
+            # 模型未输出 s 字段 (旧版兼容): 整行隐藏
+            for j in range(4):
+                axes[2, j].axis('off')
+                axes[2, j].set_title('SpecLik (N/A)', fontsize=9, color='gray')
+
         # 计算当前样本指标
         sample_mae = np.mean(diff)
         sample_mse = np.mean(diff ** 2)
         sample_max_err = np.max(diff)
 
-        fig.suptitle(
-            f'Epoch {current_epoch} - Sample {s+1}  |  '
-            f'MAE={sample_mae:.4f}  MSE={sample_mse:.6f}  MaxErr={sample_max_err:.4f}',
-            fontsize=14, fontweight='bold')
+        title_parts = [
+            f'Epoch {current_epoch} - Sample {s+1}',
+            f'MAE={sample_mae:.4f}',
+            f'MSE={sample_mse:.6f}',
+            f'MaxErr={sample_max_err:.4f}',
+        ]
+        if pred_slik_img is not None:
+            slik_mae = float(np.mean(np.abs(pred_slik_img - gt_spec_img)))
+            title_parts.append(f'SpecLik MAE={slik_mae:.4f}')
+        fig.suptitle('  |  '.join(title_parts),
+                     fontsize=14, fontweight='bold')
         plt.tight_layout()
 
         save_path = os.path.join(vis_dir, f'epoch_{current_epoch:03d}_sample{s+1}.png')
@@ -1184,7 +1367,7 @@ def train_model(cfg):
 
     # 打印损失函数结构
     print(f"\n损失函数: EnhancedCompositeLoss")
-    print(f"  use_perceptual={True}, use_ohem={cfg['USE_OHEM']}")
+    print(f"  use_perceptual={True}, use_ohem={cfg['USE_OHEM']}, use_amp={cfg['USE_AMP']}")
     print(f"  子损失项: {', '.join(SUB_LOSS_KEYS)}")
 
     # ══════════ 4. 优化器 + 调度器 ══════════
@@ -1197,7 +1380,7 @@ def train_model(cfg):
         iters_per_epoch=math.ceil(len(train_loader) / cfg['ACCUMULATION_STEPS']))
 
     # ══════════ 5. AMP + EMA ══════════
-    scaler = torch.amp.GradScaler('cuda', enabled=(device.type == 'cuda'))
+    scaler = torch.amp.GradScaler('cuda', enabled=(device.type == 'cuda' and cfg['USE_AMP']))
     ema = EMA(model, cfg['EMA_DECAY']) if cfg['USE_EMA'] else None
 
     # ══════════ 6. 历史记录 + 最优模型跟踪 ══════════
@@ -1275,7 +1458,8 @@ def train_model(cfg):
             scaler, ema, device,
             accum=cfg['ACCUMULATION_STEPS'],
             max_norm=cfg['GRAD_CLIP_VALUE'],
-            epoch=ep, total_epochs=cfg['EPOCHS'])
+            epoch=ep, total_epochs=cfg['EPOCHS'],
+            use_amp=cfg['USE_AMP'])
 
         # --- 验证 ---
         if ema:
@@ -1559,7 +1743,7 @@ def main():
     # ========== 基础训练参数 ==========
     EPOCHS                = 300       # 训练总轮数
     BATCH_SIZE            = 3         # 384 分辨率推荐 2~4
-    BASE_LR               = 2e-4     # 基础学习率（分层 LR 以此为基准）
+    BASE_LR               = 1e-4     # 稳定版：新门控/FFC 组合建议先用 1e-4
     WEIGHT_DECAY          = 1e-4     # AdamW 权重衰减
     ACCUMULATION_STEPS    = 3        # 梯度累积步数（等效 batch = BATCH_SIZE × 此值）
     GRAD_CLIP_VALUE       = 0.5      # [FIX] 梯度裁剪阈值（从 1.0 降低到 0.5，更稳定）
@@ -1574,6 +1758,7 @@ def main():
     USE_EMA               = True     # 指数移动平均
     EMA_DECAY             = 0.9995   # [P16] EMA 衰减系数（调高增加平滑力度）
     USE_OHEM              = True     # 在线难样本挖掘
+    USE_AMP               = False    # 稳定版默认关闭 AMP；确认稳定后可改 True
     USE_HIGHLIGHT_AUG     = True     # 默认开启训练集高反光合成增强
     HIGHLIGHT_AUG_P       = 0.5      # 降低合成高反光占比，避免训练分布过度偏向合成模式
 
@@ -1618,6 +1803,7 @@ def main():
         'USE_EMA':                USE_EMA,
         'EMA_DECAY':              EMA_DECAY,
         'USE_OHEM':               USE_OHEM,
+        'USE_AMP':                USE_AMP,
         'USE_HIGHLIGHT_AUG':      USE_HIGHLIGHT_AUG,
         'HIGHLIGHT_AUG_P':        HIGHLIGHT_AUG_P,
         'INPUT_DIR':              INPUT_DIR,

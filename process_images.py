@@ -32,6 +32,16 @@ from tqdm import tqdm
 from Y_FFC_unified import YFFC, replace_bn_with_gn
 
 
+def _sanitize_output_tensor(tensor):
+    """Keep inference/export robust if an old or partially compatible checkpoint emits non-finite values."""
+    return torch.nan_to_num(tensor, nan=0.0, posinf=1.0, neginf=0.0).clamp(0.0, 1.0)
+
+
+def _sanitize_output_dict(output):
+    return {k: _sanitize_output_tensor(v) if isinstance(v, torch.Tensor) else v
+            for k, v in output.items()}
+
+
 def _uses_group_norm_state_dict(state_dict):
     """检测 checkpoint 是否来自 BN->GN 后的模型。"""
     return not any(
@@ -105,12 +115,12 @@ def load_model(model_path, device, prefer_ema=True):
             _load_state_dict_flexible(model, _merge_ema_weights(base_state_dict, ema_state_dict))
             epoch = checkpoint.get('epoch', '?')
             best_ssim = checkpoint.get('best_ssim', '?')
-            print(f"  ✓ 已加载 EMA 权重 (epoch={epoch}, best_ssim={best_ssim})")
+            print(f"  [OK] Loaded EMA weights (epoch={epoch}, best_ssim={best_ssim})")
         else:
             _load_state_dict_flexible(model, base_state_dict)
             epoch = checkpoint.get('epoch', '?')
             best_ssim = checkpoint.get('best_ssim', '?')
-            print(f"  ✓ 已加载模型权重 (epoch={epoch}, best_ssim={best_ssim})")
+            print(f"  [OK] Loaded model weights (epoch={epoch}, best_ssim={best_ssim})")
         model.training_image_size = checkpoint.get('image_size')
         model.checkpoint_uses_ema_weights = checkpoint.get('uses_ema_weights', False)
     elif isinstance(checkpoint, dict):
@@ -120,7 +130,7 @@ def load_model(model_path, device, prefer_ema=True):
         if _uses_group_norm_state_dict(checkpoint):
             replace_bn_with_gn(model, num_groups=8)
         _load_state_dict_flexible(model, checkpoint)
-        print("  ✓ 已加载纯 state_dict 权重")
+        print("  [OK] Loaded raw state_dict weights")
         model.training_image_size = None
         model.checkpoint_uses_ema_weights = False
     else:
@@ -247,8 +257,9 @@ def sliding_window_inference(model, input_tensor, device, patch_size, overlap=32
         overlap: patch 之间的重叠像素
 
     返回:
-        {'r': full_diffuse, 'b': full_specular, 'g': full_gradient}
-        三个输出尺寸均为 [1, 1, image_h, image_w]
+        {'r': full_diffuse, 'b': full_specular, 'g': full_gradient,
+         's': full_spec_likelihood (若模型输出)}
+        输出尺寸均为 [1, 1, image_h, image_w]
     """
     patch_h, patch_w = _normalize_hw(patch_size)
     if patch_h <= 0 or patch_w <= 0:
@@ -280,11 +291,15 @@ def sliding_window_inference(model, input_tensor, device, patch_size, overlap=32
     ys = _sliding_positions(padded_h, patch_h, stride_h)
     xs = _sliding_positions(padded_w, patch_w, stride_w)
 
+    # [NEW] 先做一次试探推理, 检查是否存在 's' 输出, 据此动态决定累加器形状
+    # 不会浪费 - 该 patch 也会进入主循环 (但简单起见, 用第一个 (y, x) 处的 patch 测一次)
+    # 这里改用懒初始化: 在主循环里第一次见到 's' 时再分配空间
     accum = {
         'r': torch.zeros(1, 1, padded_h, padded_w, device=device, dtype=input_padded.dtype),
         'b': torch.zeros(1, 1, padded_h, padded_w, device=device, dtype=input_padded.dtype),
         'g': torch.zeros(1, 1, padded_h, padded_w, device=device, dtype=input_padded.dtype),
     }
+    has_spec_likelihood = False  # 模型是否输出 's' 字段, 首次见到时切为 True
     weight_sum = torch.zeros(1, 1, padded_h, padded_w, device=device, dtype=input_padded.dtype)
     blend = _build_blend_window(patch_h, patch_w, device=device, dtype=input_padded.dtype)
 
@@ -292,9 +307,21 @@ def sliding_window_inference(model, input_tensor, device, patch_size, overlap=32
         for y in ys:
             for x in xs:
                 patch = input_padded[:, :, y:y + patch_h, x:x + patch_w]
-                out = model(patch)
-                for key in ('r', 'b', 'g'):
-                    accum[key][:, :, y:y + patch_h, x:x + patch_w] += out[key].clamp(0, 1) * blend
+                out = _sanitize_output_dict(model(patch))
+
+                # [NEW] 懒初始化 's' 累加器: 第一次见到模型输出 's' 字段时分配
+                if 's' in out and out['s'] is not None and not has_spec_likelihood:
+                    accum['s'] = torch.zeros(1, 1, padded_h, padded_w,
+                                             device=device, dtype=input_padded.dtype)
+                    has_spec_likelihood = True
+
+                # 累加各通道 (包括可选的 's')
+                channels = ['r', 'b', 'g']
+                if has_spec_likelihood:
+                    channels.append('s')
+                for key in channels:
+                    if key in out and out[key] is not None:
+                        accum[key][:, :, y:y + patch_h, x:x + patch_w] += out[key] * blend
                 weight_sum[:, :, y:y + patch_h, x:x + patch_w] += blend
 
     weight_sum = weight_sum.clamp_min(1e-6)
@@ -317,9 +344,11 @@ def save_result(tensor, save_path, bit_depth=8):
         输出图像尺寸与输入tensor尺寸一致，不进行resize
     """
     # 转换为numpy数组
+    tensor = _sanitize_output_tensor(tensor.detach())
     image_array = tensor.squeeze().cpu().numpy()
     
     # 裁剪到[0, 1]范围
+    image_array = np.nan_to_num(image_array, nan=0.0, posinf=1.0, neginf=0.0)
     image_array = np.clip(image_array, 0, 1)
     
     if bit_depth == 8:
@@ -335,11 +364,16 @@ def save_result(tensor, save_path, bit_depth=8):
 
 def visualize_results(input_img, output_dict, save_path):
     """
-    可视化输入和所有输出结果
-    
+    可视化输入和所有输出结果。
+
+    布局：2×3 子图
+        第一行：输入图像 | 漫反射输出 | 镜面反射分量
+        第二行：梯度先验 | Pred SpecLikelihood (新辅助头) | |SpecLik - Specular| 差异图
+        若模型未输出 's' 字段, 自动退回到 2×2 布局以保持向后兼容。
+
     参数:
         input_img: 输入图像tensor [1, 1, H, W]
-        output_dict: 模型输出字典，包含 'r', 'g', 'b'
+        output_dict: 模型输出字典，包含 'r', 'g', 'b', 可选 's'
         save_path: 保存路径
     """
     # 转换为numpy数组
@@ -347,30 +381,66 @@ def visualize_results(input_img, output_dict, save_path):
     diffuse_array = output_dict['r'].squeeze().cpu().numpy()
     gradient_array = output_dict['g'].squeeze().cpu().numpy()
     specular_array = output_dict['b'].squeeze().cpu().numpy()
-    
-    # 创建2x2子图
-    fig, axes = plt.subplots(2, 2, figsize=(12, 12))
-    
-    # 输入图像（含高反光）
-    axes[0, 0].imshow(input_array, cmap='gray')
-    axes[0, 0].set_title('Input (with Specular Highlights)', fontsize=14, fontweight='bold')
-    axes[0, 0].axis('off')
-    
-    # 漫反射输出（去除高反光后的结果）
-    axes[0, 1].imshow(diffuse_array, cmap='gray')
-    axes[0, 1].set_title('Output (Diffuse - Highlights Removed)', fontsize=14, fontweight='bold')
-    axes[0, 1].axis('off')
-    
-    # 镜面反射分量（提取的高反光部分）
-    axes[1, 0].imshow(specular_array, cmap='hot')
-    axes[1, 0].set_title('Specular Component (Highlights)', fontsize=14, fontweight='bold')
-    axes[1, 0].axis('off')
-    
-    # 梯度输出
-    axes[1, 1].imshow(gradient_array, cmap='gray')
-    axes[1, 1].set_title('Pred Input Gradient', fontsize=14, fontweight='bold')
-    axes[1, 1].axis('off')
-    
+    # [NEW] spec_likelihood 输出 (可能不存在, 兼容旧 checkpoint)
+    spec_lik_tensor = output_dict.get('s')
+    spec_lik_array = (spec_lik_tensor.squeeze().cpu().numpy()
+                      if spec_lik_tensor is not None else None)
+
+    if spec_lik_array is None:
+        # 旧版兼容: 退回到 2×2 布局
+        fig, axes = plt.subplots(2, 2, figsize=(12, 12))
+
+        axes[0, 0].imshow(input_array, cmap='gray')
+        axes[0, 0].set_title('Input (with Specular Highlights)', fontsize=14, fontweight='bold')
+        axes[0, 0].axis('off')
+
+        axes[0, 1].imshow(diffuse_array, cmap='gray')
+        axes[0, 1].set_title('Output (Diffuse - Highlights Removed)', fontsize=14, fontweight='bold')
+        axes[0, 1].axis('off')
+
+        axes[1, 0].imshow(specular_array, cmap='hot')
+        axes[1, 0].set_title('Specular Component (Highlights)', fontsize=14, fontweight='bold')
+        axes[1, 0].axis('off')
+
+        axes[1, 1].imshow(gradient_array, cmap='gray')
+        axes[1, 1].set_title('Predicted Input-Gradient Prior', fontsize=14, fontweight='bold')
+        axes[1, 1].axis('off')
+    else:
+        # 新版布局: 2×3, 加入 spec_likelihood 相关
+        fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+
+        # 第一行
+        axes[0, 0].imshow(input_array, cmap='gray')
+        axes[0, 0].set_title('Input (with Specular Highlights)', fontsize=13, fontweight='bold')
+        axes[0, 0].axis('off')
+
+        axes[0, 1].imshow(diffuse_array, cmap='gray')
+        axes[0, 1].set_title('Diffuse (Highlights Removed)', fontsize=13, fontweight='bold')
+        axes[0, 1].axis('off')
+
+        im_spec = axes[0, 2].imshow(specular_array, cmap='hot')
+        axes[0, 2].set_title('Specular Component', fontsize=13, fontweight='bold')
+        axes[0, 2].axis('off')
+        plt.colorbar(im_spec, ax=axes[0, 2], fraction=0.046)
+
+        # 第二行
+        axes[1, 0].imshow(gradient_array, cmap='gray')
+        axes[1, 0].set_title('Input-Gradient Prior', fontsize=13, fontweight='bold')
+        axes[1, 0].axis('off')
+
+        # 关键新增: spec_likelihood 热力图
+        im_slik = axes[1, 1].imshow(spec_lik_array, cmap='hot', vmin=0, vmax=1)
+        axes[1, 1].set_title('Spec-Likelihood (Aux Head)', fontsize=13, fontweight='bold')
+        axes[1, 1].axis('off')
+        plt.colorbar(im_slik, ax=axes[1, 1], fraction=0.046)
+
+        # 与主解码 specular 的差异, 直观看一致性
+        diff_slik_spec = np.abs(spec_lik_array - specular_array)
+        im_diff = axes[1, 2].imshow(diff_slik_spec, cmap='hot', vmin=0, vmax=0.3)
+        axes[1, 2].set_title('|SpecLik - Specular|', fontsize=13, fontweight='bold')
+        axes[1, 2].axis('off')
+        plt.colorbar(im_diff, ax=axes[1, 2], fraction=0.046)
+
     plt.tight_layout()
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.close()
@@ -404,28 +474,30 @@ def process_single_image(model, image_path, output_dir, device, show_visualizati
         model.eval()
         if patch_size is None:
             with torch.no_grad():
-                output = model(input_tensor)
+                output = _sanitize_output_dict(model(input_tensor))
         else:
             patch_h, patch_w = _normalize_hw(patch_size)
             image_h, image_w = input_tensor.shape[-2:]
             if (image_h, image_w) == (patch_h, patch_w):
                 print(f"  整图推理: 输入尺寸 {image_h}x{image_w} 与训练尺寸一致")
                 with torch.no_grad():
-                    output = model(input_tensor)
+                    output = _sanitize_output_dict(model(input_tensor))
             else:
                 print(
                     f"  滑窗推理: 原图 {image_h}x{image_w}, "
                     f"patch {patch_h}x{patch_w}, overlap={overlap}")
-                output = sliding_window_inference(
+                output = _sanitize_output_dict(sliding_window_inference(
                     model, input_tensor, device,
                     patch_size=(patch_h, patch_w),
-                    overlap=overlap)
+                    overlap=overlap))
         
         # 提取输出
         diffuse_output = output['r']      # 漫反射（去除高反光后的结果）
         specular_output = output['b']     # 镜面反射（提取的高反光）
         gradient_output = output['g']     # 梯度
-        
+        # [NEW] 梯度分支辅助头: 镜面高光区域软概率 (0~1), 可能不存在 (旧 checkpoint)
+        spec_lik_output = output.get('s')
+
         # 生成输出文件名
         base_name = os.path.splitext(os.path.basename(image_path))[0]
         
@@ -436,6 +508,10 @@ def process_single_image(model, image_path, output_dir, device, show_visualizati
                     os.path.join(output_dir, f'{base_name}_specular.png'))
         save_result(gradient_output, 
                     os.path.join(output_dir, f'{base_name}_gradient.png'))
+        # [NEW] 保存 spec_likelihood 输出 (若存在)
+        if spec_lik_output is not None:
+            save_result(spec_lik_output,
+                        os.path.join(output_dir, f'{base_name}_spec_likelihood.png'))
         if save_16bit:
             save_result(diffuse_output, os.path.join(output_dir, f'{base_name}_diffuse_16bit.png'),
                         bit_depth=16)
@@ -443,6 +519,11 @@ def process_single_image(model, image_path, output_dir, device, show_visualizati
                         bit_depth=16)
             save_result(gradient_output, os.path.join(output_dir, f'{base_name}_gradient_16bit.png'),
                         bit_depth=16)
+            # [NEW] 16-bit 版本同步保存
+            if spec_lik_output is not None:
+                save_result(spec_lik_output,
+                            os.path.join(output_dir, f'{base_name}_spec_likelihood_16bit.png'),
+                            bit_depth=16)
         
         # 可选：额外保存一份漫反射结果到集中目录，方便统一处理
         if collect_diffuse_dir:
@@ -461,7 +542,7 @@ def process_single_image(model, image_path, output_dir, device, show_visualizati
         
         return True
     except Exception as e:
-        print(f"  ❌ 处理失败: {e}")
+        print(f"  [ERROR] Processing failed: {e}")
         return False
 
 
@@ -491,7 +572,7 @@ def process_folder(model, input_folder, output_folder, device, show_visualizatio
     )
     
     if not image_files:
-        print(f"❌ 错误: 在目录 {input_folder} 中未找到支持的图像文件")
+        print(f"[ERROR] No supported image files found in {input_folder}")
         print(f"支持的格式: {', '.join(supported_formats)}")
         return
     
@@ -518,9 +599,9 @@ def process_folder(model, input_folder, output_folder, device, show_visualizatio
     print("\n" + "=" * 70)
     print("批量处理完成！")
     print("=" * 70)
-    print(f"✓ 成功: {success_count} 张")
+    print(f"[OK] Success: {success_count}")
     if fail_count > 0:
-        print(f"❌ 失败: {fail_count} 张")
+        print(f"[ERROR] Failed: {fail_count}")
     print(f"输出目录: {output_folder}")
 
 
@@ -565,7 +646,7 @@ def main():
     
     # 检查输入路径是否存在
     if not os.path.exists(INPUT_PATH):
-        print(f"\n❌ 错误: 输入路径不存在: {INPUT_PATH}")
+        print(f"\n[ERROR] Input path does not exist: {INPUT_PATH}")
         print(f"\n请修改配置:")
         print(f"  打开文件: process_images.py")
         print(f"  找到 main() 函数的配置区")
@@ -574,14 +655,14 @@ def main():
     
     # 检查模型文件是否存在
     if not os.path.exists(MODEL_PATH):
-        print(f"\n❌ 错误: 模型文件不存在: {MODEL_PATH}")
+        print(f"\n[ERROR] Model file does not exist: {MODEL_PATH}")
         print(f"请确保已训练模型并保存为: {MODEL_PATH}")
         return
     
     # 设置设备
     device = torch.device(DEVICE if torch.cuda.is_available() else 'cpu')
     if DEVICE == 'cuda' and not torch.cuda.is_available():
-        print("⚠ 警告: CUDA不可用，自动切换到CPU")
+        print("[WARNING] CUDA is unavailable; falling back to CPU")
         device = torch.device('cpu')
     print(f"使用设备: {device}")
     
@@ -589,9 +670,9 @@ def main():
     print(f"加载模型: {MODEL_PATH}")
     try:
         model = load_model(MODEL_PATH, device, prefer_ema=PREFER_EMA)
-        print("✓ 模型加载成功")
+        print("[OK] Model loaded")
     except Exception as e:
-        print(f"❌ 模型加载失败: {e}")
+        print(f"[ERROR] Model loading failed: {e}")
         return
     TRAIN_IMAGE_SIZE = resolve_patch_size_from_checkpoint(model, TRAIN_IMAGE_SIZE)
     
@@ -609,7 +690,7 @@ def main():
                                 DIFFUSE_COLLECTION_DIR,
                                 patch_size=TRAIN_IMAGE_SIZE, overlap=PATCH_OVERLAP,
                                 save_16bit=SAVE_16BIT_OUTPUT):
-            print(f"✓ 处理完成!")
+            print("[OK] Processing complete")
             print(f"\n输出文件位置:")
             print(f"  - {image_output_dir}/{image_name}_diffuse.png       (⭐ 去除高反光后的结果)")
             print(f"  - {image_output_dir}/{image_name}_specular.png     (镜面反射分量)")
@@ -637,7 +718,7 @@ def main():
             print(f"  - *_visualization.png : 完整可视化对比图")
         print(f"\n所有漫反射结果的副本（保持原始文件名）已集中存放于: {DIFFUSE_COLLECTION_DIR}")
     else:
-        print(f"❌ 错误: 无效的输入路径: {INPUT_PATH}")
+        print(f"[ERROR] Invalid input path: {INPUT_PATH}")
         return
     
     print("\n" + "=" * 70)
