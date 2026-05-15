@@ -1460,7 +1460,8 @@ class EnhancedCompositeLoss(nn.Module):
                  use_edge_weight=True, use_perceptual=True,
                  lambda_focal=0.8, lambda_dice=0.3, lambda_gc=0.2,
                  lambda_cs=0.05, lambda_grad_spec=0.05,
-                 lambda_s_lik=0.3, lambda_s_cons=0.02,
+                 lambda_s_lik=0.5, lambda_s_cons=0.05,
+                 lambda_spec_peak=0.3,
                  highlight_prior_gamma=1.0,
                  use_ohem=True, ohem_ratio=0.3):
         super().__init__()
@@ -1495,6 +1496,8 @@ class EnhancedCompositeLoss(nn.Module):
         # [NEW] spec_likelihood 相关权重
         self.lambda_s_lik = lambda_s_lik
         self.lambda_s_cons = lambda_s_cons
+        # [NEW S3] 高光峰值欠预测惩罚权重（默认 0.3，可由 scheduler 调度）
+        self.lambda_spec_peak = lambda_spec_peak
         self.highlight_prior_gamma = highlight_prior_gamma
         self.use_ohem = use_ohem
         self.ohem_ratio = ohem_ratio
@@ -1609,7 +1612,15 @@ class EnhancedCompositeLoss(nn.Module):
                 torch.abs(pred_grad - est_b_grad) * highlight_prior
             ).mean()
 
-        # ── [NEW S1] spec_likelihood 头主监督：与 gt_specular 软对齐 ──
+        # ── [NEW S1][P1-UPGRADE] spec_likelihood 头主监督：BCE + SSIM ──
+        # 关键升级（解决 pred_s_lik 输出值偏低问题）：
+        #   旧版 Charbonnier+SSIM 对 sigmoid 输出在中段(0.3~0.7)的梯度被 sigmoid 导数
+        #   σ'(x)=σ(x)(1-σ(x)) 压扁，导致预测停滞在中等概率（图示中观察到的"位置对但
+        #   幅度不足"现象）。BCE 损失 d/dlogit BCE = (p - t)，梯度不被 sigmoid 压扁，
+        #   是 sigmoid 输出的理论最优损失。
+        #
+        # 安全：F.binary_cross_entropy 对 pred=0 或 pred=1 时 log(0) = -inf。
+        #   spec_lik_head 用 sigmoid 输出几乎不会到精确 0/1，但加一道 clamp 防御。
         if pred_s_lik is None:
             l_s_lik = torch.tensor(0.0, device=pred_diffuse.device)
         else:
@@ -1618,21 +1629,26 @@ class EnhancedCompositeLoss(nn.Module):
                 pred_s_lik = F.interpolate(
                     pred_s_lik, size=gt_sc.shape[-2:],
                     mode='bilinear', align_corners=False)
-            l_s_lik = (charbonnier_loss(pred_s_lik, gt_sc) +
-                       0.5 * (1.0 - self.ssim_fn(pred_s_lik.float(), gt_sc.float())))
+            pred_s_lik_safe = pred_s_lik.clamp(1e-4, 1.0 - 1e-4)
+            l_bce = F.binary_cross_entropy(pred_s_lik_safe, gt_sc, reduction='mean')
+            l_s_lik = l_bce + 0.3 * (1.0 - self.ssim_fn(pred_s_lik.float(), gt_sc.float()))
 
-        # ── [NEW S2] pred_s_lik 与 est_b 弱一致性（跨任务一致性，小权重） ──
-        # 让"梯度分支高光估计"和"主解码器高光估计"在高光软掩码内结构对齐，
-        # 不要求像素值精确相等（用 detach 任一端避免相互拉扯）。
+        # ── [NEW S2][P3-UPGRADE] pred_s_lik 与 est_b 双向一致性 ──
+        # 旧版只单向（pred_s_lik 学 est_b），但 pred_s_lik 本身受 gt_specular 直接监督，
+        # 信号更纯；让 est_b 也反过来从 pred_s_lik.detach() 学习，给主解码器一个
+        # 额外的"高光语义引导"。两个方向都用 detach 防止互相拉扯死循环。
+        #
+        # 量纲稳定：用 mean 替代 sum/sum（防止低高光 batch 放大）。
         if pred_s_lik is None:
             l_s_cons = torch.tensor(0.0, device=pred_diffuse.device)
         else:
-            # [SAFE] 用 gt_specular 作软掩码（高光区域权重大）
-            # 改用 mean 而非 sum/sum：原版 sum / max(sum, 1e-6) 在 batch 内
-            # 几乎无高光（如暗场景）时会把 loss 放大到 1e5~1e6 量级，
-            # 直接打爆梯度。mean 等价于"每像素加权平均"，量纲稳定。
             soft_mask = gt_sc.detach()
-            l_s_cons = (torch.abs(pred_s_lik - est_b.detach()) * soft_mask).mean()
+            # 方向 1: pred_s_lik 学 est_b（保留原版）
+            cons_fwd = (torch.abs(pred_s_lik - est_b.detach()) * soft_mask).mean()
+            # 方向 2: est_b 学 pred_s_lik（新增，提供高光区域更强的"应该多高"信号）
+            cons_bwd = (torch.abs(est_b - pred_s_lik.detach()) * soft_mask).mean()
+            # 总和：双向一致性
+            l_s_cons = cons_fwd + cons_bwd
 
         if self.use_ohem:
             l_focal = specular_ohem_loss(est_b, gt_sc, self.focal, self.ohem_ratio)
@@ -1640,6 +1656,21 @@ class EnhancedCompositeLoss(nn.Module):
             l_focal = self.focal(est_b, gt_sc)
         l_dice = self.dice(est_b, gt_sc)
         l_gc = self.gc(est_b, gt_sc)
+
+        # ── [NEW S3][P4] 高光区欠预测单侧惩罚 ──
+        # 关键诊断（图示观察）：pred_b 在强高光区域 (gt_sc > 0.3) 整体偏低。
+        # 现有 focal/dice/spec 在该区域虽然有较大权重，但都是双侧 L1/MSE 形式，
+        # 既惩罚欠预测也惩罚过预测，平均下来"保守预测"是局部最优点。
+        #
+        # l_spec_peak 是单侧损失，仅惩罚 (gt_sc - est_b)_+ * high_mask：
+        #   - 只在 pred 比 gt 低时计入损失
+        #   - 只在 gt 本身较高时计入（避免在 gt≈0 区把噪声放大）
+        # 这给主解码器一个明确的"在强高光区敢于拉满"的方向性信号。
+        with torch.no_grad():
+            high_mask = (gt_sc > 0.3).float()
+        under = F.relu(gt_sc - est_b) * high_mask
+        l_spec_peak = under.mean()
+
         if cross_scale_consistency is None:
             l_cs = torch.tensor(0.0, device=pred_diffuse.device)
         else:
@@ -1656,7 +1687,8 @@ class EnhancedCompositeLoss(nn.Module):
                  self.lambda_dice * l_dice + self.lambda_gc * l_gc +
                  self.lambda_cs * l_cs +
                  self.lambda_s_lik * l_s_lik +
-                 self.lambda_s_cons * l_s_cons)
+                 self.lambda_s_cons * l_s_cons +
+                 self.lambda_spec_peak * l_spec_peak)
 
         d = {}
         for k, v in [('total', total), ('ssim', l_ssim_single),
@@ -1669,7 +1701,8 @@ class EnhancedCompositeLoss(nn.Module):
                       ('grad_edge', l_grad_edge), ('grad_spec', l_grad_spec),
                       ('focal', l_focal), ('dice', l_dice), ('gc', l_gc),
                       ('cs', l_cs),
-                      ('s_lik', l_s_lik), ('s_cons', l_s_cons)]:
+                      ('s_lik', l_s_lik), ('s_cons', l_s_cons),
+                      ('spec_peak', l_spec_peak)]:
             d[k] = v.item() if isinstance(v, torch.Tensor) else v
         return total, d
 
@@ -2759,9 +2792,12 @@ class EMA:
 class DynamicLossWeightScheduler:
     """根据训练进度动态调整各 loss 项的权重（修复版：60% 后冻结）。
 
-    [NEW] 加入 lambda_s_lik / lambda_s_cons 调度：
-        - 前期 spec_likelihood 监督温和（避免梯度分支过早被强约束）；
-        - 中后期逐步提升，使梯度分支真正学到任务化高光语义。
+    [P2-UPGRADE] spec_likelihood 系列调度加速：
+        旧版 l_s_lik 上限 0.4 / 60% 收敛，导致辅助头早期监督信号过弱，
+        训练观察到 pred_s_lik 在 0.3~0.5 停滞、无法跨过 0.5 阈值。
+        新版上限 0.8 / 40% 进度即达上限，给 spec_lik_head 更直接的监督。
+
+    [NEW S3] lambda_spec_peak: 高光区欠预测单侧惩罚，0.1 → 0.5，鼓励主解码器拉满高光。
     """
 
     def __init__(self, total_epochs):
@@ -2769,8 +2805,10 @@ class DynamicLossWeightScheduler:
 
     def get_weights(self, current_epoch):
         progress = min(current_epoch / self.total_epochs, 1.0)
-        # 修复：在 60% 处截断变化，之后权重不再改变
+        # 主权重系列：60% 处截断
         p = min(progress / 0.6, 1.0)
+        # spec_likelihood 系列：40% 处截断（加速辅助头）
+        p_fast = min(progress / 0.4, 1.0)
         weights = {
             'lambda_ssim':       1.0,
             'lambda_l1':         max(0.5, 1.0 - 0.5 * p),
@@ -2784,9 +2822,11 @@ class DynamicLossWeightScheduler:
             'lambda_focal':      min(0.8, 0.3 + 0.5 * p),
             'lambda_dice':       min(0.3, 0.1 + 0.2 * p),
             'lambda_gc':         min(0.2, 0.05 + 0.15 * p),
-            # [NEW] spec_likelihood 相关
-            'lambda_s_lik':      min(0.4, 0.1 + 0.3 * p),
-            'lambda_s_cons':     min(0.05, 0.01 + 0.04 * p),
+            # [P2-UPGRADE] spec_likelihood 加速调度：上限 0.8 / 40% 进度达上限
+            'lambda_s_lik':      min(0.8, 0.3 + 0.5 * p_fast),
+            'lambda_s_cons':     min(0.08, 0.02 + 0.06 * p_fast),
+            # [NEW S3] 高光峰值欠预测惩罚：0.1 → 0.5 / 40% 进度
+            'lambda_spec_peak':  min(0.5, 0.1 + 0.4 * p_fast),
         }
         return weights
 

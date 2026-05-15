@@ -21,9 +21,13 @@
    - **Swin-Tiny 窗口上下文分支**直接处理原始 patch，不强制 resize 到 224×224，输出 `swin_4/swin_8/swin_16`。这会保留结构光条纹的空间采样、局部相位关系和条纹周期。
    - **多尺度 skip 融合**：`swin_4` 与 `x_bb_2`、`swin_8` 与 `x_bb_3` 通过 `AdaptiveSkipFusion` 做内容自适应残差注入。
 3. **瓶颈层数据流**：`swin_16` 先经 `swin16_proj` 投影到 512 通道，再与 ResNet 深层特征 `x_bb_4` 通过 `CrossModalFusion` 双向交叉注意力融合；融合结果依次经过 `cba_after_backbone -> FFC bottleneck -> HighFrequencyEnhancement`，得到瓶颈特征 `x_c`。
-4. **高反光/结构识别辅助分支**：`GradientDecoder` 接收 `x_c` 与编码器 skip，逐级上采样预测梯度图 `g`，同时输出 4 级中间特征。
-5. **增强桥接模块**：`EnhancementLayers` 对梯度分支的中间特征做频域分解和增强，为主解码器提供结构化上下文。
-6. **主解码层**：`MainDecoder` 结合 `x_c`、编码器 skip、增强特征和梯度图，通过注意力门控、SpecularAwareAttention、FFC 与梯度门控逐级恢复，预测镜面反射分量 `b`。
+4. **高反光/结构识别辅助分支（V3.1 双头）**：`GradientDecoder` 接收 `x_c` 与编码器 skip，逐级上采样并并联输出两个头：
+   - **梯度头**：输出梯度图 \(g\)（监督目标 \(\nabla I\)）；
+   - **spec_likelihood 头（V3.1 新增）**：输出高光软概率图 \(s \in [0,1]\)（监督目标 \(gt\_specular\)）；
+   - 两头共享 `block_5_conv_1` 输出特征；
+   - 同时输出 4 级中间特征供 `EnhancementLayers` 使用。
+5. **增强桥接模块**：`EnhancementLayers` 对梯度分支的中间特征做频域分解和增强，**V3.1 中 `specular_gate` 由 2 通道升级为 3 通道**，同时接收 `g`、原始 `input` 和 `s`，为主解码器提供结构化上下文。
+6. **主解码层（V3.1 三路调制）**：`MainDecoder` 结合 `x_c`、编码器 skip、增强特征和梯度图。在 level 2/3/4 三个尺度上做**三路联合调制**：`grad_gate(g) + joint_gate(cat(g, input, s)) + spec_lik_gate(s)`，每路独立 scale 参数控制。最终预测镜面反射分量 `b`。
 7. **漫反射恢复与精修**：先执行物理减法 `coarse = clamp(x - b, 0, 1)`，再由 `ResidualRefinementHead` 对粗漫反射结果做小幅像素级修正，得到最终漫反射输出 `r`。
 8. **跨尺度一致性辅助项与 top-down 回流**：训练时额外计算 H/4、H/8、H/16 融合特征的归一化响应图一致性标量 `cs`，用于约束不同尺度对同一结构区域的响应保持一致。编码器还在 H/16 cross-modal 融合后加入轻量 top-down refinement，将 H/16 上下文逐级反馈到 H/8、H/4 skip。`cs` 只参与训练损失，不作为推理图像结果保存。
 
@@ -33,6 +37,36 @@
 
 - **主解码器上采样从转置卷积切换为 resize-conv**：`TransposedConvBlock` 保留类名和外部接口，但内部改为三路 `Upsample(mode='bilinear') + Conv2d`。这降低了转置卷积带来的棋盘纹理风险。由于权重形状发生变化，旧 checkpoint 的部分 decoder 权重无法 strict 复用；推理加载器会过滤形状不匹配的旧权重并加载其余可兼容权重。
 - **新增 cross-scale consistency loss 与 top-down refinement**：`YFFC.forward()` 返回 `cs` 标量，`EnhancedCompositeLoss` 使用 `lambda_cs` 将其纳入总损失。`CrossScaleTopDownRefinement` 在 H/16 -> H/8 -> H/4 上执行受限残差回流，配合 `cs` loss 约束多尺度结构响应一致性，目的是减少高光边界、细条纹和局部结构在不同尺度间的语义漂移。
+
+### 1.3 V3.1 改造：梯度分支任务化与高光自信度增强
+
+V3.1 在 V3 基础上做了三轮密切关联的改造，目标是让模型对**镜面反射的预测更合理、更自信**。
+
+**第一轮：梯度分支监督目标重定义（已落地）**
+
+将梯度分支的监督目标由"漫反射梯度 \(\nabla I_d\)"重定向为"输入图像梯度 \(\nabla I\)"。理由：在结构光去高光任务中，输入图的边缘已经天然携带了高光与材质的全部边界信号，远比漫反射梯度更直接、更稳定。`compute_input_gradient_target` 由 `EnhancedPairedTransform` 在数据增强后即刻执行，作为 `gt_gradient` 写入数据集字段。
+
+**第二轮：梯度分支任务化辅助头（GradientDecoder.spec_lik_head）**
+
+为 `GradientDecoder` 新增并联辅助头 `spec_lik_head`，与梯度头 `block_5` 共享 `block_5_conv_1` 输出特征，独立预测全分辨率 **高光软概率图 \(s \in [0,1]\)**。监督信号为 `gt_specular`。这一辅助头同时承担三个角色：
+
+1. 作为辅助任务，给梯度分支注入"任务化"的高光语义；
+2. 作为 `EnhancementLayers._SpectralDecompositionUnit` 的第三通道输入（与 \(\nabla I\) 和原始 input 一起生成 specular gate）；
+3. 作为 `MainDecoder` 的独立调制通道（`spec_lik_gate_2/3/4`），与现有 `grad_gate` / `joint_gate` 并列。
+
+`spec_lik_head` 的最后一层卷积采用 **零权重 + bias = −2.0** 的初始化，使训练初期 sigmoid 输出 ≈ 0.12（接近高光像素的统计先验比例），避免对下游主任务造成冲击。
+
+**第三轮：损失加固、高光自信度增强与数值稳定性修复**
+
+通过对训练监控的诊断，发现 `pred_s_lik` 与 `pred_b` 在高光区域**位置已对、但幅度均偏低**（pred_s_lik 大量像素停在 0.3~0.5，无法跨过 0.5 阈值）。同时早期版本在 Epoch 3 后出现大量 `grad NaN/Inf` 跳过。两类问题一并修复：
+
+- **\[NaN-Fix\]** 损失中所有 `1/(p_abs*g_abs).clamp_min(1e-6)` 类操作改为能量加权的无除法形式；所有 `sum / mask.sum().clamp_min(1e-6)` 改为 `mean` 或 `clamp_min(1.0)`；`normalize_per_sample` 的 scale 下界由 \(10^{-8}\) 提升至 \(10^{-3}\)；所有 `sqrt(... + 1e-12)` 改为 `sqrt(... + 1e-6)`；`charbonnier_loss` 的 \(\epsilon\) 由 \(10^{-6}\) 提升至 \(10^{-3}\)。
+- **\[P1-UPGRADE\]** `l_s_lik` 由 Charbonnier+SSIM 改为 **BCE+SSIM**。Charbonnier 对 sigmoid 输出在中段反向梯度被 \(\sigma'(x)=\sigma(x)(1-\sigma(x))\) 压扁，BCE 损失对 sigmoid logits 的梯度恒为 \(p - t\)、不饱和，是 sigmoid 输出的理论最优损失，直接驱动 `pred_s_lik` 在高光区域跨过 0.5 阈值。
+- **\[P2-UPGRADE\]** `lambda_s_lik` / `lambda_s_cons` / `lambda_spec_peak` 调度由 60% 截断 改为 **40% 截断**，加速 spec_likelihood 系列的收敛。
+- **\[P3-UPGRADE\]** `l_s_cons` 由单向（`pred_s_lik` 学 `est_b`）改为**双向一致性**：`est_b` 也反过来从 `pred_s_lik.detach()` 学习，让主解码器获得已被强监督的辅助头的"应该多高"信号。
+- **\[NEW S3\]** 新增 `l_spec_peak`：在 `gt_specular > 0.3` 区域单侧惩罚 `pred_b` 欠预测（\(F.relu(gt - pred) \cdot \mathbb{1}_{gt>0.3}\)）。仅惩罚欠预测，不惩罚过预测，明确鼓励主解码器在强高光区敢于拉满。
+
+V3.1 的所有改造**完全向后兼容旧推理 checkpoint**：`process_images.py._load_state_dict_flexible` 会过滤形状不匹配的旧权重，输出字典中的 `'s'` 字段在旧权重缺失时使用 `output.get('s')` 静默降级。
 
 ---
 
@@ -72,14 +106,17 @@ X-FFC 是一个专为**图像高光分解任务**设计的深度学习模型。�
 
 ### 3.2 网络输出格式
 
-网络返回一个字典，包含三个分量：
+网络返回一个字典，包含四个分量（V3.1）：
 
 ```python
 {'r': pred_diffuse,    # [B, 1, H, W]  漫反射分量（主输出）
  'g': gradient_map,    # [B, 1, H, W]  输入图像 Sobel 梯度图（辅助输出）
  'b': est_specular,    # [B, 1, H, W]  镜面反射分量
+ 's': spec_likelihood, # [B, 1, H, W]  高光软概率图（V3.1 新增辅助输出）
  'cs': cs_loss}        # 标量，仅训练使用的跨尺度一致性辅助项
 ```
+
+`'s'` 字段由 `GradientDecoder.spec_lik_head` 输出，取值范围 \([0,1]\)。推理时该字段同时作为附加可视化结果输出为 `*_spec_likelihood.png`。
 
 ### 3.3 整体架构概览
 
@@ -703,15 +740,23 @@ class YFFC(nn.Module):
     │
     └─ Level 5 (128×160):
         ├─ cat(x_tbe_4, x_bb_1) → TransposedConv(32+64→64)
-        ├─ Conv(64→1, 无BN无激活) → Sigmoid
-        └─ x_g: [B, 1, 128, 160]                    ==> (→ MainDecoder)
+        ├─ 梯度头分支:
+        │   ├─ Conv(64→1, 无BN无激活) → Sigmoid
+        │   └─ x_g: [B, 1, 128, 160]                ==> (→ MainDecoder / Loss)
+        └─ [V3.1][S-LIK] 高光概率头分支（spec_lik_head）:
+            ├─ spec_lik_conv_a: Conv(64→32) + GN + GELU
+            ├─ spec_lik_conv_b: Conv(32→16) + GN + GELU
+            ├─ spec_lik_conv_c: Conv(16→1)            // weight=0, bias=−2.0
+            └─ Sigmoid → x_s: [B, 1, 128, 160]        ==> (→ EnhancementLayers / MainDecoder / Loss)
 
 ⬇️ EnhancementLayers (频谱分解精炼)
-    ├─ x_tbe_1(256ch) → _SpectralDecompositionUnit → x_enh_1: [B, 128, 8, 10]
-    ├─ x_tbe_2(128ch) → _SpectralDecompositionUnit → x_enh_2: [B, 64, 16, 20]
-    ├─ x_tbe_3(64ch)  → _SpectralDecompositionUnit → x_enh_3: [B, 32, 32, 40]
-    └─ x_tbe_4(32ch)  → _SpectralDecompositionUnit → x_enh_4: [B, 16, 64, 80]
+    ├─ x_tbe_1(256ch) → _SpectralDecompositionUnit(g_map=x_g↓, s_map=x_s↓, input↓) → x_enh_1: [B, 128, 8, 10]
+    ├─ x_tbe_2(128ch) → _SpectralDecompositionUnit(g_map=x_g↓, s_map=x_s↓, input↓) → x_enh_2: [B, 64, 16, 20]
+    ├─ x_tbe_3(64ch)  → _SpectralDecompositionUnit(g_map=x_g↓, s_map=x_s↓, input↓) → x_enh_3: [B, 32, 32, 40]
+    └─ x_tbe_4(32ch)  → _SpectralDecompositionUnit(g_map=x_g↓, s_map=x_s↓, input↓) → x_enh_4: [B, 16, 64, 80]
 ```
+
+`_SpectralDecompositionUnit` 的 `specular_gate` 由 V3 的 2 通道（`g + input`）升级为 V3.1 的 **3 通道**（`g + input + s`），spec_likelihood 作为显式监督下的高光语义信号注入高光分支门控。
 
 ### 第四阶段：右分支处理（MainDecoder — 核心重建）
 
@@ -731,7 +776,10 @@ class YFFC(nn.Module):
     ├─ Level 2 (8×10 → 16×20):
     │   ├─ TransposedConvBlock(1408→384ch) resize-conv 上采样
     │   ├─ ffc_h8(ratio=0.25) + 残差
-    │   ├─ [P10] x = x * (1 + grad_gate_2(x_g))      ← 梯度门控
+    │   ├─ [P10] 三路联合调制：
+    │   │     x = x * (1 + scale_g·grad_gate_2(x_g)        ← 梯度门控
+    │   │              + scale_j·joint_gate_2(cat(x_g, input, x_s))   ← [V3.1] 三通道联合门控
+    │   │              + scale_s·spec_lik_gate_2(x_s))     ← [V3.1] 高光概率门控
     │   ├─ sa2: SpecularAwareAttention(384ch)
     │   ├─ att2: Attention_block(384, 256) → 加权 x_bb_3
     │   └─ cat([384, 256, 64]) → [B, 704, 16, 20]
@@ -740,14 +788,14 @@ class YFFC(nn.Module):
     │   ├─ FeatureExtrationLayersB(704→640ch)
     │   ├─ TransposedConvBlock(640→192ch) resize-conv 上采样
     │   ├─ ffc_h4(ratio=0.25) + 残差
-    │   ├─ [P10] x = x * (1 + grad_gate_3(x_g))      ← 梯度门控
+    │   ├─ [P10] 三路联合调制：grad_gate_3 + joint_gate_3 + spec_lik_gate_3
     │   ├─ sa3: SpecularAwareAttention(192ch)
     │   ├─ att3: Attention_block(192, 128) → 加权 x_bb_2
     │   └─ cat([192, 128, 32]) → [B, 352, 32, 40]
     │
     ├─ Level 4 (32×40 → 64×80):
     │   ├─ TransposedConvBlock(352→96ch) resize-conv 上采样
-    │   ├─ [P10] x = x * (1 + grad_gate_4(x_g))      ← 梯度门控
+    │   ├─ [P10] 三路联合调制：grad_gate_4 + joint_gate_4 + spec_lik_gate_4
     │   ├─ sa4: SpecularAwareAttention(96ch)
     │   ├─ att4: Attention_block(96, 64) → 加权 x_bb_1
     │   └─ cat([96, 64, 16]) → [B, 176, 64, 80]
@@ -775,16 +823,16 @@ coarse_diffuse = clamp(x - est_b, 0, 1)        # 硬减法
 
 cs_loss = cross_scale_consistency_loss([H4_feat, H8_feat, H16_feat])
 
-输出字典: {'r': pred_diffuse, 'g': x_g, 'b': est_b, 'cs': cs_loss}
+输出字典: {'r': pred_diffuse, 'g': x_g, 'b': est_b, 's': x_s, 'cs': cs_loss}    # 'V3.1' 'x_s' 来自 spec_lik_head
 ```
 
 ---
 
 ## 7. 损失函数体系
 
-### 7.1 EnhancedCompositeLoss（增强复合损失 V3）
+### 7.1 EnhancedCompositeLoss（增强复合损失 V3.1）
 
-X-FFC 使用 `EnhancedCompositeLoss` 作为训练损失，它整合了 11 个子损失项，从像素级、结构级、频域、感知、分割和跨尺度特征一致性等多个维度约束网络学习：
+X-FFC V3.1 使用 `EnhancedCompositeLoss` 作为训练损失，它整合了 **14 个子损失项**（V3.1 在 V3 的 11 项基础上新增 `l_s_lik`、`l_s_cons`、`l_spec_peak`），从像素级、结构级、频域、感知、分割、跨尺度特征一致性、以及**高光概率辅助任务**等多个维度约束网络学习：
 
 #### 子损失项详解
 
@@ -798,13 +846,13 @@ MS-SSIM 在 3 个尺度上评估结构相似性，对多尺度结构变化更敏
 
 \[l_{l1} = \text{mean}\left(\sqrt{(pred - target)^2 + \epsilon^2} \times w_{edge}\right)\]
 
-用 Charbonnier 损失（\(\epsilon=10^{-6}\)）替代标准 L1，在误差为 0 处光滑可导，后期梯度更稳定。\(w_{edge}\) 为根据镜面反射分量梯度生成的边缘权重图（边缘区域权重为 3.0，平坦区域为 1.0），使网络在高光边缘区域承受更大的重建误差惩罚。
+用 Charbonnier 损失（V3.1 中 \(\epsilon = 10^{-3}\)，原 V3 为 \(10^{-6}\)）替代标准 L1。**V3.1 数值稳定性改进**：原 \(\epsilon = 10^{-6}\) 在 fp16 下接近下溢边缘，反向梯度可被 \(1/\epsilon\) 放大约 \(10^6\) 倍；提升至 \(10^{-3}\) 在精度损失可忽略的同时显著提高反向数值稳定性。`use_edge_weight=True` 路径下的 `sqrt eps` 也由 \(10^{-12}\) 提升至 \(10^{-6}\)。\(w_{edge}\) 为根据镜面反射分量梯度生成的边缘权重图（边缘区域权重为 3.0，平坦区域为 1.0），使网络在高光边缘区域承受更大的重建误差惩罚。
 
-**3. 频域损失** \[P4\]
+**3. 频域损失** \[P4\]\[V3.1 数值稳定性修复\]
 
-\[l_{freq} = \text{L1}(|\text{FFT}(pred)|, |\text{FFT}(gt)|) + 0.5 \times (1 - \cos(\theta_{pred} - \theta_{gt}))\]
+\[l_{freq} = \text{L1}(|\text{FFT}(pred)|, |\text{FFT}(gt)|) + 0.25 \times \frac{\sum |\:|p|\cdot|g| - \text{Re}(p \cdot \bar{g})\:| \cdot M_E}{\sum M_E}\]
 
-幅度谱 L1 损失 + 相位一致性损失。相位一致性通过复数乘法计算余弦距离（而非直接使用 `torch.angle()` 的不连续梯度），具有更好的数值稳定性。频域损失确保预测与真值在频率空间中的分布一致，尤其对条纹的周期性频率分量保真至关重要。
+**V3.1 关键稳定性升级**：原 V3 相位项 \((1 - \cos(\theta_p - \theta_g)) = 1 - \text{Re}(p\bar{g}) / (|p||g|)\) 在反向时会出现 \(1 / (|p|\,|g|)^2\) 量级的爆炸性梯度（频谱低能量频点处尤甚），这是早期版本 Epoch 3 后出现大量 `grad NaN/Inf` 的核心根因之一。V3.1 改用 "能量加权的准相位差" \(|\,|p|\,|g| - \text{Re}(p \bar g)\,|\)（其中 \(\text{Re}(p\bar g) \leq |p|\,|g|\) 恒成立，等号当且仅当两者同相），完全避开除法，反向稳定；同时用 GT 频谱能量构造 `detach` 的能量掩码 \(M_E = \mathbb{1}_{|g| > 0.01 \cdot \overline{|g|}}\)，屏蔽几乎为零的高频。
 
 **4. VGG16 感知损失**
 
@@ -820,7 +868,19 @@ MS-SSIM 在 3 个尺度上评估结构相似性，对多尺度结构变化更敏
 
 \[l_{grad} = 1 - \text{SSIM}(pred\_grad, gt\_grad)\]
 
-对梯度预测辅助任务的直接监督。梯度真值由输入图像 `input` 的 Sobel 梯度幅值计算，并按样本归一化到 \([0,1]\)。因此 `g` 的学习目标是原始高反光输入中的边缘、条纹突变和高光边界，而不再来自 `target/diffuse`。Sobel 只用于生成训练标签；推理输出 `pred_grad` 由 GradientDecoder 预测。训练中还加入基于 `gt_gradient` 高响应区域的 Charbonnier/L1 加权项，直接约束 `pred_grad` 在输入强边缘处更准确。
+对梯度预测辅助任务的直接监督。**V3.1 中梯度真值定义**：由输入图像 \(I\)（而非漫反射 \(I_d\)）的 Sobel 梯度幅值计算，并按样本归一化到 \([0,1]\)。因此 `g` 的学习目标是原始高反光输入中的边缘、条纹突变和高光边界。Sobel 只用于生成训练标签；推理输出 `pred_grad` 由 GradientDecoder 预测。
+
+**6b. 输入梯度边缘加权 L1**（`l_grad_edge`）
+
+\[l_{grad\_edge} = \text{mean}\left(\sqrt{(pred\_grad - gt\_grad)^2 + 10^{-6}} \times w_{grad} \times (1 + \gamma_{hp} \cdot p_{hp})\right)\]
+
+在 `gt_gradient` 强响应区加权，并叠加高光软先验 \(p_{hp}\)（由输入亮度通过 sigmoid 计算）做额外增强，使 `pred_grad` 在高光边缘处更准确。
+
+**6c. 梯度-镜面一致性损失**（`l_grad_spec`）\[V3.1 数值稳定性修复\]
+
+\[l_{grad\_spec} = \text{mean}\big(\,|pred\_grad - \text{Sobel}_\text{norm}(\text{detach}(est\_b))| \cdot p_{hp}\,\big)\]
+
+约束 `pred_grad` 与"基于 `est_b` 计算的 Sobel 边缘"在高光区域一致。**V3.1 关键修复**：(1) `est_b` 端必须 `.detach()`，否则反向梯度经过 `sobel + normalize_per_sample` 的 quantile 归一化分母会产生 \(1 / \text{scale}\) 量级的爆炸性梯度；(2) 原版 `sum / hp.sum().clamp_min(1e-6)` 在 batch 内高光极少时会把 loss 放大到 \(10^6\) 量级，改为直接 `mean`，量纲与其他损失一致。
 
 **7. SpecularFocalLoss（高光焦点损失）**
 
@@ -834,15 +894,15 @@ MS-SSIM 在 3 个尺度上评估结构相似性，对多尺度结构变化更敏
 
 从图像分割的视角约束高光区域的重叠度，pred\_mask 和 gt\_mask 通过软阈值化（Sigmoid）获得。Dice 损失对前景/背景不平衡具有天然的鲁棒性，适合高光区域通常只占图像小部分的场景。
 
-**9. GradientConsistencyLoss（梯度一致性损失）**
+**9. GradientConsistencyLoss（梯度一致性损失）**\[V3.1 数值稳定性修复\]
 
-\[l_{gc} = \text{L1}(|\nabla pred|, |\nabla gt|) + 0.3 \times \frac{\sum (1 - \cos\theta) \times mask}{\sum mask}\]
+\[l_{gc} = \text{L1}(|\nabla pred|, |\nabla gt|) + 0.3 \times \frac{\sum (1 - \cos\theta) \times mask}{\max(\sum mask,\,1)}\]
 
-使用 Sobel 算子计算预测和真值的空间梯度，同时约束梯度幅值（L1 距离）和梯度方向（余弦距离，仅在显著梯度区域计算）的一致性。该损失确保预测的高光边界不仅位置正确，方向也与真值一致。
+使用 Sobel 算子计算预测和真值的空间梯度，同时约束梯度幅值（L1 距离）和梯度方向（余弦距离，仅在显著梯度区域计算）的一致性。**V3.1 数值稳定性**：`sqrt(... + eps)` 中 \(\epsilon\) 由 \(10^{-8}\) 提升至 \(10^{-4}\)；`cos = ... / (pm·gm + eps)` 的 \(\epsilon\) 同步提升；`mask.sum() + 1e-8` 改为 `mask.sum().clamp_min(1.0)`。
 
 **10. OHEM 在线难样本挖掘**
 
-当 `use_ohem=True` 时，SpecularFocalLoss 被替换为 OHEM 版本：先计算所有像素的误差，选出误差最大的 top-30% 像素，对这些"难样本"像素额外加权。最终损失为 `0.5 * base_loss + 0.5 * hard_loss`。
+当 `use_ohem=True` 时，SpecularFocalLoss 被替换为 OHEM 版本：先计算所有像素的误差，选出误差最大的 top-30% 像素，对这些"难样本"像素额外加权。最终损失为 `0.5 * base_loss + 0.5 * hard_loss`。归一化分母由 \(\sum \text{mask} + 10^{-8}\) 改为 \(\max(\sum \text{mask}, 1)\)。
 
 **11. CrossScaleConsistencyLoss（跨尺度一致性辅助损失）**
 
@@ -850,36 +910,69 @@ MS-SSIM 在 3 个尺度上评估结构相似性，对多尺度结构变化更敏
 
 `YFFC.forward()` 会从 H/4、H/8、H/16 融合特征中构造归一化响应图，并统一上采样到 H/4 尺度后计算一致性约束。该项不改变推理输出的主图像路径，只作为训练期辅助标量 `cs` 传入 `EnhancedCompositeLoss`，用于抑制不同尺度对同一结构区域给出相互冲突的响应。
 
-#### 总损失计算
+**12. 高光概率监督损失（`l_s_lik`，V3.1 新增）**\[NEW S1\]\[P1-UPGRADE\]
 
-\[l_{total} = \lambda_{ssim} l_{ssim} + \lambda_{l1} l_{l1} + \lambda_{freq} l_{freq} + \lambda_{percep} l_{percep} + \lambda_{spec} l_{spec} + \lambda_{grad} l_{grad} + \lambda_{grad\_edge} l_{grad\_edge} + \lambda_{focal} l_{focal} + \lambda_{dice} l_{dice} + \lambda_{gc} l_{gc} + \lambda_{cs} l_{cs}\]
+\[l_{s\_lik} = \text{BCE}(\text{clamp}(pred\_s\_lik, 10^{-4}, 1{-}10^{-4}),\;gt\_spec) + 0.3 \times (1 - \text{SSIM}(pred\_s\_lik, gt\_spec))\]
+
+对 `spec_lik_head` 的输出 `pred_s_lik` 直接监督，目标为 `gt_specular`。**为何使用 BCE 而非 Charbonnier**：`pred_s_lik` 是 sigmoid 输出（已落在 \([0,1]\)），Charbonnier 的 \(\sqrt{(p-t)^2 + \epsilon^2}\) 形式对 sigmoid 输出在中段 \(0.3 \sim 0.7\) 的反向梯度被 \(\sigma'(x) = \sigma(x)(1-\sigma(x))\) 进一步压扁，导致预测停滞在中等概率（训练监控中观察到的"位置对但幅度不足"现象的数学根因）；BCE 损失 \(-t\log p - (1-t)\log(1-p)\) 对 sigmoid 中段反向梯度恒为 \(p - t\)，不被 \(\sigma'\) 压扁，是 sigmoid 输出的理论最优损失，直接驱动 `pred_s_lik` 在高光区域跨过 0.5 阈值。`F.binary_cross_entropy` 对 `pred=0` 或 `pred=1` 时 \(\log(0) = -\infty\)，前后加一道 `clamp(1e-4, 1-1e-4)` 防御。
+
+**13. 高光概率双向一致性损失（`l_s_cons`，V3.1 新增）**\[NEW S2\]\[P3-UPGRADE\]
+
+\[l_{s\_cons} = \text{mean}\big(|pred\_s\_lik - \text{detach}(est\_b)| \cdot M_s\big) + \text{mean}\big(|est\_b - \text{detach}(pred\_s\_lik)| \cdot M_s\big)\]
+
+其中软掩码 \(M_s = \text{detach}(gt\_spec)\)。**双向一致性**让 `pred_s_lik` 与 `est_b` 在高光区结构对齐：
+- 方向 1（`pred_s_lik` 学 `est_b`）：保留原 V3.1 单向设计；
+- 方向 2（`est_b` 学 `pred_s_lik.detach()`）：因为 `pred_s_lik` 已被 `gt_specular` 直接、强力监督（BCE），让 `est_b` 也从这个"软标签"学习相当于给主解码器额外的高光语义信号。
+
+两个方向都用 `.detach()` 防止互相拉扯死循环。`.mean()` 替代原 `sum / mask.sum().clamp_min(1e-6)`，避免低高光 batch 把 loss 放大到 \(10^6\) 量级。
+
+**14. 高光峰值欠预测惩罚（`l_spec_peak`，V3.1 新增）**\[NEW S3\]
+
+\[l_{spec\_peak} = \text{mean}\big(\text{ReLU}(gt\_spec - est\_b) \cdot \mathbb{1}_{gt\_spec > 0.3}\big)\]
+
+**单侧损失**，仅在 `gt_spec > 0.3` 区域、且 `est_b < gt_spec` 时计入。设计动机：训练监控发现现有 `l_focal / l_dice / l_spec` 虽然在强高光区有较大权重，但都是双侧 L1/MSE 形式，既惩罚欠预测也惩罚过预测，平均下来"保守预测中间值"是局部最优。`l_spec_peak` 给主解码器一个明确的"在强高光区敢于拉满"的方向性信号，且不会反向惩罚"在弱光区敢于压零"。
+
+#### 总损失计算（V3.1）
+
+\[\begin{aligned}
+l_{total} = \;& \lambda_{ssim} l_{ssim} + \lambda_{l1} l_{l1} + \lambda_{freq} l_{freq} + \lambda_{percep} l_{percep} \\
+       & + \lambda_{spec} l_{spec} + \lambda_{grad} l_{grad} + \lambda_{grad\_edge} l_{grad\_edge} + \lambda_{grad\_spec} l_{grad\_spec} \\
+       & + \lambda_{focal} l_{focal} + \lambda_{dice} l_{dice} + \lambda_{gc} l_{gc} + \lambda_{cs} l_{cs} \\
+       & + \lambda_{s\_lik} l_{s\_lik} + \lambda_{s\_cons} l_{s\_cons} + \lambda_{spec\_peak} l_{spec\_peak}
+\end{aligned}\]
 
 所有项 \(\geq 0\)，\(\lambda_{stat}\) 默认为 0（\[P5\] 移除冗余统计损失）。不使用可学习权重（这是导致早期版本出现负数损失的根源），所有权重完全由 \(\lambda\_*\) 和动态调度器控制。
 
-### 7.2 ImprovedWeightScheduler（动态损失权重调度）
+### 7.2 ImprovedWeightScheduler（动态损失权重调度，V3.1 双速率）
 
-训练过程中各损失项的权重并非固定，而是根据训练进度动态调整：
+训练过程中各损失项的权重并非固定，而是根据训练进度动态调整。V3.1 引入**双速率调度策略**：
+
+**双速率核心机制**：
+- **主权重系列**（\(p_{clamped} = \min(p / 0.6, 1.0)\)）：60% 进度处截断，覆盖 SSIM/L1/freq/perceptual/grad 等主任务损失，避免后期优化目标漂移与学习率衰减冲突。
+- **spec_likelihood 系列**（\(p_{fast} = \min(p / 0.4, 1.0)\)）：40% 进度处截断，覆盖 `lambda_s_lik` / `lambda_s_cons` / `lambda_spec_peak`。**加速理由**：BCE 对 sigmoid 输出梯度不饱和（不同于旧版 Charbonnier 在中段被 \(\sigma'\) 压扁），加大权重可直接驱动 `pred_s_lik` 在高光区域跨过 0.5 阈值，无需缓慢爬升。
 
 **核心策略**（修复版）：
 - **早期（0\~30%）**：以 L1/Charbonnier 为主快速收敛，频域和感知损失权重较低
 - **中期（30\~60%）**：逐步加大 focal/dice/freq 的权重，强化细节和频域约束
-- **后期（60\~100%）**：权重冻结在平台值，不再变化
-
-**关键修复**：原版权重持续线性增大直到最后一轮，导致后期优化目标不断漂移，与学习率衰减产生冲突。修复后在 60% 处截断变化，\(p_{clamped} = \min(p / 0.6, 1.0)\)。
+- **后期（60\~100%）**：主权重冻结在平台值，不再变化
+- **spec_lik 系列**：0\~40% 快速爬升到最终值，40\~100% 保持高位
 
 主要权重的变化范围：
 
-| 子损失 | 初始值 | 最终值（60%处冻结） |
-|--------|-------|-------------------|
-| \(\lambda_{ssim}\) | 1.0 | 1.0（不变） |
-| \(\lambda_{l1}\) | 1.0 | 0.5（下降） |
-| \(\lambda_{freq}\) | 0.05 | 0.15（上升） |
-| \(\lambda_{focal}\) | 0.3 | 0.8（上升） |
-| \(\lambda_{dice}\) | 0.1 | 0.3（上升） |
-| \(\lambda_{gc}\) | 0.05 | 0.2（上升） |
-| \(\lambda_{cs}\) | 0.02 | 0.05（上升） |
-| \(\lambda_{grad}\) | 0.5 | 0.3（下降） |
-| \(\lambda_{grad\_edge}\) | 0.3 | 0.8（上升） |
+| 子损失 | 初始值 | 最终值 | 速率截断点 |
+|--------|-------|-------|----------|
+| \(\lambda_{ssim}\) | 1.0 | 1.0（不变） | — |
+| \(\lambda_{l1}\) | 1.0 | 0.5（下降） | 60% |
+| \(\lambda_{freq}\) | 0.05 | 0.15（上升） | 60% |
+| \(\lambda_{focal}\) | 0.3 | 0.8（上升） | 60% |
+| \(\lambda_{dice}\) | 0.1 | 0.3（上升） | 60% |
+| \(\lambda_{gc}\) | 0.05 | 0.2（上升） | 60% |
+| \(\lambda_{cs}\) | 0.02 | 0.05（上升） | 60% |
+| \(\lambda_{grad}\) | 0.5 | 0.3（下降） | 60% |
+| \(\lambda_{grad\_edge}\) | 0.3 | 0.8（上升） | 60% |
+| **\(\lambda_{s\_lik}\)** *(V3.1)* | **0.3** | **0.8（上升）** | **40%** |
+| **\(\lambda_{s\_cons}\)** *(V3.1)* | **0.02** | **0.08（上升）** | **40%** |
+| **\(\lambda_{spec\_peak}\)** *(V3.1)* | **0.1** | **0.5（上升）** | **40%** |
 
 ---
 
@@ -930,6 +1023,15 @@ shadow[name] = decay * shadow[name] + (1 - decay) * param.data
 3. **混合精度训练**（AMP）：使用 `torch.amp.autocast('cuda')` + `GradScaler`
 4. **NaN/Inf 保护**：检测到非有限损失时跳过该 batch
 5. **损失尖峰保护**：单批损失超过历史均值的 10 倍时跳过该 batch
+6. **\[V3.1 数值加固\] 损失函数反向稳定性专项修复**：
+   - `frequency_loss` 相位项改用能量加权的"准相位差"，无除法（V3 中 \(1 / (|p|\,|g|)^2\) 的反向爆炸已根除）
+   - `l_grad_spec` / `l_s_cons` 等所有 `sum / mask.sum().clamp_min(1e-6)` 模式改为 `.mean()` 或 `clamp_min(1.0)`
+   - `est_b_grad` 在 `l_grad_spec` 中必须 `.detach()`（避免反向经过 sobel + quantile 归一化产生 \(1 / \text{scale}\) 爆炸）
+   - `normalize_per_sample.scale.clamp_min` 由 \(10^{-8}\) 提升至 \(10^{-3}\)
+   - 所有 `sqrt(... + 1e-12)` 改为 `sqrt(... + 1e-6)`，`charbonnier_loss` 的 \(\epsilon\) 由 \(10^{-6}\) 提升至 \(10^{-3}\)
+   - `GradientConsistencyLoss` / `compute_edge_weight_map` / `sobel_magnitude` 的 sqrt eps 由 \(10^{-8}\) / \(0\) 提升至 \(10^{-4}\) / \(10^{-6}\)
+7. **\[V3.1 诊断增强\] NaN/Inf 跳过时打印子损失明细**：`_format_loss_diag()` 在跳过 step 时按绝对值降序打印各子损失项的当前值（NaN/Inf 标记为字符串），可直接定位是哪个具体损失项导致爆炸，无需事后猜测。
+8. **\[V3.1 训练监控\] spec_likelihood 三联面板**：可视化函数 `visualize_sample_during_training` 输出 3×4 布局，第三行专门展示 `pred_s_lik` / `|SpecLik - GT_Spec|` / `|SpecLik - Pred_Spec|` / `SpecLik > 0.5 Binary` 四张诊断图，直接观察辅助头训练状态。
 
 ### 8.6 数据增强流水线
 
@@ -956,6 +1058,31 @@ shadow[name] = decay * shadow[name] + (1 - decay) * param.data
 ### 8.8 TTA（测试时增强）\[P15\]
 
 `_tta_forward` 实现 4 次翻转推理（原图、水平翻转、垂直翻转、双翻转）取平均，提升推理精度。训练过程中的验证阶段禁用 TTA（\[P15-FIX\]），仅在最终评估/推理时使用，避免验证指标突变影响模型选择。
+
+### 8.9 推理流水线（process_images.py）\[V3.1 扩展\]
+
+推理脚本 `process_images.py` 在 V3.1 中同步扩展，以支持 spec_likelihood 输出。核心流程：
+
+1. **`load_model`**：加载训练好的 checkpoint，通过 `_load_state_dict_flexible` 容忍结构差异（V3.1 模型多了 `spec_lik_head`、`spec_lik_gate_2/3/4`，从 V3 旧 checkpoint 启动时这些层使用 `__init__` 默认初始化）。
+
+2. **`sliding_window_inference`**：滑窗推理（patch_size=`(128,160)`，overlap=64）。返回字典：
+   ```python
+   {'r': full_diffuse,         # [B, 1, H, W]
+    'b': full_specular,        # [B, 1, H, W]
+    'g': full_gradient,        # [B, 1, H, W]
+    's': full_spec_likelihood} # [B, 1, H, W]  (V3.1 新增，若模型不输出 's' 则该键不存在)
+   ```
+   `'s'` 字段使用与 `'r'/'b'/'g'` 同样的高斯权重累加 blend，确保滑窗拼接边缘无可见接缝。`has_spec_likelihood` 标志位用于兼容旧 V3 checkpoint。
+
+3. **`process_single_image`**：将每张图的输出保存为单独文件：
+   - `*_diffuse.png` / `*_diffuse_16bit.png`：漫反射主输出
+   - `*_specular.png` / `*_specular_16bit.png`：镜面反射
+   - `*_gradient.png` / `*_gradient_16bit.png`：梯度图
+   - `*_spec_likelihood.png` / `*_spec_likelihood_16bit.png`：**V3.1 新增**，高光软概率热力图
+
+4. **`visualize_results`**：可视化输出由 V3 的 2×2 布局扩展为 V3.1 的 2×3 布局，新增一个 `Pred SpecLikelihood`（hot colormap）面板，用户可直接看到模型对高光区域的"置信度图"。
+
+5. **数值后处理**：所有 4 个输出通道在保存前 `clamp(0, 1)`，16-bit 版本通过 `(x * 65535).round().astype(uint16)` 写入，便于下游做精细处理。
 
 ---
 
@@ -998,15 +1125,22 @@ YFFC (X-FFC V3)
   │   ├─ (ffc_grad_h16/h8/h4): 3 × FFC_BN_ACT
   │   ├─ (block_2/3/4_conv): 降维卷积
   │   ├─ (block_2/3/4_conv_transpose): 转置卷积上采样
-  │   ├─ (block_5_conv_1/2): 输出卷积
-  │   └─ (sigmoid_layer): Sigmoid
+  │   ├─ (block_5_conv_1/2): 梯度头输出卷积
+  │   ├─ (sigmoid_layer): 梯度头 Sigmoid
+  │   └─ ★[V3.1] spec_lik_head 并联辅助头:
+  │       ├─ (spec_lik_conv_a): Conv(64→32)+GN+GELU
+  │       ├─ (spec_lik_conv_b): Conv(32→16)+GN+GELU
+  │       ├─ (spec_lik_conv_c): Conv(16→1)        // weight=0, bias=−2.0
+  │       └─ (spec_lik_sigmoid): Sigmoid          // → x_s ∈ [0,1]
   │
   ├─ (enhancement_layers): EnhancementLayers              // 频谱分解增强桥梁
   │   └─ (decomp_unit_1 ... _4): _SpectralDecompositionUnit
   │       ├─ (projection_branch): 7×7 卷积
   │       ├─ (specular_branch): 3×3 卷积
   │       ├─ (ffc_specular): FFC_BN_ACT
-  │       └─ (gate_conv): 门控融合
+  │       ├─ (edge_gate): Conv+Sigmoid                    // 由 g_map 生成
+  │       ├─ (specular_gate): Conv(★3ch→1)+Sigmoid        // ★[V3.1] 3 通道: g+input+s
+  │       └─ (gate_conv): 联合门控融合
   │
   ├─ (main_decoder): MainDecoder                          // 主解码分支
   │   ├─ (FFC1, FFC2): FFC_BN_ACT                         // 瓶颈 FFC
@@ -1017,6 +1151,10 @@ YFFC (X-FFC V3)
   │   ├─ (att1 ... att4): Attention_block                  // 注意力门控
   │   ├─ (sa1 ... sa4): SpecularAwareAttention             // ★ 高光感知注意力
   │   ├─ (grad_gate_2/3/4): Conv+Sigmoid                   // ★ [P10] 梯度门控
+  │   ├─ (joint_gate_2/3/4): Conv(★3ch→1)+Sigmoid          // ★[V3.1] 三通道联合门控 (g+input+s)
+  │   ├─ (spec_lik_gate_2/3/4): Conv(1→1)+Sigmoid          // ★[V3.1] 独立的高光概率门控
+  │   ├─ (grad_gate_scale, joint_gate_scale,
+  │   │   spec_lik_gate_scale): Parameter                 // 三个独立 scale 参数
   │   ├─ (ffc_h8, ffc_h4): FFC_BN_ACT                     // 中间层 FFC
   │   ├─ (output_reduce): 1×1 Conv                         // [P2] 扩展输出头
   │   ├─ (output_dilated): 3×3 dilation=2 Conv
@@ -1062,17 +1200,36 @@ YFFC (X-FFC V3)
 | \[P1\] | 残差精修头 | ResidualRefinementHead | ±0.08 像素级修正 |
 | \[P2\] | 扩展输出头 | MainDecoder | 4 层 + 膨胀 + skip |
 | \[P3\] | MS-SSIM 混合 | EnhancedCompositeLoss | 多尺度结构评估 |
-| \[P4\] | 频域相位损失 | EnhancedCompositeLoss | 相位一致性约束 |
+| \[P4\] | 频域相位损失 | EnhancedCompositeLoss | 相位一致性约束（V3.1 改为无除法能量加权版） |
 | \[P5\] | 移除 stat 损失 | EnhancedCompositeLoss | 去除冗余项 |
 | \[P6\] | LR 调度修复 | build\_scheduler | 防止余弦回弹 |
 | \[P7\] | 亮度增强顺序 | EnhancedPairedTransform | 先算 specular 再增强 |
 | \[P9\] | 多级阈值 | SpecularAwareAttention | 弱/中/强高光分级 |
-| \[P10\] | 梯度门控注入 | MainDecoder | 边缘区域特征调制 |
+| \[P10\] | 梯度门控注入 | MainDecoder | 边缘区域特征调制（V3.1 扩展为三路：grad + joint + spec_lik） |
 | \[P12\] | SSIM soft clamp | SSIM | 保留梯度流 |
 | \[P13\] | Charbonnier 损失 | EnhancedCompositeLoss | 零点光滑可导 |
 | \[P14\] | 跨尺度一致性 | EnhancedCompositeLoss / YFFC.forward | H/4、H/8、H/16 响应图一致性约束 |
 | \[P15\] | TTA（测试时增强） | \_tta\_forward | 4 翻转推理平均 |
 | \[P16\] | EMA decay 调高 | train\_model | 0.9995 增加平滑 |
+
+### V3.1 改进点（梯度分支任务化、高光自信度增强、数值稳定性）
+
+| 编号 | 改进 | 位置 | 说明 |
+|------|------|------|------|
+| \[V3.1\] 输入梯度监督 | 监督目标改为 \(\nabla I\) | `compute_input_gradient_target`、`EnhancedPairedTransform` | 梯度分支学习输入图边缘（含高光+材质），非漫反射梯度 |
+| \[S-LIK\] spec_lik_head 辅助头 | 高光软概率预测头 | `GradientDecoder` | 与梯度头并联，监督 `gt_specular`，初始化 bias=−2.0 |
+| \[S-LIK\] 3 通道 specular_gate | spec_likelihood 注入 enhancement | `_SpectralDecompositionUnit` | gate 输入由 2 通道（g+input）升级为 3 通道（g+input+s）|
+| \[S-LIK\] 3 通道 joint_gate | spec_likelihood 注入主解码 | `MainDecoder` level 2/3/4 | joint_gate 由 2 通道升级为 3 通道；额外新增独立的 spec_lik_gate |
+| \[NEW S1\]\[P1-UPGRADE\] | BCE+SSIM 替代 Charbonnier+SSIM | `l_s_lik` | sigmoid 输出的理论最优损失，根治"位置对但幅度不足" |
+| \[NEW S2\]\[P3-UPGRADE\] | 双向一致性损失 | `l_s_cons` | `est_b` 反过来从 `pred_s_lik.detach()` 学习，强化高光信号 |
+| \[NEW S3\] | 高光峰值欠预测惩罚 | `l_spec_peak` | 单侧 `F.relu(gt - pred) * 1[gt > 0.3]`，鼓励主解码器拉满高光 |
+| \[P2-UPGRADE\] | 双速率调度 | `ImprovedWeightScheduler` / `DynamicLossWeightScheduler` | spec_lik 系列在 40% 进度处截断；主权重 60% 截断 |
+| \[NaN-Fix\] 频域损失反向稳定 | 能量加权准相位 | `frequency_loss` | 消除 \(1/(|p||g|)^2\) 反向爆炸 |
+| \[NaN-Fix\] sum/sum 归一化加固 | `mean` 替代 `sum.clamp_min(1e-6)` | 多处损失 | 防低高光 batch 把 loss 放大 \(10^6\) 倍 |
+| \[NaN-Fix\] `est_b_grad` detach | `l_grad_spec` | 避免反向经 sobel + quantile 归一化产生 \(1/\text{scale}\) 爆炸 |
+| \[NaN-Fix\] 各 sqrt eps 提升 | 1e-12 → 1e-6；1e-8 → 1e-4；scale 1e-8 → 1e-3 | `charbonnier_loss` / `sobel_magnitude` / `normalize_per_sample` / `compute_edge_weight_map` / `GradientConsistencyLoss` | fp16/fp32 下都稳定 |
+| \[NaN-Diag\] 子损失明细诊断 | `_format_loss_diag` | `train.py` | grad NaN 跳过时按值降序打印子损失，精确定位 |
+| \[V3.1-INFER\] 推理输出 spec_likelihood | `*_spec_likelihood.png` | `process_images.py` | 滑窗推理累加 `'s'` 字段，保存附加可视化 |
 
 ---
 
@@ -1084,13 +1241,15 @@ YFFC (X-FFC V3)
 
 3. **高光专用感知通路**：HighFrequencyEnhancement（编码端）和 SpecularAwareAttention（解码端每一级）形成从编码到解码的完整高光感知通路，配合梯度门控注入 \[P10\]，三重机制确保网络在所有尺度上对高光区域保持高灵敏度。
 
-4. **多任务协同学习**：梯度预测辅助任务不仅提供结构化约束（梯度 SSIM 损失），其中间特征经 EnhancementLayers 精炼后直接参与主解码器的多源融合，梯度图还通过门控机制在 3 个尺度上调制主解码器特征。辅助任务与主任务深度耦合。
+4. **多任务协同学习**（V3.1 强化）：梯度预测辅助任务不仅提供结构化约束（梯度 SSIM 损失），其中间特征经 EnhancementLayers 精炼后直接参与主解码器的多源融合，梯度图还通过门控机制在 3 个尺度上调制主解码器特征。**V3.1 新增 spec_likelihood 任务化辅助头**，与梯度头共享 `block_5_conv_1` 特征但输出独立的高光软概率，作为 EnhancementLayers / MainDecoder 的第三调制通道。辅助任务与主任务深度耦合。
 
-5. **精细化融合策略**：注意力门控跳跃连接（每通道独立权重）、三源融合（自身 + 门控编码器特征 + 增强特征）、梯度图最终层融合——多层次、多来源的融合策略确保信息传递的高效性。
+5. **精细化融合策略**（V3.1 升级）：注意力门控跳跃连接（每通道独立权重）、三源融合（自身 + 门控编码器特征 + 增强特征）、**梯度+联合+spec_likelihood 三路调制**——多层次、多来源的融合策略确保信息传递的高效性。
 
 6. **残差精修范式** \[P1\]：先通过物理减法获得粗预测，再通过轻量级网络做微量修正（\(\pm 0.08\)），兼顾物理一致性和像素级精度。
 
-7. **训练稳定性工程**：分层学习率、EMA、GroupNorm、梯度累积/裁剪、混合精度、NaN/损失尖峰保护、无重启余弦退火、60% 截断的动态权重调度——系统性的工程手段保障了大型网络的训练稳定性和收敛效率。
+7. **训练稳定性工程**（V3.1 加固）：分层学习率、EMA、GroupNorm、梯度累积/裁剪、混合精度、NaN/损失尖峰保护、无重启余弦退火、双速率（60%/40%）权重调度，**外加 V3.1 损失反向稳定性专项修复**（无除法相位损失、所有 sum/sum 归一化加固、`detach` 防爆点、sqrt eps 提升）和 **NaN/Inf 子损失明细诊断**——系统性的工程手段保障了大型网络的训练稳定性和收敛效率。
+
+8. **高光自信度增强（V3.1 新增）**：通过 BCE 替代 Charbonnier 监督 sigmoid 输出（中段梯度不饱和）、双向一致性（主辅头互相学习）、单侧欠预测惩罚（鼓励敢于拉满），三重机制系统性地解决"位置对但幅度不足"问题，让主解码器在强高光区敢于自信预测。
 
 ---
 

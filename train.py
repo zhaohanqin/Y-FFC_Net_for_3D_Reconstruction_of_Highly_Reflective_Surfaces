@@ -167,7 +167,9 @@ class ImprovedWeightScheduler:
     def get_weights(self, ep):
         # 在 60% 训练进度处截断，之后权重不再变化
         p = min(ep / self.T, 1.0)
-        p_clamped = min(p / 0.6, 1.0)  # 在 60% 处达到最终值
+        p_clamped = min(p / 0.6, 1.0)  # 主权重：60% 处达到最终值
+        # [P2-UPGRADE] spec_likelihood 系列加速：40% 进度即达上限
+        p_fast = min(p / 0.4, 1.0)
 
         return {
             'lambda_ssim':       1.0,
@@ -183,13 +185,15 @@ class ImprovedWeightScheduler:
             'lambda_dice':       min(0.3, 0.1 + 0.2 * p_clamped),         # 上限降低
             'lambda_gc':         min(0.2, 0.05 + 0.15 * p_clamped),       # 上限降低
             'lambda_cs':         min(0.05, 0.02 + 0.03 * p_clamped),
-            # [NEW] spec_likelihood 监督权重调度
-            # l_s_lik:  pred_s_lik <- gt_specular 直接监督
-            #   - 起步偏小 0.1, 60% 进度收敛到 0.4, 防止前期辅助任务压制主任务
-            # l_s_cons: pred_s_lik 与 est_b 的弱一致性约束（gt_specular 软掩码加权, est_b detach）
-            #   - 始终小权重, 0.01 -> 0.05, 仅作微调
-            'lambda_s_lik':      min(0.4,  0.1 + 0.3 * p_clamped),
-            'lambda_s_cons':     min(0.05, 0.01 + 0.04 * p_clamped),
+            # [P2-UPGRADE] spec_likelihood 加速调度：上限 0.8 / 40% 进度达上限
+            # 因为 BCE 对 sigmoid 输出梯度不饱和（不同于旧版 Charbonnier 在中段梯度被
+            # σ' 压扁），加大权重可直接驱动 pred_s_lik 在高光区跨过 0.5 阈值。
+            'lambda_s_lik':      min(0.8,  0.3 + 0.5 * p_fast),
+            'lambda_s_cons':     min(0.08, 0.02 + 0.06 * p_fast),
+            # [NEW S3] 高光峰值欠预测惩罚：0.1 → 0.5 / 40% 进度
+            # 单侧损失 F.relu(gt_sc - pred_b) * high_mask, 仅惩罚欠预测，
+            # 给主解码器一个明确的"在强高光区敢于拉满"方向性信号。
+            'lambda_spec_peak':  min(0.5, 0.1 + 0.4 * p_fast),
         }
 
     def step(self, criterion, ep):
@@ -265,6 +269,8 @@ SUB_LOSS_KEYS = [
     'focal', 'dice', 'gc', 'cs',
     # [NEW] spec_likelihood 监督相关
     's_lik', 's_cons',
+    # [NEW S3] 高光峰值欠预测惩罚
+    'spec_peak',
 ]
 
 # 用于日志输出时的友好名称映射
@@ -286,8 +292,9 @@ SUB_LOSS_DISPLAY_NAMES = {
     'dice':       'Dice Loss',
     'gc':         'Grad Consistency',
     'cs':         'Cross-scale Consistency',
-    's_lik':      'Spec-Likelihood Sup',
-    's_cons':     'Spec-Likelihood Cons',
+    's_lik':      'Spec-Likelihood Sup (BCE)',
+    's_cons':     'Spec-Likelihood Bi-Cons',
+    'spec_peak':  'Spec Peak (Under-Pred)',
 }
 
 
