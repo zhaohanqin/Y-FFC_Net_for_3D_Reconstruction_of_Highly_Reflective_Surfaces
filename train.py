@@ -170,6 +170,8 @@ class ImprovedWeightScheduler:
         p_clamped = min(p / 0.6, 1.0)  # 主权重：60% 处达到最终值
         # [P2-UPGRADE] spec_likelihood 系列加速：40% 进度即达上限
         p_fast = min(p / 0.4, 1.0)
+        # ★[V3.2] r 系列权重: 30% 进度即达上限（更早保护漫反射输出）
+        p_r = min(p / 0.3, 1.0)
 
         return {
             'lambda_ssim':       1.0,
@@ -194,6 +196,19 @@ class ImprovedWeightScheduler:
             # 单侧损失 F.relu(gt_sc - pred_b) * high_mask, 仅惩罚欠预测，
             # 给主解码器一个明确的"在强高光区敢于拉满"方向性信号。
             'lambda_spec_peak':  min(0.5, 0.1 + 0.4 * p_fast),
+            # ════════════════════════════════════════════════════════════════
+            # ★[V3.2 新增 — 直接保护漫反射 r 输出的损失项调度] ★
+            # 这三项都直接驱动 pred_r 的质量（SSIM 主指标），早期就要起作用
+            # ════════════════════════════════════════════════════════════════
+            # 高光区域 r focal: 在 soft_high_mask 区直接惩罚 |pred_r - target|
+            # 解决"高光残留"问题：原版只靠 b 间接控制，现在 r 端有直接约束
+            'lambda_r_focal_hl':  min(0.8, 0.4 + 0.4 * p_r),
+            # dual head 一致性: r_direct（直接预测）与最终 r（融合+精修）的一致性
+            # 让双头路径互相校准，防止 r_direct 偷懒
+            'lambda_r_dual_cons': min(0.15, 0.05 + 0.10 * p_r),
+            # r 高光区平滑: 漫反射应低频为主，高光被去除后该区域应保持平滑
+            # 防止 r 输出中出现"亮点残留"或锯齿
+            'lambda_r_smooth':    min(0.10, 0.03 + 0.07 * p_r),
         }
 
     def step(self, criterion, ep):
@@ -271,6 +286,8 @@ SUB_LOSS_KEYS = [
     's_lik', 's_cons',
     # [NEW S3] 高光峰值欠预测惩罚
     'spec_peak',
+    # ★[V3.2 新增] 漫反射 r 直接监督系列
+    'r_focal_hl', 'r_dual_cons', 'r_smooth',
 ]
 
 # 用于日志输出时的友好名称映射
@@ -295,6 +312,10 @@ SUB_LOSS_DISPLAY_NAMES = {
     's_lik':      'Spec-Likelihood Sup (BCE)',
     's_cons':     'Spec-Likelihood Bi-Cons',
     'spec_peak':  'Spec Peak (Under-Pred)',
+    # ★[V3.2 新增] 漫反射 r 直接监督
+    'r_focal_hl':  'R Focal Highlight',
+    'r_dual_cons': 'R Dual-Head Consistency',
+    'r_smooth':    'R Highlight Smooth',
 }
 
 
@@ -508,12 +529,15 @@ def train_one_epoch(model, loader, criterion, optimizer, scheduler,
         with torch.amp.autocast('cuda', enabled=False):
             # [NEW] 取出 spec_likelihood 头的输出 pred_s_lik (可能不存在, 用 .get 兼容)
             pred_s_lik = out.get('s')
+            # ★[V3.2 新增] 取出 MainDecoder 直接漫反射头输出 pred_r_direct
+            pred_r_direct = out.get('r_direct')
             loss, ld = criterion(
                 out['r'].float(), tgt.float(),
                 out['b'].float(), gt_s.float(),
                 out['g'].float(), gt_g.float(),
                 out.get('cs'), input_img=inp.float(),
-                pred_s_lik=pred_s_lik.float() if pred_s_lik is not None else None)
+                pred_s_lik=pred_s_lik.float() if pred_s_lik is not None else None,
+                pred_r_direct=pred_r_direct.float() if pred_r_direct is not None else None)
             loss = loss / accum
 
         # NaN / Inf 保护
@@ -593,23 +617,65 @@ def train_one_epoch(model, loader, criterion, optimizer, scheduler,
 
 
 def _tta_forward(model, inp):
-    """[P15] Test-Time Augmentation：4 次翻转推理取平均。"""
+    """[P15] Test-Time Augmentation：4 次翻转推理取平均。
+
+    ★[V3.2] 兼容 dual-head：除 'b' 外，'r_direct'、's' 也参与翻转累积，
+    再走相同的"双路融合 + 精修"路径得到最终 r。
+    若模型未输出 'r_direct'（旧 V3 ckpt），退回旧版 r = clamp(x - avg_b, 0, 1) → refinement。
+    """
     preds_b = []
+    preds_r_direct = []
+    preds_g = []
+    preds_s = []
+    last_alpha = None
     for flip_h in [False, True]:
         for flip_v in [False, True]:
             x = inp
-            if flip_h: x = torch.flip(x, [-1])
-            if flip_v: x = torch.flip(x, [-2])
+            if flip_h:
+                x = torch.flip(x, [-1])
+            if flip_v:
+                x = torch.flip(x, [-2])
             out = model(x)
-            b = out['b']
-            if flip_v: b = torch.flip(b, [-2])
-            if flip_h: b = torch.flip(b, [-1])
-            preds_b.append(b)
-    avg_b = torch.stack(preds_b, dim=0).mean(0)
-    avg_r = torch.clamp(inp - avg_b, 0.0, 1.0)
+            # 把 b/r_direct/g/s 各通道按翻转回原方向，再累加
+            for key, bucket in (('b', preds_b),
+                                ('r_direct', preds_r_direct),
+                                ('g', preds_g),
+                                ('s', preds_s)):
+                v = out.get(key)
+                if v is None:
+                    continue
+                if flip_v:
+                    v = torch.flip(v, [-2])
+                if flip_h:
+                    v = torch.flip(v, [-1])
+                bucket.append(v)
+            last_alpha = out.get('alpha')
+    avg_b = torch.stack(preds_b, dim=0).mean(0) if preds_b else None
+    avg_r_direct = torch.stack(preds_r_direct, dim=0).mean(0) if preds_r_direct else None
+    avg_g = torch.stack(preds_g, dim=0).mean(0) if preds_g else out.get('g')
+    avg_s = torch.stack(preds_s, dim=0).mean(0) if preds_s else None
+
+    # 复刻 YFFC.forward 末尾的双路融合 + 精修，保证 TTA 输出 r 与正常 forward 路径一致
+    r_sub = torch.clamp(inp - avg_b, 0.0, 1.0)
+    if avg_r_direct is not None:
+        # 用最后一次 forward 的 alpha（与训练保持一致；推理时 alpha 已稳定）
+        if last_alpha is not None and last_alpha.dim() == 0:
+            alpha_val = last_alpha
+        else:
+            alpha_val = torch.tensor(0.5, device=inp.device)
+        r_fused = alpha_val * avg_r_direct + (1.0 - alpha_val) * r_sub
+    else:
+        r_fused = r_sub
     if hasattr(model, 'refinement_head'):
-        avg_r = model.refinement_head(avg_r, inp)
-    return {'r': avg_r, 'b': avg_b, 'g': out['g']}
+        r_final = model.refinement_head(r_fused, inp, avg_r_direct if avg_r_direct is not None else r_fused)
+    else:
+        r_final = r_fused
+    result = {'r': r_final, 'b': avg_b, 'g': avg_g}
+    if avg_s is not None:
+        result['s'] = avg_s
+    if avg_r_direct is not None:
+        result['r_direct'] = avg_r_direct
+    return result
 
 
 @torch.no_grad()
@@ -640,10 +706,13 @@ def validate(model, loader, criterion, device, epoch=0, total_epochs=0,
             continue
         # [NEW] spec_likelihood 头输出
         pred_s_lik = out.get('s')
+        # ★[V3.2 新增] MainDecoder 直接漫反射头输出
+        pred_r_direct = out.get('r_direct')
         loss, ld = criterion(
             out['r'], tgt, out['b'], gt_s, out['g'], gt_g,
             out.get('cs'), input_img=inp,
-            pred_s_lik=pred_s_lik)
+            pred_s_lik=pred_s_lik,
+            pred_r_direct=pred_r_direct)
 
         if not torch.isfinite(loss):
             continue
@@ -1750,10 +1819,16 @@ def main():
     # ========== 基础训练参数 ==========
     EPOCHS                = 300       # 训练总轮数
     BATCH_SIZE            = 3         # 384 分辨率推荐 2~4
-    BASE_LR               = 1e-4     # 稳定版：新门控/FFC 组合建议先用 1e-4
+    # ★[V3.2 调整] BASE_LR 1e-4 → 2e-4
+    # 原因：V3.2 新增 dual-head 与 r 系列损失，新结构从头训练，1e-4 收敛过慢。
+    # 配合 V3.1 反向稳定性修复，2e-4 在 dual-head + 三路调制下更平衡。
+    BASE_LR               = 2e-4
     WEIGHT_DECAY          = 1e-4     # AdamW 权重衰减
     ACCUMULATION_STEPS    = 3        # 梯度累积步数（等效 batch = BATCH_SIZE × 此值）
-    GRAD_CLIP_VALUE       = 0.5      # [FIX] 梯度裁剪阈值（从 1.0 降低到 0.5，更稳定）
+    # ★[V3.2 调整] GRAD_CLIP 0.5 → 1.0
+    # 原因：V3.1 频域损失反向稳定性已修复（无除法相位项 + sqrt eps 提升），
+    # 旧版 0.5 过紧会压制 dual-head 早期梯度信号。1.0 是更标准的设定。
+    GRAD_CLIP_VALUE       = 1.0
 
     # ========== 图像与数据参数 ==========
     IMAGE_SIZE            = (128, 160)  # ⭐ 输入分辨率 (H, W)，支持任意矩形

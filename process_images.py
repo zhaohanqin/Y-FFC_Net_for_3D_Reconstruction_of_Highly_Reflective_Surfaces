@@ -29,7 +29,8 @@ import matplotlib.pyplot as plt
 import os
 from pathlib import Path
 from tqdm import tqdm
-from Y_FFC_unified import YFFC, replace_bn_with_gn
+# ★[V3.2] 同时导入 _tukey_window 用于滑窗融合
+from Y_FFC_unified import YFFC, replace_bn_with_gn, _tukey_window
 
 
 def _sanitize_output_tensor(tensor):
@@ -40,6 +41,67 @@ def _sanitize_output_tensor(tensor):
 def _sanitize_output_dict(output):
     return {k: _sanitize_output_tensor(v) if isinstance(v, torch.Tensor) else v
             for k, v in output.items()}
+
+
+# ════════════════════════════════════════════════════════════════════════
+# ★[D10 V3.2] Test-Time Augmentation 推理
+# ════════════════════════════════════════════════════════════════════════
+def _tta_forward(model, inp):
+    """4 次翻转推理取平均，融合 dual-head 输出。
+
+    与 train.py 的 _tta_forward 一致，但只在推理时调用。
+    """
+    preds_b, preds_r_direct, preds_g, preds_s = [], [], [], []
+    last_alpha = None
+    with torch.no_grad():
+        for flip_h in [False, True]:
+            for flip_v in [False, True]:
+                x = inp
+                if flip_h:
+                    x = torch.flip(x, [-1])
+                if flip_v:
+                    x = torch.flip(x, [-2])
+                out = model(x)
+                for key, bucket in (('b', preds_b),
+                                    ('r_direct', preds_r_direct),
+                                    ('g', preds_g),
+                                    ('s', preds_s)):
+                    v = out.get(key)
+                    if v is None:
+                        continue
+                    if flip_v:
+                        v = torch.flip(v, [-2])
+                    if flip_h:
+                        v = torch.flip(v, [-1])
+                    bucket.append(v)
+                last_alpha = out.get('alpha')
+    avg_b = torch.stack(preds_b, dim=0).mean(0) if preds_b else None
+    avg_r_direct = torch.stack(preds_r_direct, dim=0).mean(0) if preds_r_direct else None
+    avg_g = torch.stack(preds_g, dim=0).mean(0) if preds_g else None
+    avg_s = torch.stack(preds_s, dim=0).mean(0) if preds_s else None
+
+    # 双路融合 + 精修（与 YFFC.forward 末尾一致）
+    r_sub = torch.clamp(inp - avg_b, 0.0, 1.0)
+    if avg_r_direct is not None:
+        if last_alpha is not None and last_alpha.dim() == 0:
+            alpha_val = last_alpha
+        else:
+            alpha_val = torch.tensor(0.5, device=inp.device)
+        r_fused = alpha_val * avg_r_direct + (1.0 - alpha_val) * r_sub
+    else:
+        r_fused = r_sub
+    if hasattr(model, 'refinement_head'):
+        r_final = model.refinement_head(
+            r_fused, inp,
+            avg_r_direct if avg_r_direct is not None else r_fused)
+    else:
+        r_final = r_fused
+    result = {'r': r_final, 'b': avg_b, 'g': avg_g}
+    if avg_s is not None:
+        result['s'] = avg_s
+    if avg_r_direct is not None:
+        result['r_direct'] = avg_r_direct
+    return result
 
 
 def _uses_group_norm_state_dict(state_dict):
@@ -230,22 +292,28 @@ def _padded_length(length, patch_length, stride):
 def _build_blend_window(patch_h, patch_w, device, dtype):
     """
     构造 patch 融合权重。
-    使用 Hann 窗让重叠区域平滑过渡；最小值钳到正数，避免边缘权重为 0。
+
+    ★[D11 V3.2] 由 Hann 窗 → Tukey 窗 (α=0.25)。
+    Hann 窗在边界处衰减到 0（仅靠 clamp_min(1e-3) 维持非零），
+    导致边界像素几乎只由单个 patch 决定，patch 边界会出现细小亮度跳变。
+    Tukey 窗中央 75% 保持全权重 1.0，两端 12.5% 余弦平滑过渡，
+    既避免边界突变，又给重叠区充分混合空间。
     """
     if patch_h <= 1:
         wy = torch.ones(patch_h, device=device, dtype=dtype)
     else:
-        wy = torch.hann_window(patch_h, periodic=False, device=device, dtype=dtype)
+        wy = _tukey_window(patch_h, alpha=0.25, device=device, dtype=dtype)
     if patch_w <= 1:
         wx = torch.ones(patch_w, device=device, dtype=dtype)
     else:
-        wx = torch.hann_window(patch_w, periodic=False, device=device, dtype=dtype)
+        wx = _tukey_window(patch_w, alpha=0.25, device=device, dtype=dtype)
 
     weight = (wy[:, None] * wx[None, :]).clamp_min(1e-3)
     return weight.view(1, 1, patch_h, patch_w)
 
 
-def sliding_window_inference(model, input_tensor, device, patch_size, overlap=32):
+def sliding_window_inference(model, input_tensor, device, patch_size, overlap=32,
+                              use_tta=False):
     """
     按训练尺寸进行滑窗 patch 推理，并融合回原图大小。
 
@@ -255,10 +323,12 @@ def sliding_window_inference(model, input_tensor, device, patch_size, overlap=32
         device: torch.device
         patch_size: 训练输入尺寸，格式为 (H, W)
         overlap: patch 之间的重叠像素
+        use_tta: ★[V3.2] 是否对每个 patch 启用 4-flip TTA（推理质量↑ 4×推理时间↑）
 
     返回:
         {'r': full_diffuse, 'b': full_specular, 'g': full_gradient,
-         's': full_spec_likelihood (若模型输出)}
+         's': full_spec_likelihood (若模型输出),
+         'r_direct': full_r_direct (若模型输出，V3.2 dual-head)}
         输出尺寸均为 [1, 1, image_h, image_w]
     """
     patch_h, patch_w = _normalize_hw(patch_size)
@@ -280,7 +350,6 @@ def sliding_window_inference(model, input_tensor, device, patch_size, overlap=32
     pad_bottom = padded_h_target - image_h
     pad_right = padded_w_target - image_w
     if pad_bottom > 0 or pad_right > 0:
-        # reflect padding 对极小图像有限制；不满足时退回 replicate padding。
         can_reflect = pad_bottom < image_h and pad_right < image_w and image_h > 1 and image_w > 1
         pad_mode = 'reflect' if can_reflect else 'replicate'
         input_padded = F.pad(input_tensor, (0, pad_right, 0, pad_bottom), mode=pad_mode)
@@ -291,15 +360,13 @@ def sliding_window_inference(model, input_tensor, device, patch_size, overlap=32
     ys = _sliding_positions(padded_h, patch_h, stride_h)
     xs = _sliding_positions(padded_w, patch_w, stride_w)
 
-    # [NEW] 先做一次试探推理, 检查是否存在 's' 输出, 据此动态决定累加器形状
-    # 不会浪费 - 该 patch 也会进入主循环 (但简单起见, 用第一个 (y, x) 处的 patch 测一次)
-    # 这里改用懒初始化: 在主循环里第一次见到 's' 时再分配空间
     accum = {
         'r': torch.zeros(1, 1, padded_h, padded_w, device=device, dtype=input_padded.dtype),
         'b': torch.zeros(1, 1, padded_h, padded_w, device=device, dtype=input_padded.dtype),
         'g': torch.zeros(1, 1, padded_h, padded_w, device=device, dtype=input_padded.dtype),
     }
-    has_spec_likelihood = False  # 模型是否输出 's' 字段, 首次见到时切为 True
+    has_spec_likelihood = False
+    has_r_direct = False
     weight_sum = torch.zeros(1, 1, padded_h, padded_w, device=device, dtype=input_padded.dtype)
     blend = _build_blend_window(patch_h, patch_w, device=device, dtype=input_padded.dtype)
 
@@ -307,18 +374,28 @@ def sliding_window_inference(model, input_tensor, device, patch_size, overlap=32
         for y in ys:
             for x in xs:
                 patch = input_padded[:, :, y:y + patch_h, x:x + patch_w]
-                out = _sanitize_output_dict(model(patch))
+                # ★[D10 V3.2] 可选 TTA 推理
+                if use_tta:
+                    out = _sanitize_output_dict(_tta_forward(model, patch))
+                else:
+                    out = _sanitize_output_dict(model(patch))
 
-                # [NEW] 懒初始化 's' 累加器: 第一次见到模型输出 's' 字段时分配
+                # 懒初始化 's' 累加器
                 if 's' in out and out['s'] is not None and not has_spec_likelihood:
                     accum['s'] = torch.zeros(1, 1, padded_h, padded_w,
                                              device=device, dtype=input_padded.dtype)
                     has_spec_likelihood = True
+                # ★[V3.2] 懒初始化 'r_direct' 累加器
+                if 'r_direct' in out and out['r_direct'] is not None and not has_r_direct:
+                    accum['r_direct'] = torch.zeros(1, 1, padded_h, padded_w,
+                                                    device=device, dtype=input_padded.dtype)
+                    has_r_direct = True
 
-                # 累加各通道 (包括可选的 's')
                 channels = ['r', 'b', 'g']
                 if has_spec_likelihood:
                     channels.append('s')
+                if has_r_direct:
+                    channels.append('r_direct')
                 for key in channels:
                     if key in out and out[key] is not None:
                         accum[key][:, :, y:y + patch_h, x:x + patch_w] += out[key] * blend
@@ -448,7 +525,7 @@ def visualize_results(input_img, output_dict, save_path):
 
 def process_single_image(model, image_path, output_dir, device, show_visualization=True,
                          collect_diffuse_dir=None, patch_size=None, overlap=32,
-                         save_16bit=False):
+                         save_16bit=False, use_tta=False):
     """
     处理单张图像
     
@@ -458,7 +535,8 @@ def process_single_image(model, image_path, output_dir, device, show_visualizati
         output_dir: 输出目录
         device: 计算设备
         show_visualization: 是否生成可视化结果
-    
+        use_tta: ★[V3.2] 是否启用 4-flip TTA（推理质量↑约 0.005~0.015 SSIM，时间×4）
+
     返回:
         True 如果成功，False 如果失败
     """
@@ -474,22 +552,30 @@ def process_single_image(model, image_path, output_dir, device, show_visualizati
         model.eval()
         if patch_size is None:
             with torch.no_grad():
-                output = _sanitize_output_dict(model(input_tensor))
+                if use_tta:
+                    output = _sanitize_output_dict(_tta_forward(model, input_tensor))
+                else:
+                    output = _sanitize_output_dict(model(input_tensor))
         else:
             patch_h, patch_w = _normalize_hw(patch_size)
             image_h, image_w = input_tensor.shape[-2:]
             if (image_h, image_w) == (patch_h, patch_w):
-                print(f"  整图推理: 输入尺寸 {image_h}x{image_w} 与训练尺寸一致")
+                print(f"  整图推理: 输入尺寸 {image_h}x{image_w} 与训练尺寸一致"
+                      + (" (TTA)" if use_tta else ""))
                 with torch.no_grad():
-                    output = _sanitize_output_dict(model(input_tensor))
+                    if use_tta:
+                        output = _sanitize_output_dict(_tta_forward(model, input_tensor))
+                    else:
+                        output = _sanitize_output_dict(model(input_tensor))
             else:
                 print(
                     f"  滑窗推理: 原图 {image_h}x{image_w}, "
-                    f"patch {patch_h}x{patch_w}, overlap={overlap}")
+                    f"patch {patch_h}x{patch_w}, overlap={overlap}"
+                    + (" (TTA)" if use_tta else ""))
                 output = _sanitize_output_dict(sliding_window_inference(
                     model, input_tensor, device,
                     patch_size=(patch_h, patch_w),
-                    overlap=overlap))
+                    overlap=overlap, use_tta=use_tta))
         
         # 提取输出
         diffuse_output = output['r']      # 漫反射（去除高反光后的结果）
@@ -548,7 +634,7 @@ def process_single_image(model, image_path, output_dir, device, show_visualizati
 
 def process_folder(model, input_folder, output_folder, device, show_visualization=True,
                    supported_formats=None, collect_diffuse_dir=None,
-                   patch_size=None, overlap=32, save_16bit=False):
+                   patch_size=None, overlap=32, save_16bit=False, use_tta=False):
     """
     批量处理文件夹中的所有图像
     
@@ -559,6 +645,7 @@ def process_folder(model, input_folder, output_folder, device, show_visualizatio
         device: 计算设备
         show_visualization: 是否生成可视化结果
         supported_formats: 支持的图像格式列表
+        use_tta: ★[V3.2] 是否启用 4-flip TTA
     """
     if supported_formats is None:
         supported_formats = ['.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif']
@@ -576,7 +663,8 @@ def process_folder(model, input_folder, output_folder, device, show_visualizatio
         print(f"支持的格式: {', '.join(supported_formats)}")
         return
     
-    print(f"\n找到 {len(image_files)} 张图像，开始批量处理...")
+    print(f"\n找到 {len(image_files)} 张图像，开始批量处理"
+          + (" (TTA 启用)" if use_tta else "") + "...")
     print("=" * 70)
     
     # 处理每张图像
@@ -590,7 +678,7 @@ def process_folder(model, input_folder, output_folder, device, show_visualizatio
         
         if process_single_image(model, image_path, image_output_dir, device, show_visualization,
                                 collect_diffuse_dir, patch_size=patch_size, overlap=overlap,
-                                save_16bit=save_16bit):
+                                save_16bit=save_16bit, use_tta=use_tta):
             success_count += 1
         else:
             fail_count += 1
@@ -629,6 +717,10 @@ def main():
     # 5. 可视化配置
     SHOW_VISUALIZATION = True  # 是否生成可视化对比图
     SAVE_16BIT_OUTPUT = False  # 额外保存 16-bit PNG，减少弱纹理量化损失
+    # ★[V3.2 新增] TTA (Test-Time Augmentation) 配置
+    # 启用后每个 patch 做 4 次翻转推理取平均，预期 SSIM 再提升 0.005~0.015
+    # 代价：推理时间 ×4（CPU 上可能较慢，GPU 上影响较小）
+    USE_TTA = True
     
     # 6. 支持的图像格式
     SUPPORTED_FORMATS = ['.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif']
@@ -680,6 +772,7 @@ def main():
     if os.path.isfile(INPUT_PATH):
         # 单张图像处理
         print(f"\n检测到输入为单张图像: {INPUT_PATH}")
+        print(f"TTA: {'启用 (4 翻转推理)' if USE_TTA else '禁用'}")
         print("-" * 70)
         
         image_name = Path(INPUT_PATH).stem
@@ -689,7 +782,7 @@ def main():
         if process_single_image(model, INPUT_PATH, image_output_dir, device, SHOW_VISUALIZATION,
                                 DIFFUSE_COLLECTION_DIR,
                                 patch_size=TRAIN_IMAGE_SIZE, overlap=PATCH_OVERLAP,
-                                save_16bit=SAVE_16BIT_OUTPUT):
+                                save_16bit=SAVE_16BIT_OUTPUT, use_tta=USE_TTA):
             print("[OK] Processing complete")
             print(f"\n输出文件位置:")
             print(f"  - {image_output_dir}/{image_name}_diffuse.png       (⭐ 去除高反光后的结果)")
@@ -702,12 +795,13 @@ def main():
         # 文件夹批量处理
         print(f"\n检测到输入为文件夹: {INPUT_PATH}")
         print(f"支持的图像格式: {', '.join(SUPPORTED_FORMATS)}")
+        print(f"TTA: {'启用 (4 翻转推理)' if USE_TTA else '禁用'}")
         print("-" * 70)
         
         process_folder(model, INPUT_PATH, OUTPUT_DIR, device, SHOW_VISUALIZATION, SUPPORTED_FORMATS,
                        DIFFUSE_COLLECTION_DIR,
                        patch_size=TRAIN_IMAGE_SIZE, overlap=PATCH_OVERLAP,
-                       save_16bit=SAVE_16BIT_OUTPUT)
+                       save_16bit=SAVE_16BIT_OUTPUT, use_tta=USE_TTA)
         
         print(f"\n所有结果已保存到: {OUTPUT_DIR}")
         print(f"\n输出文件说明:")

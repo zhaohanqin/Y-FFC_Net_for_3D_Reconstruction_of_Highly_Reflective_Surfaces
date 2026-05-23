@@ -1220,6 +1220,11 @@ class PerceptualLoss(nn.Module):
         self.register_buffer('imagenet_std', std)
 
     def forward(self, pred, gt):
+        # ★[D8 V3.2] 小尺寸输入 (H<48 或 W<48) 时 relu3_3 层特征几乎无意义，
+        # 直接返回 0 避免不稳定梯度污染主任务。
+        # 训练分辨率 (128,160) 走全路径；后续 stage 也安全。
+        if pred.shape[-1] < 48 or pred.shape[-2] < 48:
+            return torch.tensor(0.0, device=pred.device, dtype=pred.dtype)
         if pred.size(1) == 1:
             pred = pred.repeat(1, 3, 1, 1)
             gt = gt.repeat(1, 3, 1, 1)
@@ -1443,15 +1448,27 @@ class CompositeLoss(nn.Module):
 
 class EnhancedCompositeLoss(nn.Module):
     """
-    增强版复合损失（V3 优化版 — 负数损失已修复）。
+    增强版复合损失（V3.2 优化版 — 针对漫反射 r 增加直接监督，根治"靠减法链"的脆弱）。
+
     [P3]  SSIM → 0.8*MS-SSIM + 0.2*SSIM 混合
-    [P4]  频域损失加入相位一致性约束
+    [P4]  频域损失加入相位一致性约束 (V3.2: phase 项权重 0.25 → 0.15)
     [P5]  移除冗余 statistical_loss（lambda_stat 默认 0）
-          ★ 注意：不再使用可学习权重，这是导致负数损失的根源 ★
     [P12] SSIM as_loss=True 保留梯度
     [P13] L1 → Charbonnier 平滑损失
-    [NEW S1] l_s_lik   : GradientDecoder 高光头与 gt_specular 的 Charbonnier+SSIM 监督
-    [NEW S2] l_s_cons  : pred_s_lik 与 est_b 在高光区域的弱一致性约束（小权重）
+
+    [V3.1 新增]
+      l_s_lik   : spec_lik_head 与 gt_specular 的 BCE+SSIM
+      l_s_cons  : pred_s_lik 与 est_b 在高光区域的双向一致性
+      l_spec_peak: 高光区 est_b 欠预测单侧惩罚
+
+    ★[V3.2 新增 — 针对漫反射 r 的直接监督]★
+      [D3] l_r_focal_hl : 在 gt_specular 高光区，对 pred_r vs target 加 focal 重点
+                          监督。意义：原版"高光区是否去得干净"完全由 b 决定，
+                          这里给 r 一个直接强约束，迫使去高光残留无处可逃。
+      [D4] l_r_dual_cons: r_direct（主解码器直接预测）与最终 r 一致性。
+                          意义：让 dual-head 的两条路径相互校准、互为正则。
+      [D5] l_r_smooth   : 在 gt_specular 高光区域，对 pred_r 施加局部平滑先验。
+                          意义：漫反射应低频为主；高光被去除后该区域应平滑。
     """
 
     def __init__(self, lambda_ssim=1.0, lambda_l1=1.0, lambda_freq=0.1,
@@ -1462,6 +1479,8 @@ class EnhancedCompositeLoss(nn.Module):
                  lambda_cs=0.05, lambda_grad_spec=0.05,
                  lambda_s_lik=0.5, lambda_s_cons=0.05,
                  lambda_spec_peak=0.3,
+                 # ★[V3.2 新增权重] ★
+                 lambda_r_focal_hl=0.5, lambda_r_dual_cons=0.1, lambda_r_smooth=0.05,
                  highlight_prior_gamma=1.0,
                  use_ohem=True, ohem_ratio=0.3):
         super().__init__()
@@ -1485,7 +1504,7 @@ class EnhancedCompositeLoss(nn.Module):
         self.lambda_freq = lambda_freq
         self.lambda_perceptual = lambda_perceptual
         self.lambda_spec = lambda_spec
-        self.lambda_stat = lambda_stat     # [P5] 默认 0，移除冗余 stat
+        self.lambda_stat = lambda_stat
         self.lambda_grad = lambda_grad
         self.lambda_grad_edge = lambda_grad_edge
         self.lambda_focal = lambda_focal
@@ -1493,31 +1512,23 @@ class EnhancedCompositeLoss(nn.Module):
         self.lambda_gc = lambda_gc
         self.lambda_cs = lambda_cs
         self.lambda_grad_spec = lambda_grad_spec
-        # [NEW] spec_likelihood 相关权重
         self.lambda_s_lik = lambda_s_lik
         self.lambda_s_cons = lambda_s_cons
-        # [NEW S3] 高光峰值欠预测惩罚权重（默认 0.3，可由 scheduler 调度）
         self.lambda_spec_peak = lambda_spec_peak
+        # ★[V3.2 新增 — 针对 r 的直接监督] ★
+        self.lambda_r_focal_hl = lambda_r_focal_hl
+        self.lambda_r_dual_cons = lambda_r_dual_cons
+        self.lambda_r_smooth = lambda_r_smooth
         self.highlight_prior_gamma = highlight_prior_gamma
         self.use_ohem = use_ohem
         self.ohem_ratio = ohem_ratio
-        # ★ P5 修复：不再有可学习损失权重 ★
-        # ★ 所有损失项的权重完全由 lambda_* 和 ImprovedWeightScheduler 控制 ★
 
     def frequency_loss(self, p, g):
         """[P4-FIX2] 幅度谱 + 能量加权相位一致性。
 
-        关键稳定性修复：
-          原版 cos_diff = Re(p·conj(g)) / (|p|·|g|) 在反向时会出现 1/|p|²·|g| 项，
-          频谱低能量频点会导致梯度爆炸 → NaN/Inf。
-
-        改造：
-          1) 用 "能量加权的实部内积差" 替代角度差：
-             phase = mean( |Re(p·conj(g)) - |p|·|g|| )
-             - Re(p·conj(g)) = |p||g| cos(θp - θg)
-             - 当 p≈g 时该值接近 |p||g|，phase ≈ 0
-             - 完全避开了除法，没有反向爆炸点
-          2) 用 detach 的 mask 屏蔽零能量频点（前向后向都剪枝）。
+        ★[V3.2 微调] phase 系数 0.25 → 0.15。
+        原因：训练前期 pred 与 gt 相位差大，phase_loss 量级远大于 amp_loss，
+              即便 [V3.1 NaN-Fix] 解决了反向爆炸问题，前向数值仍偏大干扰主任务。
         """
         p = _safe_tensor(p.float(), nan=0.0, posinf=1.0, neginf=0.0, clamp=(0.0, 1.0))
         g = _safe_tensor(g.float(), nan=0.0, posinf=1.0, neginf=0.0, clamp=(0.0, 1.0))
@@ -1527,21 +1538,25 @@ class EnhancedCompositeLoss(nn.Module):
         g_abs = torch.abs(g_fft)
         amp_loss = F.l1_loss(p_abs, g_abs)
 
-        # [SAFE] 能量加权的"准相位"差（无除法，反向稳定）
-        # Re(p·conj(g)) ≤ |p|·|g|，等号当且仅当两者同相
+        # 能量加权"准相位"差（无除法，反向稳定）
         re_inner = (p_fft * g_fft.conj()).real
         amp_prod = p_abs * g_abs
-        # 用 GT 频谱的能量作 detach mask，屏蔽几乎为零的高频
         with torch.no_grad():
             energy_mask = (g_abs > g_abs.mean() * 0.01).float()
             denom_mask = energy_mask.sum().clamp_min(1.0)
         phase_loss = (torch.abs(amp_prod - re_inner) * energy_mask).sum() / denom_mask
         phase_loss = _safe_tensor(phase_loss, nan=0.0, posinf=0.0, neginf=0.0)
-        return amp_loss + 0.25 * phase_loss
+        # ★[V3.2] 0.25 → 0.15
+        return amp_loss + 0.15 * phase_loss
 
     def forward(self, pred_diffuse, target, est_b, gt_specular,
                 pred_grad, gt_grad, cross_scale_consistency=None,
-                input_img=None, pred_s_lik=None):
+                input_img=None, pred_s_lik=None,
+                pred_r_direct=None):
+        """
+        ★[V3.2] 新增 pred_r_direct 参数：MainDecoder 直接预测的漫反射输出。
+        若为 None（旧 forward 调用），相关损失项为 0，保持向后兼容。
+        """
         gt_sc = gt_specular.clamp(0, 1)
 
         # [P3] MS-SSIM + SSIM 混合
@@ -1549,9 +1564,7 @@ class EnhancedCompositeLoss(nn.Module):
         l_msssim = 1.0 - self.msssim_fn(pred_diffuse.float(), target.float())
         l_ssim = 0.8 * l_msssim + 0.2 * l_ssim_single
 
-        # [P13][SAFE] Charbonnier 替代 L1（eps 1e-12 -> 1e-6）
-        # 1e-12 在反向 d/dx sqrt(x²+eps²) ≈ x/sqrt(x²+eps²) 在 x≈0 处梯度变化
-        # 极其陡峭，相当于不稳定的 L1。1e-6 让 0 附近的反向梯度连续平滑。
+        # [P13][SAFE] Charbonnier 替代 L1
         if self.use_edge_weight:
             wm = self._ew_fn(gt_specular.detach())
             l_l1 = (torch.sqrt((pred_diffuse - target)**2 + 1e-6) * wm).mean()
@@ -1569,7 +1582,6 @@ class EnhancedCompositeLoss(nn.Module):
         l_spec = (charbonnier_loss(est_b, gt_sc) +
                   0.5 * (1.0 - self.ssim_fn(est_b.float(), gt_sc.float())))
 
-        # [P5] stat 默认关闭
         l_stat = torch.tensor(0.0, device=pred_diffuse.device)
         if self.lambda_stat > 0:
             l_stat = statistical_loss(pred_diffuse, target)
@@ -1586,7 +1598,6 @@ class EnhancedCompositeLoss(nn.Module):
                     highlight_prior, size=pred_grad.shape[-2:],
                     mode='bilinear', align_corners=False)
             grad_w = grad_w * (1.0 + self.highlight_prior_gamma * highlight_prior)
-        # [SAFE] sqrt eps 1e-12 -> 1e-6，反向稳定
         l_grad_edge = (
             torch.sqrt((pred_grad - gt_grad) ** 2 + 1e-6) * grad_w
         ).mean()
@@ -1594,10 +1605,6 @@ class EnhancedCompositeLoss(nn.Module):
         if highlight_prior is None:
             l_grad_spec = torch.tensor(0.0, device=pred_grad.device)
         else:
-            # [SAFE] est_b_grad 应当 detach：l_grad_spec 是用 est_b 的边缘
-            # 作"伪标签"约束 pred_grad，est_b 端不需要梯度反传，避免反向时
-            # 经过 sobel sqrt + quantile 归一化分母（normalize_per_sample 的 scale）
-            # 产生 1/scale 的爆炸性梯度。
             est_b_grad = normalized_sobel_magnitude(
                 est_b.detach().float(), quantile=0.995).to(
                 device=pred_grad.device, dtype=pred_grad.dtype)
@@ -1605,26 +1612,14 @@ class EnhancedCompositeLoss(nn.Module):
                 est_b_grad = F.interpolate(
                     est_b_grad, size=pred_grad.shape[-2:],
                     mode='bilinear', align_corners=False)
-            # [SAFE] 用 mean 而非 sum/sum：当 highlight_prior 平均很小时，
-            # 原版 sum / max(sum, 1e-6) 会把 loss 放大到 1e5~1e6 量级。
-            # mean 等价于"每像素加权平均"，量纲与其他损失一致。
             l_grad_spec = (
                 torch.abs(pred_grad - est_b_grad) * highlight_prior
             ).mean()
 
-        # ── [NEW S1][P1-UPGRADE] spec_likelihood 头主监督：BCE + SSIM ──
-        # 关键升级（解决 pred_s_lik 输出值偏低问题）：
-        #   旧版 Charbonnier+SSIM 对 sigmoid 输出在中段(0.3~0.7)的梯度被 sigmoid 导数
-        #   σ'(x)=σ(x)(1-σ(x)) 压扁，导致预测停滞在中等概率（图示中观察到的"位置对但
-        #   幅度不足"现象）。BCE 损失 d/dlogit BCE = (p - t)，梯度不被 sigmoid 压扁，
-        #   是 sigmoid 输出的理论最优损失。
-        #
-        # 安全：F.binary_cross_entropy 对 pred=0 或 pred=1 时 log(0) = -inf。
-        #   spec_lik_head 用 sigmoid 输出几乎不会到精确 0/1，但加一道 clamp 防御。
+        # ── spec_likelihood 头主监督：BCE + SSIM (保留 V3.1) ──
         if pred_s_lik is None:
             l_s_lik = torch.tensor(0.0, device=pred_diffuse.device)
         else:
-            # 与 est_b 对齐到同一空间尺寸（通常一致，此处稳健起见做检查）
             if pred_s_lik.shape[-2:] != gt_sc.shape[-2:]:
                 pred_s_lik = F.interpolate(
                     pred_s_lik, size=gt_sc.shape[-2:],
@@ -1633,21 +1628,13 @@ class EnhancedCompositeLoss(nn.Module):
             l_bce = F.binary_cross_entropy(pred_s_lik_safe, gt_sc, reduction='mean')
             l_s_lik = l_bce + 0.3 * (1.0 - self.ssim_fn(pred_s_lik.float(), gt_sc.float()))
 
-        # ── [NEW S2][P3-UPGRADE] pred_s_lik 与 est_b 双向一致性 ──
-        # 旧版只单向（pred_s_lik 学 est_b），但 pred_s_lik 本身受 gt_specular 直接监督，
-        # 信号更纯；让 est_b 也反过来从 pred_s_lik.detach() 学习，给主解码器一个
-        # 额外的"高光语义引导"。两个方向都用 detach 防止互相拉扯死循环。
-        #
-        # 量纲稳定：用 mean 替代 sum/sum（防止低高光 batch 放大）。
+        # ── pred_s_lik 与 est_b 双向一致性 (V3.1) ──
         if pred_s_lik is None:
             l_s_cons = torch.tensor(0.0, device=pred_diffuse.device)
         else:
             soft_mask = gt_sc.detach()
-            # 方向 1: pred_s_lik 学 est_b（保留原版）
             cons_fwd = (torch.abs(pred_s_lik - est_b.detach()) * soft_mask).mean()
-            # 方向 2: est_b 学 pred_s_lik（新增，提供高光区域更强的"应该多高"信号）
             cons_bwd = (torch.abs(est_b - pred_s_lik.detach()) * soft_mask).mean()
-            # 总和：双向一致性
             l_s_cons = cons_fwd + cons_bwd
 
         if self.use_ohem:
@@ -1657,26 +1644,52 @@ class EnhancedCompositeLoss(nn.Module):
         l_dice = self.dice(est_b, gt_sc)
         l_gc = self.gc(est_b, gt_sc)
 
-        # ── [NEW S3][P4] 高光区欠预测单侧惩罚 ──
-        # 关键诊断（图示观察）：pred_b 在强高光区域 (gt_sc > 0.3) 整体偏低。
-        # 现有 focal/dice/spec 在该区域虽然有较大权重，但都是双侧 L1/MSE 形式，
-        # 既惩罚欠预测也惩罚过预测，平均下来"保守预测"是局部最优点。
-        #
-        # l_spec_peak 是单侧损失，仅惩罚 (gt_sc - est_b)_+ * high_mask：
-        #   - 只在 pred 比 gt 低时计入损失
-        #   - 只在 gt 本身较高时计入（避免在 gt≈0 区把噪声放大）
-        # 这给主解码器一个明确的"在强高光区敢于拉满"的方向性信号。
+        # ── 高光区 est_b 欠预测单侧惩罚 (V3.1) ──
         with torch.no_grad():
             high_mask = (gt_sc > 0.3).float()
+            # ★[V3.2] 同时构造柔性高光软掩码，给 r 损失用
+            soft_high_mask = torch.sigmoid(20.0 * (gt_sc - 0.15))  # [0,1] 软掩码
         under = F.relu(gt_sc - est_b) * high_mask
         l_spec_peak = under.mean()
+
+        # ═════════════════════════════════════════════════════════════════
+        # ★[V3.2 新增 — 针对漫反射 r 的直接监督] ★
+        # ═════════════════════════════════════════════════════════════════
+
+        # [D3] l_r_focal_hl：高光区域对 pred_r vs target 的 focal-style 监督
+        # 关键意义：旧版"r 在高光区是否去除干净"完全由 b 决定，间接监督薄弱。
+        # 这里给 r 直接增加一个高光区强约束损失，迫使 r 不允许残留高光痕迹。
+        # 配方：error * (1 + 4*soft_high_mask) * (1 + |error|)^1.5
+        #   - 在 soft_high_mask≈1（强高光区）权重 ×5
+        #   - focal 形式 (1+|err|)^1.5 让误差大的像素额外加权
+        r_err = torch.abs(pred_diffuse - target)
+        r_hl_weight = 1.0 + 4.0 * soft_high_mask
+        r_focal_term = (1.0 + r_err.detach()) ** 1.5
+        l_r_focal_hl = (r_err * r_hl_weight * r_focal_term).mean()
+
+        # [D4] l_r_dual_cons：r_direct 与最终 pred_diffuse 一致性
+        # 让 dual-head 的两条路径相互校准、互为正则。
+        # 注意：pred_r_direct 是 MainDecoder 直接头输出（grad 流），pred_diffuse 是融合 + 精修后输出。
+        # 不 detach 任何一方，让梯度可以双向流通，但用 Charbonnier 防止前期不稳定。
+        if pred_r_direct is None:
+            l_r_dual_cons = torch.tensor(0.0, device=pred_diffuse.device)
+        else:
+            l_r_dual_cons = charbonnier_loss(pred_r_direct, pred_diffuse)
+
+        # [D5] l_r_smooth：在高光区，pred_r 的局部平滑先验
+        # 原理：漫反射本质上低频为主，高光被去除后该区域应保持平滑（无残留亮点）。
+        # 实现：在 soft_high_mask 区域计算 pred_r 与其 3×3 局部均值的差
+        with torch.no_grad():
+            pass  # 仅作占位，不需要额外的 with no_grad
+        pred_r_smooth = F.avg_pool2d(pred_diffuse, kernel_size=3, stride=1, padding=1)
+        l_r_smooth = (torch.abs(pred_diffuse - pred_r_smooth) * soft_high_mask).mean()
 
         if cross_scale_consistency is None:
             l_cs = torch.tensor(0.0, device=pred_diffuse.device)
         else:
             l_cs = cross_scale_consistency.to(device=pred_diffuse.device, dtype=pred_diffuse.dtype)
 
-        # ★ 纯加权求和，所有项 ≥ 0，total 必定 ≥ 0 ★
+        # ★ 纯加权求和，所有项 ≥ 0
         total = (self.lambda_ssim * l_ssim + self.lambda_l1 * l_l1 +
                  self.lambda_freq * l_freq + self.lambda_perceptual * l_percep +
                  self.lambda_spec * l_spec + self.lambda_stat * l_stat +
@@ -1688,7 +1701,11 @@ class EnhancedCompositeLoss(nn.Module):
                  self.lambda_cs * l_cs +
                  self.lambda_s_lik * l_s_lik +
                  self.lambda_s_cons * l_s_cons +
-                 self.lambda_spec_peak * l_spec_peak)
+                 self.lambda_spec_peak * l_spec_peak +
+                 # ★[V3.2 新增] ★
+                 self.lambda_r_focal_hl * l_r_focal_hl +
+                 self.lambda_r_dual_cons * l_r_dual_cons +
+                 self.lambda_r_smooth * l_r_smooth)
 
         d = {}
         for k, v in [('total', total), ('ssim', l_ssim_single),
@@ -1702,7 +1719,11 @@ class EnhancedCompositeLoss(nn.Module):
                       ('focal', l_focal), ('dice', l_dice), ('gc', l_gc),
                       ('cs', l_cs),
                       ('s_lik', l_s_lik), ('s_cons', l_s_cons),
-                      ('spec_peak', l_spec_peak)]:
+                      ('spec_peak', l_spec_peak),
+                      # ★[V3.2 新增] ★
+                      ('r_focal_hl', l_r_focal_hl),
+                      ('r_dual_cons', l_r_dual_cons),
+                      ('r_smooth', l_r_smooth)]:
             d[k] = v.item() if isinstance(v, torch.Tensor) else v
         return total, d
 
@@ -2132,15 +2153,17 @@ class Encoder(nn.Module):
 
         # 第三阶段自适应多尺度 skip 融合：
         # H/4 和 H/8 使用 AdaptiveSkipFusion，根据内容、位置和通道动态控制 Swin 注入比例。
-        # beta 使用小正数初始化，保留稳定性，同时避免 Swin skip 注入过慢。
+        # ★[D7 V3.2] init_beta 由 0.03/0.05 调整为 0.10/0.15。
+        # 原因：旧版初始 beta 极小，前 50 epoch Swin 信号几乎不参与，等价于
+        # 浪费了 ImageNet 预训练 Swin-Tiny 的能力。提高初值让双编码器更早协作。
         self.fuse_h4 = AdaptiveSkipFusion(
             res_channels=128,
             swin_channels=self.swin_branch.channels_4,
-            init_beta=0.03)
+            init_beta=0.10)
         self.fuse_h8 = AdaptiveSkipFusion(
             res_channels=256,
             swin_channels=self.swin_branch.channels_8,
-            init_beta=0.05)
+            init_beta=0.15)
         self.swin16_proj = nn.Sequential(
             nn.Conv2d(self.swin_branch.channels_16, 512, kernel_size=1, stride=1, padding=0, bias=False),
             nn.BatchNorm2d(512),
@@ -2409,13 +2432,26 @@ class MainDecoder(nn.Module):
         self.ffc_h4 = FFC_BN_ACT(192, 192, 3, ratio_gin=0.25, ratio_gout=0.25, padding=1)
 
         # [P2] 扩展输出头：4 层 + 膨胀卷积 + skip connection
+        #
+        # ★[D1] 双头升级（V3.2 关键改进）★
+        # 旧版只输出 est_b（镜面分量），通过 r = clamp(x - est_b, 0, 1) 减法链得到漫反射。
+        # 该链条对 est_b 的小幅误差极敏感：
+        #   - est_b 高估 → x-b < 0 被 clamp 为 0，暗区信息永久丢失（不可逆）
+        #   - est_b 低估 → x-b 仍含高光残留，refinement_head ±0.08 不足以补救
+        # 双头方案：增加 r_direct_head，让网络直接预测漫反射；
+        # 最终 r 由可学习 alpha 融合 [direct, subtraction_path]，更稳健。
         _out_in = 16 * 3 + 1  # 49
         self.output_reduce = Conv2D_BN_activa(_out_in, 32, 1, 1, 0)
         self.output_dilated = Conv2D_BN_activa(32, 32, 3, 1, 2, dilation=2)
         self.output_conv3 = Conv2D_BN_activa(32, 16, 3, 1, 1)
+        # 镜面分量头（保留旧名 output_conv4 兼容 V3 checkpoint）
         self.output_conv4 = Conv2D_BN_activa(16, 1, 3, 1, 1, activation=None, if_bn=False)
         self.output_sigmoid = nn.Sigmoid()
         self.output_skip = nn.Conv2d(32, 32, 1, 1, 0, bias=False)
+        # ★[D1] 直接漫反射预测头（与镜面头共享前几层特征）
+        # 该头有自己的输出 conv，可独立从 16-ch 特征解码 r_direct
+        self.output_r_direct_conv = Conv2D_BN_activa(16, 1, 3, 1, 1, activation=None, if_bn=False)
+        self.output_r_direct_sigmoid = nn.Sigmoid()
 
         self.sa1 = SpecularAwareAttention(256 * 3, threshold=0.8)
         self.sa2 = SpecularAwareAttention(128 * 3, threshold=0.8)
@@ -2438,20 +2474,28 @@ class MainDecoder(nn.Module):
         self.spec_lik_gate_2 = nn.Sequential(nn.Conv2d(1, 1, 3, 1, 1, bias=True), nn.Sigmoid())
         self.spec_lik_gate_3 = nn.Sequential(nn.Conv2d(1, 1, 3, 1, 1, bias=True), nn.Sigmoid())
         self.spec_lik_gate_4 = nn.Sequential(nn.Conv2d(1, 1, 3, 1, 1, bias=True), nn.Sigmoid())
-        # Learnable but bounded modulation scales. 0.15 is deliberately below
-        # the design upper bound 0.3 to avoid early multiplicative blow-up.
-        self.grad_gate_scale = nn.Parameter(torch.tensor(0.15))
-        self.joint_gate_scale = nn.Parameter(torch.tensor(0.15))
-        self.spec_lik_gate_scale = nn.Parameter(torch.tensor(0.15))
+        # ★[D6] V3.2 调整：让三路门控初始就有显著调制作用。
+        # 旧版 bias=-1.0 → sigmoid(-1)≈0.27，scale=0.15 clamp[0,0.3]
+        # → 初始调制 1+3×0.15×0.27=1.12 几乎无作用
+        # 新版 bias=0.0 → sigmoid(0)=0.5, scale=0.25 clamp[0,0.4]
+        # → 初始调制 1+3×0.25×0.5=1.375，前期就能发挥作用
+        self.grad_gate_scale = nn.Parameter(torch.tensor(0.25))
+        self.joint_gate_scale = nn.Parameter(torch.tensor(0.25))
+        self.spec_lik_gate_scale = nn.Parameter(torch.tensor(0.25))
         self._init_aux_gates()
+        # ★[D1] dual-head 融合系数（logit 形式，sigmoid 后约 0.5，初始平衡两路）
+        # alpha = sigmoid(logit_alpha)，最终 r = alpha * r_direct + (1-alpha) * r_subtraction
+        # 初始 logit_alpha = 0.0 → alpha = 0.5（两路等权）
+        self.dual_head_alpha_logit = nn.Parameter(torch.tensor(0.0))
 
     def _init_aux_gates(self):
+        # ★[D6] bias 由 -1.0 调整为 0.0，让初始 sigmoid 输出≈0.5（中性而非偏低）
         for gate in (self.grad_gate_2, self.grad_gate_3, self.grad_gate_4,
                      self.joint_gate_2, self.joint_gate_3, self.joint_gate_4,
                      self.spec_lik_gate_2, self.spec_lik_gate_3, self.spec_lik_gate_4):
             conv = gate[0]
             nn.init.zeros_(conv.weight)
-            nn.init.constant_(conv.bias, -1.0)
+            nn.init.constant_(conv.bias, 0.0)  # 由 -1.0 → 0.0
 
     @staticmethod
     def _resize_prior(prior, size, device, dtype):
@@ -2554,7 +2598,16 @@ class MainDecoder(nn.Module):
         x = self.output_dilated(x)
         x = x + skip
         x = self.output_conv3(x)
-        return self.output_sigmoid(self.output_conv4(x))
+        # ★[D1] V3.2 双头输出
+        # 旧版只输出 est_b：return self.output_sigmoid(self.output_conv4(x))
+        # 新版从共享的 16-ch 特征 x 同时解码两个头：
+        #   est_b      : 镜面反射分量（与旧版一致，保留兼容性）
+        #   r_direct   : 直接预测的漫反射分量（绕过减法链，避免暗区被 clamp 抹掉）
+        est_b = self.output_sigmoid(self.output_conv4(x))
+        r_direct = self.output_r_direct_sigmoid(self.output_r_direct_conv(x))
+        # 返回元组：(est_b, r_direct, alpha_logit)
+        # YFFC.forward 会接住元组并做下游融合 + 残差精修
+        return est_b, r_direct, self.dual_head_alpha_logit
 
 
 class _SpectralDecompositionUnit(nn.Module):
@@ -2665,17 +2718,42 @@ class EnhancementLayers(nn.Module):
 
 
 class ResidualRefinementHead(nn.Module):
-    """[P1] 残差精修头：硬减法后做像素级修正，Tanh 限制小幅残差。"""
-    def __init__(self, scale=0.08):
+    """[P1] 残差精修头：硬减法后做像素级修正，Tanh 限制小幅残差。
+
+    ★[D2] V3.2 升级：原版 scale=0.08，2→16→16→1 共 3 层，输入只有 (coarse, original)。
+    问题：实际推理中 est_b 误差常达到 0.15~0.30，±0.08 的修正幅度根本不够补救。
+    升级方案：
+      - scale 0.08 → 0.15（修正能力提高近一倍，但仍受 Tanh 限制）
+      - 网络加深: 3 层 → 5 层（含残差），表达能力更强
+      - 输入升级: 2 通道(coarse, original) → 3 通道(coarse, original, r_direct)
+        其中 r_direct 是 MainDecoder 直接预测的漫反射，
+        为精修头提供"应当指向的目标"，类似 teacher hint。
+    """
+    def __init__(self, scale=0.15):
         super().__init__()
         self.scale = scale
-        self.refine = nn.Sequential(
-            nn.Conv2d(2, 16, 3, 1, 1, bias=False), nn.GELU(),
-            nn.Conv2d(16, 16, 3, 1, 1, bias=False), nn.GELU(),
+        # ★[D2] 输入由 2 通道 → 3 通道（加入 r_direct 作为参考）
+        self.refine_in = nn.Sequential(
+            nn.Conv2d(3, 24, 3, 1, 1, bias=False), nn.GELU(),
+        )
+        # 中间一个轻量残差块，提升表达能力
+        self.refine_mid = nn.Sequential(
+            nn.Conv2d(24, 24, 3, 1, 1, bias=False), nn.GELU(),
+            nn.Conv2d(24, 24, 3, 1, 1, bias=False),
+        )
+        self.refine_out = nn.Sequential(
+            nn.GELU(),
+            nn.Conv2d(24, 16, 3, 1, 1, bias=False), nn.GELU(),
             nn.Conv2d(16, 1, 3, 1, 1, bias=True), nn.Tanh(),
         )
-    def forward(self, coarse, original):
-        delta = self.refine(torch.cat([coarse, original], dim=1))
+
+    def forward(self, coarse, original, r_direct=None):
+        # 若不传 r_direct（向后兼容旧调用），用 coarse 自身填充
+        if r_direct is None:
+            r_direct = coarse
+        feat = self.refine_in(torch.cat([coarse, original, r_direct], dim=1))
+        feat = feat + self.refine_mid(feat)  # 残差
+        delta = self.refine_out(feat)
         return torch.clamp(coarse + self.scale * delta, 0.0, 1.0)
 
 
@@ -2701,11 +2779,22 @@ def cross_scale_consistency_loss(features):
 
 
 class YFFC(nn.Module):
-    """Y-FFC 主网络（V3 优化版）。含 P1 残差精修头。
+    """Y-FFC 主网络（V3.2 优化版）。含 P1 残差精修头 + [D1] 双头漫反射预测。
 
-    [NEW] GradientDecoder 现在并列输出梯度图 `g` 和高光软概率图 `s`；
-          EnhancementLayers 和 MainDecoder 都接收 `s` 作为显式监督下的高光先验。
-          forward 返回 {r, g, b, s, cs}。
+    [V3.1] GradientDecoder 现在并列输出梯度图 `g` 和高光软概率图 `s`；
+           EnhancementLayers 和 MainDecoder 都接收 `s` 作为显式监督下的高光先验。
+
+    [V3.2 ★关键升级] MainDecoder 升级为双头输出：
+      - est_b   : 镜面反射分量（与 V3.1 一致）
+      - r_direct: 直接预测的漫反射分量
+      - alpha   : 可学习融合系数
+
+    最终漫反射 r 的形成路径（替代旧的纯减法链）：
+      r_sub      = clamp(input - est_b, 0, 1)              # 减法链（保留物理含义）
+      r_fused    = alpha * r_direct + (1 - alpha) * r_sub  # 双路加权融合
+      r_final    = refinement_head(r_fused, input, r_direct)  # 残差精修
+
+    返回 {r, g, b, s, r_direct, alpha, cs}。其中 r_direct/alpha 仅用于训练损失。
     """
 
     def __init__(self, swin_pretrained=True, debug_shapes=False):
@@ -2715,22 +2804,38 @@ class YFFC(nn.Module):
         self.gradient_decoder = GradientDecoder()
         self.enhancement_layers = EnhancementLayers()
         self.main_decoder = MainDecoder(in_channels=256)
-        self.refinement_head = ResidualRefinementHead(scale=0.08)  # [P1]
+        # ★[D2] scale 0.08 → 0.15
+        self.refinement_head = ResidualRefinementHead(scale=0.15)
 
     def forward(self, x):
         c_feat = self.encoder(x)
-        # GradientDecoder 现在返回 6-tuple: (xe1, xe2, xe3, xe4, x_g, x_s)
+        # GradientDecoder 返回 6-tuple: (xe1, xe2, xe3, xe4, x_g, x_s)
         g_feat = self.gradient_decoder(c_feat[:-1], c_feat[-1], original_input=x)
         xe_feats = g_feat[:-2]              # (xe1, xe2, xe3, xe4)
-        g_raw = g_feat[-2]                  # 梯度预测图（低分辨率，进入下游）
-        s_raw = g_feat[-1]                  # 高光软概率图（低分辨率，进入下游）
+        g_raw = g_feat[-2]                  # 梯度预测图
+        s_raw = g_feat[-1]                  # 高光软概率图
         enh = self.enhancement_layers(
             xe_feats, g_map=g_raw, original_input=x, s_map=s_raw)
-        est_b = self.main_decoder(c_feat, enh, g_raw, s_raw, original_input=x)
+        # ★[D1] MainDecoder 现在返回 3-tuple: (est_b, r_direct, alpha_logit)
+        # 向后兼容: 若旧版返回单 Tensor (历史 ckpt 假设)，自动包装为 3-tuple
+        decoder_out = self.main_decoder(c_feat, enh, g_raw, s_raw, original_input=x)
+        if isinstance(decoder_out, tuple) and len(decoder_out) == 3:
+            est_b, r_direct, alpha_logit = decoder_out
+        else:
+            # 极端兜底：旧版本只输出 est_b
+            est_b = decoder_out
+            r_direct = torch.clamp(x - est_b, 0.0, 1.0)
+            alpha_logit = torch.tensor(0.0, device=est_b.device)
+
+        # 对齐到原图分辨率
         if est_b.shape[-2:] != x.shape[-2:]:
             est_b = F.interpolate(est_b, size=x.shape[-2:], mode='bilinear', align_corners=False)
+        if r_direct.shape[-2:] != x.shape[-2:]:
+            r_direct = F.interpolate(r_direct, size=x.shape[-2:], mode='bilinear', align_corners=False)
         est_b = _safe_tensor(est_b, nan=0.0, posinf=1.0, neginf=0.0, clamp=(0.0, 1.0))
-        # 上采输出的梯度图和高光概率图，统一到原图尺寸
+        r_direct = _safe_tensor(r_direct, nan=0.0, posinf=1.0, neginf=0.0, clamp=(0.0, 1.0))
+
+        # 梯度图与高光概率图上采到原图尺寸
         if g_raw.shape[-2:] != x.shape[-2:]:
             g_map = F.interpolate(g_raw, size=x.shape[-2:], mode='bilinear', align_corners=False)
         else:
@@ -2741,12 +2846,28 @@ class YFFC(nn.Module):
         else:
             s_map = s_raw
         s_map = _safe_tensor(s_map, nan=0.0, posinf=1.0, neginf=0.0, clamp=(0.0, 1.0))
-        coarse = torch.clamp(x - est_b, 0.0, 1.0)
-        pred_diffuse = self.refinement_head(coarse, x)  # [P1]
+
+        # ★[D1] 双路融合：物理减法路径 + 直接预测路径
+        r_sub = torch.clamp(x - est_b, 0.0, 1.0)
+        alpha = torch.sigmoid(alpha_logit)  # [0, 1]，初始 0.5
+        r_fused = alpha * r_direct + (1.0 - alpha) * r_sub
+        # 残差精修（3 输入：fused, original, r_direct）
+        pred_diffuse = self.refinement_head(r_fused, x, r_direct)
         pred_diffuse = _safe_tensor(pred_diffuse, nan=0.0, posinf=1.0, neginf=0.0, clamp=(0.0, 1.0))
+
         cs_loss = cross_scale_consistency_loss((c_feat[1], c_feat[2], c_feat[3]))
         cs_loss = _safe_tensor(cs_loss, nan=0.0, posinf=0.0, neginf=0.0)
-        return {"r": pred_diffuse, "g": g_map, "b": est_b, "s": s_map, "cs": cs_loss}
+
+        return {
+            "r": pred_diffuse,
+            "g": g_map,
+            "b": est_b,
+            "s": s_map,
+            # 训练辅助输出（推理时可忽略）
+            "r_direct": r_direct,
+            "alpha": alpha.detach() if alpha.dim() == 0 else alpha,
+            "cs": cs_loss,
+        }
 
 
 # ╔════════════════════════════════════════════════════════════════════════════╗
@@ -2809,6 +2930,8 @@ class DynamicLossWeightScheduler:
         p = min(progress / 0.6, 1.0)
         # spec_likelihood 系列：40% 处截断（加速辅助头）
         p_fast = min(progress / 0.4, 1.0)
+        # ★[V3.2] r 系列：30% 处截断（更早收敛，直接保护 r 输出）
+        p_r = min(progress / 0.3, 1.0)
         weights = {
             'lambda_ssim':       1.0,
             'lambda_l1':         max(0.5, 1.0 - 0.5 * p),
@@ -2827,6 +2950,11 @@ class DynamicLossWeightScheduler:
             'lambda_s_cons':     min(0.08, 0.02 + 0.06 * p_fast),
             # [NEW S3] 高光峰值欠预测惩罚：0.1 → 0.5 / 40% 进度
             'lambda_spec_peak':  min(0.5, 0.1 + 0.4 * p_fast),
+            # ★[V3.2 新增 — 针对 r 的损失项] ★
+            # 这三项都直接保护 pred_r 输出质量（SSIM 主要指标），早期就要发挥作用
+            'lambda_r_focal_hl': min(0.8, 0.4 + 0.4 * p_r),  # 高光区 r focal: 0.4 → 0.8
+            'lambda_r_dual_cons': min(0.15, 0.05 + 0.10 * p_r),  # dual head 一致性: 0.05 → 0.15
+            'lambda_r_smooth':   min(0.10, 0.03 + 0.07 * p_r),  # r 高光区平滑: 0.03 → 0.10
         }
         return weights
 
