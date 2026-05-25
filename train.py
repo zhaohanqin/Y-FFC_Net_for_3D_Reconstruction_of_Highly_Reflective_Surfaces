@@ -172,6 +172,10 @@ class ImprovedWeightScheduler:
         p_fast = min(p / 0.4, 1.0)
         # ★[V3.2] r 系列权重: 30% 进度即达上限（更早保护漫反射输出）
         p_r = min(p / 0.3, 1.0)
+        # ★[FIX-B] 后期退火因子：60% 进度后从 1.0 线性降到 0.2，
+        #   让与主任务冲突的辅助项（grad_spec / r_smooth）在细节恢复阶段让路，
+        #   这是解决"训练后期总 loss 上升"的关键。
+        anneal = 1.0 if p <= 0.6 else max(0.2, 1.0 - (p - 0.6) / 0.4 * 0.8)
 
         return {
             'lambda_ssim':       1.0,
@@ -182,33 +186,25 @@ class ImprovedWeightScheduler:
             'lambda_stat':       0.0,    # [P5] 移除冗余 stat 损失
             'lambda_grad':       max(0.3, 0.5 - 0.2 * p_clamped),
             'lambda_grad_edge':  min(0.8, 0.3 + 0.5 * p_clamped),
-            'lambda_grad_spec':  min(0.05, 0.02 + 0.03 * p_clamped),
+            # ★[FIX-B 问题1] grad_spec 震荡且无益主任务：上限减半 + 后期退火至接近 0
+            'lambda_grad_spec':  min(0.03, 0.01 + 0.02 * p_clamped) * anneal,
             'lambda_focal':      min(0.8, 0.3 + 0.5 * p_clamped),         # 上限降低
             'lambda_dice':       min(0.3, 0.1 + 0.2 * p_clamped),         # 上限降低
             'lambda_gc':         min(0.2, 0.05 + 0.15 * p_clamped),       # 上限降低
             'lambda_cs':         min(0.05, 0.02 + 0.03 * p_clamped),
-            # [P2-UPGRADE] spec_likelihood 加速调度：上限 0.8 / 40% 进度达上限
-            # 因为 BCE 对 sigmoid 输出梯度不饱和（不同于旧版 Charbonnier 在中段梯度被
-            # σ' 压扁），加大权重可直接驱动 pred_s_lik 在高光区跨过 0.5 阈值。
-            'lambda_s_lik':      min(0.8,  0.3 + 0.5 * p_fast),
+            # ★[FIX-B 问题2] s_lik 上限 0.8→1.0：二值监督后需要更强驱动力
+            #   把 pred_s_lik 在高光区抬过 0.5。
+            'lambda_s_lik':      min(1.0,  0.4 + 0.6 * p_fast),
             'lambda_s_cons':     min(0.08, 0.02 + 0.06 * p_fast),
             # [NEW S3] 高光峰值欠预测惩罚：0.1 → 0.5 / 40% 进度
-            # 单侧损失 F.relu(gt_sc - pred_b) * high_mask, 仅惩罚欠预测，
-            # 给主解码器一个明确的"在强高光区敢于拉满"方向性信号。
             'lambda_spec_peak':  min(0.5, 0.1 + 0.4 * p_fast),
             # ════════════════════════════════════════════════════════════════
             # ★[V3.2 新增 — 直接保护漫反射 r 输出的损失项调度] ★
-            # 这三项都直接驱动 pred_r 的质量（SSIM 主指标），早期就要起作用
             # ════════════════════════════════════════════════════════════════
-            # 高光区域 r focal: 在 soft_high_mask 区直接惩罚 |pred_r - target|
-            # 解决"高光残留"问题：原版只靠 b 间接控制，现在 r 端有直接约束
             'lambda_r_focal_hl':  min(0.8, 0.4 + 0.4 * p_r),
-            # dual head 一致性: r_direct（直接预测）与最终 r（融合+精修）的一致性
-            # 让双头路径互相校准，防止 r_direct 偷懒
             'lambda_r_dual_cons': min(0.15, 0.05 + 0.10 * p_r),
-            # r 高光区平滑: 漫反射应低频为主，高光被去除后该区域应保持平滑
-            # 防止 r 输出中出现"亮点残留"或锯齿
-            'lambda_r_smooth':    min(0.10, 0.03 + 0.07 * p_r),
+            # ★[FIX-B 问题1] r_smooth 与主任务对抗：上限减半 + 后期退火
+            'lambda_r_smooth':    min(0.05, 0.02 + 0.03 * p_r) * anneal,
         }
 
     def step(self, criterion, ep):
@@ -856,6 +852,13 @@ def visualize_sample_during_training(model, vis_loader, device, output_folder,
         if pred_slik_img is not None:
             slik_mae = float(np.mean(np.abs(pred_slik_img - gt_spec_img)))
             title_parts.append(f'SpecLik MAE={slik_mae:.4f}')
+            # ★[FIX-C 问题2] 打印 SpecLik 分布，便于定标二值化阈值
+            tqdm.write(
+                f'[SpecLik dist] epoch={current_epoch} sample{s+1} '
+                f'min={pred_slik_img.min():.3f} max={pred_slik_img.max():.3f} '
+                f'mean={pred_slik_img.mean():.3f} '
+                f'p95={np.percentile(pred_slik_img, 95):.3f} '
+                f'>0.5_ratio={np.mean(pred_slik_img > 0.5):.4f}')
         fig.suptitle('  |  '.join(title_parts),
                      fontsize=14, fontweight='bold')
         plt.tight_layout()
@@ -1817,7 +1820,7 @@ def main():
     # ╚══════════════════════════════════════════════════════════════╝
 
     # ========== 基础训练参数 ==========
-    EPOCHS                = 300       # 训练总轮数
+    EPOCHS                = 50       # 训练总轮数
     BATCH_SIZE            = 3         # 384 分辨率推荐 2~4
     # ★[V3.2 调整] BASE_LR 1e-4 → 2e-4
     # 原因：V3.2 新增 dual-head 与 r 系列损失，新结构从头训练，1e-4 收敛过慢。

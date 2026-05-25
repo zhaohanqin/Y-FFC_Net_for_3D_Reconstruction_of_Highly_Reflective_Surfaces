@@ -1482,6 +1482,10 @@ class EnhancedCompositeLoss(nn.Module):
                  # ★[V3.2 新增权重] ★
                  lambda_r_focal_hl=0.5, lambda_r_dual_cons=0.1, lambda_r_smooth=0.05,
                  highlight_prior_gamma=1.0,
+                 # ★[FIX-A 问题2] SpecLik 监督可配置超参（均有默认值，可后续调整）
+                 spec_lik_pos_thresh=0.10,      # 高光前景二值化阈值（gt_sc>此值=前景）
+                 spec_lik_pos_weight_max=50.0,  # pos_weight 上限，平衡前景/背景
+                 spec_lik_dice_weight=0.5,      # Dice 项权重
                  use_ohem=True, ohem_ratio=0.3):
         super().__init__()
 
@@ -1520,6 +1524,10 @@ class EnhancedCompositeLoss(nn.Module):
         self.lambda_r_dual_cons = lambda_r_dual_cons
         self.lambda_r_smooth = lambda_r_smooth
         self.highlight_prior_gamma = highlight_prior_gamma
+        # ★[FIX-A 问题2] SpecLik 监督超参
+        self.spec_lik_pos_thresh = spec_lik_pos_thresh
+        self.spec_lik_pos_weight_max = spec_lik_pos_weight_max
+        self.spec_lik_dice_weight = spec_lik_dice_weight
         self.use_ohem = use_ohem
         self.ohem_ratio = ohem_ratio
 
@@ -1616,7 +1624,12 @@ class EnhancedCompositeLoss(nn.Module):
                 torch.abs(pred_grad - est_b_grad) * highlight_prior
             ).mean()
 
-        # ── spec_likelihood 头主监督：BCE + SSIM (保留 V3.1) ──
+        # ── spec_likelihood 头主监督 ──
+        # ★[FIX-A 问题2] 改为「二值高光标签 + pos_weight 加权 BCE + Dice」：
+        #   旧版用连续 gt_sc(0~1) 作 BCE 目标，模型最优解=匹配偏低的连续值，
+        #   永远到不了 0.5；且背景像素海量 + reduction='mean' 把整图往 0 压。
+        #   现用二值前景标签 (gt_sc > spec_lik_pos_thresh) 并以 pos_weight 平衡
+        #   前景/背景，再加 Dice 推前景重叠，使高光区跨过 0.5、二值图更完整。
         if pred_s_lik is None:
             l_s_lik = torch.tensor(0.0, device=pred_diffuse.device)
         else:
@@ -1625,8 +1638,19 @@ class EnhancedCompositeLoss(nn.Module):
                     pred_s_lik, size=gt_sc.shape[-2:],
                     mode='bilinear', align_corners=False)
             pred_s_lik_safe = pred_s_lik.clamp(1e-4, 1.0 - 1e-4)
-            l_bce = F.binary_cross_entropy(pred_s_lik_safe, gt_sc, reduction='mean')
-            l_s_lik = l_bce + 0.3 * (1.0 - self.ssim_fn(pred_s_lik.float(), gt_sc.float()))
+            with torch.no_grad():
+                gt_bin = (gt_sc > self.spec_lik_pos_thresh).float()       # 高光前景二值标签
+                pos = gt_bin.mean().clamp(1e-3, 0.5)                      # 前景占比
+                pos_weight = ((1.0 - pos) / pos).clamp(1.0, self.spec_lik_pos_weight_max)
+            # 带 pos_weight 的 BCE（对 sigmoid 输出）
+            bce_map = -(pos_weight * gt_bin * torch.log(pred_s_lik_safe)
+                        + (1.0 - gt_bin) * torch.log(1.0 - pred_s_lik_safe))
+            l_bce = bce_map.mean()
+            # Dice：缓解极端类别不平衡，进一步推前景重叠
+            inter = (pred_s_lik_safe * gt_bin).sum(dim=(1, 2, 3))
+            union = pred_s_lik_safe.sum(dim=(1, 2, 3)) + gt_bin.sum(dim=(1, 2, 3))
+            l_dice_slik = (1.0 - (2.0 * inter + 1.0) / (union + 1.0)).mean()
+            l_s_lik = l_bce + self.spec_lik_dice_weight * l_dice_slik
 
         # ── pred_s_lik 与 est_b 双向一致性 (V3.1) ──
         if pred_s_lik is None:
@@ -1647,8 +1671,9 @@ class EnhancedCompositeLoss(nn.Module):
         # ── 高光区 est_b 欠预测单侧惩罚 (V3.1) ──
         with torch.no_grad():
             high_mask = (gt_sc > 0.3).float()
-            # ★[V3.2] 同时构造柔性高光软掩码，给 r 损失用
-            soft_high_mask = torch.sigmoid(20.0 * (gt_sc - 0.15))  # [0,1] 软掩码
+            # ★[FIX-A 问题1] 阈值 0.15→0.30、陡度 20→12：缩小"高光区"范围，
+            #   避免把大片带条纹细节的区域错误纳入平滑约束，减弱与主任务对抗。
+            soft_high_mask = torch.sigmoid(12.0 * (gt_sc - 0.30))  # [0,1] 软掩码
         under = F.relu(gt_sc - est_b) * high_mask
         l_spec_peak = under.mean()
 
@@ -1677,12 +1702,12 @@ class EnhancedCompositeLoss(nn.Module):
             l_r_dual_cons = charbonnier_loss(pred_r_direct, pred_diffuse)
 
         # [D5] l_r_smooth：在高光区，pred_r 的局部平滑先验
-        # 原理：漫反射本质上低频为主，高光被去除后该区域应保持平滑（无残留亮点）。
-        # 实现：在 soft_high_mask 区域计算 pred_r 与其 3×3 局部均值的差
-        with torch.no_grad():
-            pass  # 仅作占位，不需要额外的 with no_grad
+        # ★[FIX-A 问题1] 改为「单侧」约束：仅惩罚比局部均值更亮的残留（亮点/高光残留），
+        #   不再惩罚模型正常恢复的暗向条纹细节。旧版双侧惩罚与主任务(SSIM/L1)直接对抗，
+        #   导致后期细节恢复时 l_r_smooth 反弹上升、顶起总 loss。
         pred_r_smooth = F.avg_pool2d(pred_diffuse, kernel_size=3, stride=1, padding=1)
-        l_r_smooth = (torch.abs(pred_diffuse - pred_r_smooth) * soft_high_mask).mean()
+        bright_residual = F.relu(pred_diffuse - pred_r_smooth)
+        l_r_smooth = (bright_residual * soft_high_mask).mean()
 
         if cross_scale_consistency is None:
             l_cs = torch.tensor(0.0, device=pred_diffuse.device)
@@ -2317,7 +2342,9 @@ class GradientDecoder(nn.Module):
         last = self.spec_lik_conv_c.conv2d
         nn.init.zeros_(last.weight)
         if last.bias is not None:
-            nn.init.constant_(last.bias, -2.0)
+            # ★[FIX-C 问题2] bias -2.0→-1.0：sigmoid(-1)≈0.27，初始预测略高，
+            #   配合二值监督更快把高光区抬过 0.5。
+            nn.init.constant_(last.bias, -1.0)
 
     def forward(self, backbone_features, x_c, original_input=None):
         x_bb_1, x_bb_2, x_bb_3, x_bb_4 = backbone_features
@@ -2932,6 +2959,9 @@ class DynamicLossWeightScheduler:
         p_fast = min(progress / 0.4, 1.0)
         # ★[V3.2] r 系列：30% 处截断（更早收敛，直接保护 r 输出）
         p_r = min(progress / 0.3, 1.0)
+        # ★[FIX-B] 后期退火因子：60% 进度后从 1.0 线性降到 0.2，
+        #   让与主任务冲突的辅助项（grad_spec / r_smooth）在细节恢复阶段让路。
+        anneal = 1.0 if progress <= 0.6 else max(0.2, 1.0 - (progress - 0.6) / 0.4 * 0.8)
         weights = {
             'lambda_ssim':       1.0,
             'lambda_l1':         max(0.5, 1.0 - 0.5 * p),
@@ -2941,20 +2971,21 @@ class DynamicLossWeightScheduler:
             'lambda_stat':       0.0,     # 移除冗余 stat
             'lambda_grad':       max(0.3, 0.5 - 0.2 * p),
             'lambda_grad_edge':  min(0.8, 0.3 + 0.5 * p),
-            'lambda_grad_spec':  min(0.05, 0.02 + 0.03 * p),
+            # ★[FIX-B 问题1] grad_spec 震荡且无益主任务：上限减半并后期退火至接近 0
+            'lambda_grad_spec':  min(0.03, 0.01 + 0.02 * p) * anneal,
             'lambda_focal':      min(0.8, 0.3 + 0.5 * p),
             'lambda_dice':       min(0.3, 0.1 + 0.2 * p),
             'lambda_gc':         min(0.2, 0.05 + 0.15 * p),
-            # [P2-UPGRADE] spec_likelihood 加速调度：上限 0.8 / 40% 进度达上限
-            'lambda_s_lik':      min(0.8, 0.3 + 0.5 * p_fast),
+            # ★[FIX-B 问题2] s_lik 上限提高（二值监督后需更强驱动力）
+            'lambda_s_lik':      min(1.0, 0.4 + 0.6 * p_fast),
             'lambda_s_cons':     min(0.08, 0.02 + 0.06 * p_fast),
             # [NEW S3] 高光峰值欠预测惩罚：0.1 → 0.5 / 40% 进度
             'lambda_spec_peak':  min(0.5, 0.1 + 0.4 * p_fast),
             # ★[V3.2 新增 — 针对 r 的损失项] ★
-            # 这三项都直接保护 pred_r 输出质量（SSIM 主要指标），早期就要发挥作用
-            'lambda_r_focal_hl': min(0.8, 0.4 + 0.4 * p_r),  # 高光区 r focal: 0.4 → 0.8
-            'lambda_r_dual_cons': min(0.15, 0.05 + 0.10 * p_r),  # dual head 一致性: 0.05 → 0.15
-            'lambda_r_smooth':   min(0.10, 0.03 + 0.07 * p_r),  # r 高光区平滑: 0.03 → 0.10
+            'lambda_r_focal_hl': min(0.8, 0.4 + 0.4 * p_r),
+            'lambda_r_dual_cons': min(0.15, 0.05 + 0.10 * p_r),
+            # ★[FIX-B 问题1] r_smooth 与主任务对抗：上限减半并后期退火
+            'lambda_r_smooth':   min(0.05, 0.02 + 0.03 * p_r) * anneal,
         }
         return weights
 

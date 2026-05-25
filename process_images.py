@@ -408,6 +408,46 @@ def sliding_window_inference(model, input_tensor, device, patch_size, overlap=32
     }
 
 
+# ════════════════════════════════════════════════════════════════════════
+# ★[FIX-A/C 问题2] SpecLik 自适应二值化阈值
+# ════════════════════════════════════════════════════════════════════════
+def adaptive_threshold(arr, mode='percentile', value=0.85):
+    """计算 SpecLik 二值化阈值。
+
+    旧版固定 0.5 阈值与当前输出分布脱节（SpecLik 峰值常 <0.5），导致二值图全黑。
+    本函数支持三种模式：
+        mode='fixed'      : 固定阈值 value（兼容旧行为，传 value=0.5）
+        mode='percentile' : 取分布的 value 分位数（如 0.85 → 响应最高 15% 判为高光，
+                            与 GT specular 的稀疏性匹配，推荐默认）
+        mode='otsu'       : Otsu 自动阈值（类间方差最大化）
+    """
+    arr = np.clip(np.nan_to_num(arr, nan=0.0, posinf=1.0, neginf=0.0), 0.0, 1.0)
+    if mode == 'fixed':
+        return float(value)
+    if mode == 'percentile':
+        return float(np.quantile(arr, value))
+    # otsu（256 bin 简易实现）
+    hist, edges = np.histogram(arr, bins=256, range=(0.0, 1.0))
+    hist = hist.astype(np.float64)
+    w = hist.cumsum()
+    centers = (edges[:-1] + edges[1:]) / 2.0
+    mu = (hist * centers).cumsum()
+    total_w = w[-1] if w[-1] > 0 else 1.0
+    total_mu = mu[-1]
+    best_t, best_var = 0.5, -1.0
+    for i in range(1, 256):
+        w0 = w[i]
+        w1 = total_w - w0
+        if w0 <= 0 or w1 <= 0:
+            continue
+        m0 = mu[i] / w0
+        m1 = (total_mu - mu[i]) / w1
+        var = w0 * w1 * (m0 - m1) ** 2
+        if var > best_var:
+            best_var, best_t = var, float((edges[i] + edges[i + 1]) / 2.0)
+    return best_t
+
+
 def save_result(tensor, save_path, bit_depth=8):
     """
     保存tensor为图像文件
@@ -525,7 +565,8 @@ def visualize_results(input_img, output_dict, save_path):
 
 def process_single_image(model, image_path, output_dir, device, show_visualization=True,
                          collect_diffuse_dir=None, patch_size=None, overlap=32,
-                         save_16bit=False, use_tta=False):
+                         save_16bit=False, use_tta=False,
+                         spec_binary_mode='percentile', spec_binary_value=0.85):
     """
     处理单张图像
     
@@ -598,6 +639,16 @@ def process_single_image(model, image_path, output_dir, device, show_visualizati
         if spec_lik_output is not None:
             save_result(spec_lik_output,
                         os.path.join(output_dir, f'{base_name}_spec_likelihood.png'))
+            # ★[FIX-A/C 问题2] 自适应阈值二值高光图 + 分布打印
+            slik_arr = _sanitize_output_tensor(spec_lik_output).squeeze().cpu().numpy()
+            thr = adaptive_threshold(slik_arr, mode=spec_binary_mode, value=spec_binary_value)
+            print(f"  [SpecLik] min={slik_arr.min():.3f} max={slik_arr.max():.3f} "
+                  f"mean={slik_arr.mean():.3f} p95={np.percentile(slik_arr, 95):.3f} "
+                  f"thr({spec_binary_mode})={thr:.3f} "
+                  f">thr_ratio={np.mean(slik_arr > thr):.4f}")
+            binary = (slik_arr > thr).astype(np.float32)
+            save_result(torch.from_numpy(binary)[None, None],
+                        os.path.join(output_dir, f'{base_name}_spec_binary.png'))
         if save_16bit:
             save_result(diffuse_output, os.path.join(output_dir, f'{base_name}_diffuse_16bit.png'),
                         bit_depth=16)
@@ -634,7 +685,8 @@ def process_single_image(model, image_path, output_dir, device, show_visualizati
 
 def process_folder(model, input_folder, output_folder, device, show_visualization=True,
                    supported_formats=None, collect_diffuse_dir=None,
-                   patch_size=None, overlap=32, save_16bit=False, use_tta=False):
+                   patch_size=None, overlap=32, save_16bit=False, use_tta=False,
+                   spec_binary_mode='percentile', spec_binary_value=0.85):
     """
     批量处理文件夹中的所有图像
     
@@ -678,7 +730,9 @@ def process_folder(model, input_folder, output_folder, device, show_visualizatio
         
         if process_single_image(model, image_path, image_output_dir, device, show_visualization,
                                 collect_diffuse_dir, patch_size=patch_size, overlap=overlap,
-                                save_16bit=save_16bit, use_tta=use_tta):
+                                save_16bit=save_16bit, use_tta=use_tta,
+                                spec_binary_mode=spec_binary_mode,
+                                spec_binary_value=spec_binary_value):
             success_count += 1
         else:
             fail_count += 1
@@ -721,6 +775,13 @@ def main():
     # 启用后每个 patch 做 4 次翻转推理取平均，预期 SSIM 再提升 0.005~0.015
     # 代价：推理时间 ×4（CPU 上可能较慢，GPU 上影响较小）
     USE_TTA = True
+
+    # ★[FIX-A/C 问题2] SpecLik 二值高光图阈值配置
+    #   'percentile' + 0.85 : 响应最高 15% 判为高光（推荐，与高光稀疏性匹配）
+    #   'otsu'              : 自动阈值（value 被忽略）
+    #   'fixed'  + 0.5      : 兼容旧固定阈值
+    SPEC_BINARY_MODE = 'percentile'
+    SPEC_BINARY_VALUE = 0.85
     
     # 6. 支持的图像格式
     SUPPORTED_FORMATS = ['.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif']
@@ -782,7 +843,9 @@ def main():
         if process_single_image(model, INPUT_PATH, image_output_dir, device, SHOW_VISUALIZATION,
                                 DIFFUSE_COLLECTION_DIR,
                                 patch_size=TRAIN_IMAGE_SIZE, overlap=PATCH_OVERLAP,
-                                save_16bit=SAVE_16BIT_OUTPUT, use_tta=USE_TTA):
+                                save_16bit=SAVE_16BIT_OUTPUT, use_tta=USE_TTA,
+                                spec_binary_mode=SPEC_BINARY_MODE,
+                                spec_binary_value=SPEC_BINARY_VALUE):
             print("[OK] Processing complete")
             print(f"\n输出文件位置:")
             print(f"  - {image_output_dir}/{image_name}_diffuse.png       (⭐ 去除高反光后的结果)")
@@ -801,7 +864,9 @@ def main():
         process_folder(model, INPUT_PATH, OUTPUT_DIR, device, SHOW_VISUALIZATION, SUPPORTED_FORMATS,
                        DIFFUSE_COLLECTION_DIR,
                        patch_size=TRAIN_IMAGE_SIZE, overlap=PATCH_OVERLAP,
-                       save_16bit=SAVE_16BIT_OUTPUT, use_tta=USE_TTA)
+                       save_16bit=SAVE_16BIT_OUTPUT, use_tta=USE_TTA,
+                       spec_binary_mode=SPEC_BINARY_MODE,
+                       spec_binary_value=SPEC_BINARY_VALUE)
         
         print(f"\n所有结果已保存到: {OUTPUT_DIR}")
         print(f"\n输出文件说明:")
