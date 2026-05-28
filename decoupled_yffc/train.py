@@ -11,10 +11,10 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-try:
-    from yffc.training.engine import train_model
-except ModuleNotFoundError:
+if __package__:
     from .yffc.training.engine import train_model
+else:
+    from yffc.training.engine import train_model
 
 
 def main():
@@ -34,10 +34,16 @@ def main():
     # ========== 基础训练参数 ==========
     EPOCHS                = 50       # 训练总轮数
     BATCH_SIZE            = 3         # 384 分辨率推荐 2~4
-    BASE_LR               = 2e-4     # 基础学习率（分层 LR 以此为基准）
+    # ★[V3.2 调整] BASE_LR 1e-4 → 2e-4
+    # 原因：V3.2 新增 dual-head 与 r 系列损失，新结构从头训练，1e-4 收敛过慢。
+    # 配合 V3.1 反向稳定性修复，2e-4 在 dual-head + 三路调制下更平衡。
+    BASE_LR               = 2e-4
     WEIGHT_DECAY          = 1e-4     # AdamW 权重衰减
     ACCUMULATION_STEPS    = 3        # 梯度累积步数（等效 batch = BATCH_SIZE × 此值）
-    GRAD_CLIP_VALUE       = 0.5      # [FIX] 梯度裁剪阈值（从 1.0 降低到 0.5，更稳定）
+    # ★[V3.2 调整] GRAD_CLIP 0.5 → 1.0
+    # 原因：V3.1 频域损失反向稳定性已修复（无除法相位项 + sqrt eps 提升），
+    # 旧版 0.5 过紧会压制 dual-head 早期梯度信号。1.0 是更标准的设定。
+    GRAD_CLIP_VALUE       = 1.0
 
     # ========== 图像与数据参数 ==========
     IMAGE_SIZE            = (128, 160)  # ⭐ 输入分辨率 (H, W)，支持任意矩形
@@ -49,6 +55,7 @@ def main():
     USE_EMA               = True     # 指数移动平均
     EMA_DECAY             = 0.9995   # [P16] EMA 衰减系数（调高增加平滑力度）
     USE_OHEM              = True     # 在线难样本挖掘
+    USE_AMP               = False    # 稳定版默认关闭 AMP；确认稳定后可改 True
     USE_HIGHLIGHT_AUG     = True     # 默认开启训练集高反光合成增强
     HIGHLIGHT_AUG_P       = 0.5      # 降低合成高反光占比，避免训练分布过度偏向合成模式
 
@@ -93,6 +100,7 @@ def main():
         'USE_EMA':                USE_EMA,
         'EMA_DECAY':              EMA_DECAY,
         'USE_OHEM':               USE_OHEM,
+        'USE_AMP':                USE_AMP,
         'USE_HIGHLIGHT_AUG':      USE_HIGHLIGHT_AUG,
         'HIGHLIGHT_AUG_P':        HIGHLIGHT_AUG_P,
         'INPUT_DIR':              INPUT_DIR,

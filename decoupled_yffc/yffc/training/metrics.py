@@ -9,8 +9,14 @@ import torch
 SUB_LOSS_KEYS = [
     'total', 'ssim', 'ssim_single_loss', 'msssim_loss', 'ssim_mixed_loss',
     'l1', 'freq', 'perceptual',
-    'spec', 'stat', 'grad',
+    'spec', 'stat', 'grad', 'grad_edge', 'grad_spec',
     'focal', 'dice', 'gc', 'cs',
+    # [NEW] spec_likelihood 监督相关
+    's_lik', 's_cons',
+    # [NEW S3] 高光峰值欠预测惩罚
+    'spec_peak',
+    # ★[V3.2 新增] 漫反射 r 直接监督系列
+    'r_focal_hl', 'r_dual_cons', 'r_smooth',
 ]
 
 SUB_LOSS_DISPLAY_NAMES = {
@@ -24,11 +30,20 @@ SUB_LOSS_DISPLAY_NAMES = {
     'perceptual': 'Perceptual Loss',
     'spec':       'Specular Loss',
     'stat':       'Statistical Loss',
-    'grad':       'Gradient Loss',
+    'grad':       'Gradient SSIM Loss',
+    'grad_edge':  'Gradient Edge Loss',
+    'grad_spec':  'Gradient-Specular Consistency',
     'focal':      'Focal Loss',
     'dice':       'Dice Loss',
     'gc':         'Grad Consistency',
     'cs':         'Cross-scale Consistency',
+    's_lik':      'Spec-Likelihood Sup (BCE)',
+    's_cons':     'Spec-Likelihood Bi-Cons',
+    'spec_peak':  'Spec Peak (Under-Pred)',
+    # ★[V3.2 新增] 漫反射 r 直接监督
+    'r_focal_hl':  'R Focal Highlight',
+    'r_dual_cons': 'R Dual-Head Consistency',
+    'r_smooth':    'R Highlight Smooth',
 }
 
 

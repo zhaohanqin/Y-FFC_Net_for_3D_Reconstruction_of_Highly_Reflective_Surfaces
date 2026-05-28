@@ -1613,15 +1613,24 @@ class EnhancedCompositeLoss(nn.Module):
         if highlight_prior is None:
             l_grad_spec = torch.tensor(0.0, device=pred_grad.device)
         else:
-            est_b_grad = normalized_sobel_magnitude(
-                est_b.detach().float(), quantile=0.995).to(
+            # ★[FIX-D 问题2] 把动态目标 Sobel(est_b) 换成稳定目标 Sobel(gt_specular)。
+            #   旧版用 est_b.detach() 作目标:est_b 是模型自己的预测,在整个训练过程
+            #   中持续演化 → Sobel(est_b) 是一个"会变的靶子",pred_grad 永远在追
+            #   一个移动目标,体现在 val 曲线上就是中期的 U 形回弹(epoch 7~15)。
+            #   现在用 gt_sc.detach() 的 Sobel 作目标:目标固定不变,pred_grad
+            #   只需要单调收敛,U 形彻底消失。
+            #   语义上仍然合理:highlight_prior 在亮区为正,Sobel(input) ≈
+            #   Sobel(diffuse) + Sobel(specular) 且亮区主导项是 specular,所以
+            #   Sobel(gt_sc) 在亮区与 Sobel(input) 接近,不会与主 grad 监督冲突。
+            gt_sc_grad = normalized_sobel_magnitude(
+                gt_sc.detach().float(), quantile=0.995).to(
                 device=pred_grad.device, dtype=pred_grad.dtype)
-            if est_b_grad.shape[-2:] != pred_grad.shape[-2:]:
-                est_b_grad = F.interpolate(
-                    est_b_grad, size=pred_grad.shape[-2:],
+            if gt_sc_grad.shape[-2:] != pred_grad.shape[-2:]:
+                gt_sc_grad = F.interpolate(
+                    gt_sc_grad, size=pred_grad.shape[-2:],
                     mode='bilinear', align_corners=False)
             l_grad_spec = (
-                torch.abs(pred_grad - est_b_grad) * highlight_prior
+                torch.abs(pred_grad - gt_sc_grad) * highlight_prior
             ).mean()
 
         # ── spec_likelihood 头主监督 ──
@@ -1669,12 +1678,16 @@ class EnhancedCompositeLoss(nn.Module):
         l_gc = self.gc(est_b, gt_sc)
 
         # ── 高光区 est_b 欠预测单侧惩罚 (V3.1) ──
+        # ★[FIX-D 问题3] 把硬阈值 (gt_sc > 0.3).float() 换成 soft_high_mask:
+        #   - 硬阈值在阈值附近不连续:gt_sc 从 0.299 → 0.301 时掩码值从 0 跳到 1,
+        #     损失值会有微小阶跃。叠加 lambda_spec_peak 在旧调度里 0.1 → 0.5 的
+        #     爬升,加权贡献先升后降,呈现小幅回升的形态。
+        #   - 现在用 sigmoid(12*(gt_sc - 0.30)) 软掩码:阈值附近连续过渡,像素的
+        #     "高光程度"以平滑 [0,1] 值参与加权,损失随训练进度的演化也更平滑。
+        #   - 配合 FIX-D 常量权重(lambda_spec_peak = 0.5 锁定不变),小幅回升消失。
         with torch.no_grad():
-            high_mask = (gt_sc > 0.3).float()
-            # ★[FIX-A 问题1] 阈值 0.15→0.30、陡度 20→12：缩小"高光区"范围，
-            #   避免把大片带条纹细节的区域错误纳入平滑约束，减弱与主任务对抗。
             soft_high_mask = torch.sigmoid(12.0 * (gt_sc - 0.30))  # [0,1] 软掩码
-        under = F.relu(gt_sc - est_b) * high_mask
+        under = F.relu(gt_sc - est_b) * soft_high_mask
         l_spec_peak = under.mean()
 
         # ═════════════════════════════════════════════════════════════════
@@ -2938,14 +2951,11 @@ class EMA:
 
 
 class DynamicLossWeightScheduler:
-    """根据训练进度动态调整各 loss 项的权重（修复版：60% 后冻结）。
+    """根据训练进度动态调整各 loss 项的权重（FIX-D:常量权重 + 例外两项退火）。
 
-    [P2-UPGRADE] spec_likelihood 系列调度加速：
-        旧版 l_s_lik 上限 0.4 / 60% 收敛，导致辅助头早期监督信号过弱，
-        训练观察到 pred_s_lik 在 0.3~0.5 停滞、无法跨过 0.5 阈值。
-        新版上限 0.8 / 40% 进度即达上限，给 spec_lik_head 更直接的监督。
-
-    [NEW S3] lambda_spec_peak: 高光区欠预测单侧惩罚，0.1 → 0.5，鼓励主解码器拉满高光。
+    ★[FIX-D] 同步 train.py 的 ImprovedWeightScheduler:
+      所有 aux 权重锁 plateau,从 epoch 0 起不变,只有 `grad_spec` 和 `r_smooth`
+      保留后期退火,`s_cons` 直接置 0。详细背景见 train.py 中的同名调度器注释。
     """
 
     def __init__(self, total_epochs):
@@ -2953,39 +2963,29 @@ class DynamicLossWeightScheduler:
 
     def get_weights(self, current_epoch):
         progress = min(current_epoch / self.total_epochs, 1.0)
-        # 主权重系列：60% 处截断
-        p = min(progress / 0.6, 1.0)
-        # spec_likelihood 系列：40% 处截断（加速辅助头）
-        p_fast = min(progress / 0.4, 1.0)
-        # ★[V3.2] r 系列：30% 处截断（更早收敛，直接保护 r 输出）
-        p_r = min(progress / 0.3, 1.0)
-        # ★[FIX-B] 后期退火因子：60% 进度后从 1.0 线性降到 0.2，
-        #   让与主任务冲突的辅助项（grad_spec / r_smooth）在细节恢复阶段让路。
+        # 后期退火因子:仅 grad_spec 和 r_smooth 用
         anneal = 1.0 if progress <= 0.6 else max(0.2, 1.0 - (progress - 0.6) / 0.4 * 0.8)
         weights = {
-            'lambda_ssim':       1.0,
-            'lambda_l1':         max(0.5, 1.0 - 0.5 * p),
-            'lambda_freq':       min(0.15, 0.05 + 0.10 * p),
-            'lambda_perceptual': min(0.10, 0.02 + 0.08 * p),
-            'lambda_spec':       0.5,
-            'lambda_stat':       0.0,     # 移除冗余 stat
-            'lambda_grad':       max(0.3, 0.5 - 0.2 * p),
-            'lambda_grad_edge':  min(0.8, 0.3 + 0.5 * p),
-            # ★[FIX-B 问题1] grad_spec 震荡且无益主任务：上限减半并后期退火至接近 0
-            'lambda_grad_spec':  min(0.03, 0.01 + 0.02 * p) * anneal,
-            'lambda_focal':      min(0.8, 0.3 + 0.5 * p),
-            'lambda_dice':       min(0.3, 0.1 + 0.2 * p),
-            'lambda_gc':         min(0.2, 0.05 + 0.15 * p),
-            # ★[FIX-B 问题2] s_lik 上限提高（二值监督后需更强驱动力）
-            'lambda_s_lik':      min(1.0, 0.4 + 0.6 * p_fast),
-            'lambda_s_cons':     min(0.08, 0.02 + 0.06 * p_fast),
-            # [NEW S3] 高光峰值欠预测惩罚：0.1 → 0.5 / 40% 进度
-            'lambda_spec_peak':  min(0.5, 0.1 + 0.4 * p_fast),
-            # ★[V3.2 新增 — 针对 r 的损失项] ★
-            'lambda_r_focal_hl': min(0.8, 0.4 + 0.4 * p_r),
-            'lambda_r_dual_cons': min(0.15, 0.05 + 0.10 * p_r),
-            # ★[FIX-B 问题1] r_smooth 与主任务对抗：上限减半并后期退火
-            'lambda_r_smooth':   min(0.05, 0.02 + 0.03 * p_r) * anneal,
+            'lambda_ssim':        1.0,
+            'lambda_l1':          0.5,
+            'lambda_freq':        0.15,
+            'lambda_perceptual':  0.10,
+            'lambda_spec':        0.5,
+            'lambda_stat':        0.0,
+            'lambda_grad':        0.3,
+            'lambda_grad_edge':   0.8,
+            'lambda_grad_spec':   0.03 * anneal,
+            'lambda_focal':       0.8,
+            'lambda_dice':        0.3,
+            'lambda_gc':          0.2,
+            'lambda_cs':          0.05,
+            'lambda_s_lik':       1.0,
+            # ★[FIX-D] s_cons 锁 0:FIX-A 之后结构性抗任务,直接禁用
+            'lambda_s_cons':      0.0,
+            'lambda_spec_peak':   0.5,
+            'lambda_r_focal_hl':  0.8,
+            'lambda_r_dual_cons': 0.15,
+            'lambda_r_smooth':    0.05 * anneal,
         }
         return weights
 

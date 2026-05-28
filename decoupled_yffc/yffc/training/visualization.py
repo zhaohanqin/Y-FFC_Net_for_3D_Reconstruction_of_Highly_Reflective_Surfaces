@@ -2,6 +2,8 @@
 
 import os
 import time
+import math
+from tqdm import tqdm
 
 import matplotlib
 matplotlib.use('Agg')
@@ -14,18 +16,19 @@ from .metrics import SUB_LOSS_DISPLAY_NAMES
 
 
 @torch.no_grad()
-def visualize_sample_during_training(model, val_loader, device, output_folder,
+def visualize_sample_during_training(model, vis_loader, device, output_folder,
                                       current_epoch, num_samples=2):
     """
     训练过程中可视化验证样本结果。
 
-    布局：每个样本一行 2×3 子图
-        第一行：输入图像 | GT 漫反射 | 预测漫反射
-        第二行：预测镜面反射 | 预测梯度 | 差异图（热力图）
+    布局：每个样本一行 3×4 子图
+        第一行：输入图像 | GT 漫反射 | 预测漫反射 | |Pred - GT| 差异图
+        第二行：GT 镜面反射 | 预测镜面反射 | GT 输入梯度 | 预测梯度
+        第三行：Pred SpecLikelihood (新辅助头) | |SpecLik - GT_Spec| 差异图 | 与 Pred Specular 叠加比较 | (空)
 
     参数:
         model          : 当前模型
-        val_loader     : 验证数据加载器
+        vis_loader     : 本次训练固定的可视化样本 DataLoader
         device         : 计算设备
         output_folder  : 输出目录
         current_epoch  : 当前 epoch 编号
@@ -35,24 +38,30 @@ def visualize_sample_during_training(model, val_loader, device, output_folder,
     vis_dir = os.path.join(output_folder, 'val_visualization')
     os.makedirs(vis_dir, exist_ok=True)
 
-    batch = next(iter(val_loader))
+    batch = next(iter(vis_loader))
     inputs, gt_diffuse, gt_specular, gt_gradient = [x.to(device) for x in batch]
 
     estimations = model(inputs)
     pred_diffuse = estimations['r']
     pred_specular = estimations['b']
     pred_gradient = estimations['g']
+    # [NEW] spec_likelihood 头输出 (可能为 None, 用 .get 兼容旧检查点)
+    pred_spec_lik = estimations.get('s')
 
     actual_samples = min(num_samples, inputs.size(0))
 
     for s in range(actual_samples):
-        fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+        fig, axes = plt.subplots(3, 4, figsize=(20, 15))
 
         input_img = inputs[s, 0].cpu().numpy()
         gt_diff_img = gt_diffuse[s, 0].cpu().numpy()
+        gt_spec_img = gt_specular[s, 0].cpu().numpy()
+        gt_grad_img = gt_gradient[s, 0].cpu().numpy()
         pred_diff_img = pred_diffuse[s, 0].cpu().numpy()
         pred_spec_img = pred_specular[s, 0].cpu().numpy()
         pred_grad_img = pred_gradient[s, 0].cpu().numpy()
+        pred_slik_img = (pred_spec_lik[s, 0].cpu().numpy()
+                         if pred_spec_lik is not None else None)
 
         # 第一行
         axes[0, 0].imshow(input_img, cmap='gray', vmin=0, vmax=1)
@@ -66,31 +75,85 @@ def visualize_sample_during_training(model, val_loader, device, output_folder,
         axes[0, 2].imshow(pred_diff_img, cmap='gray', vmin=0, vmax=1)
         axes[0, 2].set_title('Pred Diffuse', fontsize=11)
         axes[0, 2].axis('off')
+        diff = np.abs(pred_diff_img - gt_diff_img)
+        im = axes[0, 3].imshow(diff, cmap='hot', vmin=0, vmax=0.3)
+        axes[0, 3].set_title('|Pred - GT| Difference', fontsize=11)
+        axes[0, 3].axis('off')
+        plt.colorbar(im, ax=axes[0, 3], fraction=0.046)
 
         # 第二行
-        axes[1, 0].imshow(pred_spec_img, cmap='gray', vmin=0, vmax=1)
-        axes[1, 0].set_title('Pred Specular', fontsize=11)
+        axes[1, 0].imshow(gt_spec_img, cmap='gray', vmin=0, vmax=1)
+        axes[1, 0].set_title('GT Specular', fontsize=11)
         axes[1, 0].axis('off')
 
-        axes[1, 1].imshow(pred_grad_img, cmap='gray', vmin=0, vmax=1)
-        axes[1, 1].set_title('Pred Gradient', fontsize=11)
+        axes[1, 1].imshow(pred_spec_img, cmap='gray', vmin=0, vmax=1)
+        axes[1, 1].set_title('Pred Specular', fontsize=11)
         axes[1, 1].axis('off')
 
-        diff = np.abs(pred_diff_img - gt_diff_img)
-        im = axes[1, 2].imshow(diff, cmap='hot', vmin=0, vmax=0.3)
-        axes[1, 2].set_title('|Pred - GT| Difference', fontsize=11)
+        axes[1, 2].imshow(gt_grad_img, cmap='gray', vmin=0, vmax=1)
+        axes[1, 2].set_title('GT Input Gradient', fontsize=11)
         axes[1, 2].axis('off')
-        plt.colorbar(im, ax=axes[1, 2], fraction=0.046)
+
+        axes[1, 3].imshow(pred_grad_img, cmap='gray', vmin=0, vmax=1)
+        axes[1, 3].set_title('Pred Gradient', fontsize=11)
+        axes[1, 3].axis('off')
+
+        # 第三行（新增）：spec_likelihood 相关
+        if pred_slik_img is not None:
+            # (3,0) Pred SpecLikelihood 热力图 - 显示梯度分支辅助头的预测
+            im_slik = axes[2, 0].imshow(pred_slik_img, cmap='hot', vmin=0, vmax=1)
+            axes[2, 0].set_title('Pred SpecLikelihood (Aux)', fontsize=11)
+            axes[2, 0].axis('off')
+            plt.colorbar(im_slik, ax=axes[2, 0], fraction=0.046)
+
+            # (3,1) SpecLikelihood 与 GT Specular 的绝对误差
+            slik_err = np.abs(pred_slik_img - gt_spec_img)
+            im_err = axes[2, 1].imshow(slik_err, cmap='hot', vmin=0, vmax=0.3)
+            axes[2, 1].set_title('|SpecLik - GT_Spec|', fontsize=11)
+            axes[2, 1].axis('off')
+            plt.colorbar(im_err, ax=axes[2, 1], fraction=0.046)
+
+            # (3,2) SpecLikelihood 与 Pred Specular 的对比（两个估计的差异）
+            slik_vs_pred = np.abs(pred_slik_img - pred_spec_img)
+            im_cmp = axes[2, 2].imshow(slik_vs_pred, cmap='hot', vmin=0, vmax=0.3)
+            axes[2, 2].set_title('|SpecLik - Pred_Spec|', fontsize=11)
+            axes[2, 2].axis('off')
+            plt.colorbar(im_cmp, ax=axes[2, 2], fraction=0.046)
+
+            # (3,3) SpecLikelihood 阈值化 (0.5) 后的二值化图, 直观看高光区
+            slik_binary = (pred_slik_img > 0.5).astype(np.float32)
+            axes[2, 3].imshow(slik_binary, cmap='gray', vmin=0, vmax=1)
+            axes[2, 3].set_title('SpecLik > 0.5 (Binary)', fontsize=11)
+            axes[2, 3].axis('off')
+        else:
+            # 模型未输出 s 字段 (旧版兼容): 整行隐藏
+            for j in range(4):
+                axes[2, j].axis('off')
+                axes[2, j].set_title('SpecLik (N/A)', fontsize=9, color='gray')
 
         # 计算当前样本指标
         sample_mae = np.mean(diff)
         sample_mse = np.mean(diff ** 2)
         sample_max_err = np.max(diff)
 
-        fig.suptitle(
-            f'Epoch {current_epoch} - Sample {s+1}  |  '
-            f'MAE={sample_mae:.4f}  MSE={sample_mse:.6f}  MaxErr={sample_max_err:.4f}',
-            fontsize=14, fontweight='bold')
+        title_parts = [
+            f'Epoch {current_epoch} - Sample {s+1}',
+            f'MAE={sample_mae:.4f}',
+            f'MSE={sample_mse:.6f}',
+            f'MaxErr={sample_max_err:.4f}',
+        ]
+        if pred_slik_img is not None:
+            slik_mae = float(np.mean(np.abs(pred_slik_img - gt_spec_img)))
+            title_parts.append(f'SpecLik MAE={slik_mae:.4f}')
+            # ★[FIX-C 问题2] 打印 SpecLik 分布，便于定标二值化阈值
+            tqdm.write(
+                f'[SpecLik dist] epoch={current_epoch} sample{s+1} '
+                f'min={pred_slik_img.min():.3f} max={pred_slik_img.max():.3f} '
+                f'mean={pred_slik_img.mean():.3f} '
+                f'p95={np.percentile(pred_slik_img, 95):.3f} '
+                f'>0.5_ratio={np.mean(pred_slik_img > 0.5):.4f}')
+        fig.suptitle('  |  '.join(title_parts),
+                     fontsize=14, fontweight='bold')
         plt.tight_layout()
 
         save_path = os.path.join(vis_dir, f'epoch_{current_epoch:03d}_sample{s+1}.png')
@@ -106,12 +169,12 @@ def build_fixed_visualization_loader(val_dataset, num_samples, num_workers,
     """
     为本次训练固定抽取一批验证样本。
 
-    seed=None 时使用当前时间生成种子；训练开始后样本索引固定，
-    便于同一次训练中跨 epoch 对比可视化结果。
+    seed=None 时使用当前时间生成种子，因此不同训练文件夹通常会选到不同图像；
+    训练开始后样本索引固定，保证同一次训练中各 epoch 的可视化可直接对比。
     """
     dataset_size = len(val_dataset)
     if dataset_size <= 0:
-        raise ValueError("验证集为空，无法抽取可视化样本。")
+        raise ValueError("验证集为空，无法抽取可视化样本")
 
     sample_count = min(max(int(num_samples), 1), dataset_size)
     if seed is None:

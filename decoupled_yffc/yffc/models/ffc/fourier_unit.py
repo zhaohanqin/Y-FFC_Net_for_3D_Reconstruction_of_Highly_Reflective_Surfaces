@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..common import _tukey_window
+from ..common import _safe_tensor, _tukey_window
 
 
 class FourierUnit(nn.Module):
@@ -116,6 +116,8 @@ class FourierUnit(nn.Module):
         if self.spatial_scale_factor is not None:
             output = F.interpolate(output, size=orig_size,
                                    mode=self.spatial_scale_mode, align_corners=False)
+
+        output = _safe_tensor(output, nan=0.0, posinf=1.0e4, neginf=-1.0e4, clamp=(-1.0e4, 1.0e4))
 
         if orig_dtype == torch.float16:
             output = output.half()

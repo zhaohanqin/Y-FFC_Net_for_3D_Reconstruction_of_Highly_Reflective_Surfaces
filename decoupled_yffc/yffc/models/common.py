@@ -35,3 +35,15 @@ def _tukey_window(size, alpha=0.25, device=None, dtype=None):
     right = n[size - width - 1:]
     w[size - width - 1:] = 0.5 * (1.0 + torch.cos(math.pi * (2.0 * right / (alpha * (size - 1)) - 2.0 / alpha + 1.0)))
     return w
+
+def _safe_tensor(tensor, nan=0.0, posinf=1.0e4, neginf=-1.0e4, clamp=None):
+    """Numerical guard used only at high-risk boundaries.
+
+    It prevents one unstable FFT/attention activation from turning the whole
+    training run into persistent NaN/Inf while keeping normal finite values
+    unchanged.
+    """
+    tensor = torch.nan_to_num(tensor, nan=nan, posinf=posinf, neginf=neginf)
+    if clamp is not None:
+        tensor = tensor.clamp(clamp[0], clamp[1])
+    return tensor

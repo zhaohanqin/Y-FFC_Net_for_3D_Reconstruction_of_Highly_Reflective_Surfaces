@@ -16,10 +16,19 @@ from .losses import (
     SSIM,
     SpecularDiceLoss,
     SpecularFocalLoss,
+    _as_batched_4d,
+    _restore_tensor_dim,
+    _safe_tensor,
     charbonnier_loss,
     compute_edge_weight_map,
+    compute_highlight_prior,
+    compute_input_gradient_target,
+    compute_input_gradient_weight_map,
     gaussian_window,
+    normalize_per_sample,
+    normalized_sobel_magnitude,
     specular_ohem_loss,
+    sobel_magnitude,
     statistical_loss,
 )
 from .models import (
@@ -45,6 +54,8 @@ from .models import (
     TransposedConvBlock_same,
     YFFC,
     _SpectralDecompositionUnit,
+    cross_scale_consistency_loss,
+    _safe_tensor as _model_safe_tensor,
     _tukey_window,
     truncated_normal_,
 )
@@ -54,9 +65,12 @@ from .training import (
     build_optimizer,
     build_scheduler,
     replace_bn_with_gn,
-    train,
+    train_model,
     train_one_epoch,
+    train_one_epoch_legacy,
+    train_legacy,
     validate,
+    validate_legacy,
 )
 
 __all__ = [name for name in globals() if not name.startswith('__')]

@@ -39,26 +39,41 @@ class EMA:
 
 
 class DynamicLossWeightScheduler:
-    """根据训练进度动态调整各 loss 项的权重（修复版：60% 后冻结）。"""
+    """根据训练进度动态调整各 loss 项的权重（FIX-D:常量权重 + 例外两项退火）。
+
+    ★[FIX-D] 同步 train.py 的 ImprovedWeightScheduler:
+      所有 aux 权重锁 plateau,从 epoch 0 起不变,只有 `grad_spec` 和 `r_smooth`
+      保留后期退火,`s_cons` 直接置 0。详细背景见 train.py 中的同名调度器注释。
+    """
 
     def __init__(self, total_epochs):
         self.total_epochs = max(total_epochs, 1)
 
     def get_weights(self, current_epoch):
         progress = min(current_epoch / self.total_epochs, 1.0)
-        # 修复：在 60% 处截断变化，之后权重不再改变
-        p = min(progress / 0.6, 1.0)
+        # 后期退火因子:仅 grad_spec 和 r_smooth 用
+        anneal = 1.0 if progress <= 0.6 else max(0.2, 1.0 - (progress - 0.6) / 0.4 * 0.8)
         weights = {
-            'lambda_ssim':       1.0,
-            'lambda_l1':         max(0.5, 1.0 - 0.5 * p),
-            'lambda_freq':       min(0.15, 0.05 + 0.10 * p),
-            'lambda_perceptual': min(0.10, 0.02 + 0.08 * p),
-            'lambda_spec':       0.5,
-            'lambda_stat':       0.0,     # 移除冗余 stat
-            'lambda_grad':       max(0.3, 0.5 - 0.2 * p),
-            'lambda_focal':      min(0.8, 0.3 + 0.5 * p),
-            'lambda_dice':       min(0.3, 0.1 + 0.2 * p),
-            'lambda_gc':         min(0.2, 0.05 + 0.15 * p),
+            'lambda_ssim':        1.0,
+            'lambda_l1':          0.5,
+            'lambda_freq':        0.15,
+            'lambda_perceptual':  0.10,
+            'lambda_spec':        0.5,
+            'lambda_stat':        0.0,
+            'lambda_grad':        0.3,
+            'lambda_grad_edge':   0.8,
+            'lambda_grad_spec':   0.03 * anneal,
+            'lambda_focal':       0.8,
+            'lambda_dice':        0.3,
+            'lambda_gc':          0.2,
+            'lambda_cs':          0.05,
+            'lambda_s_lik':       1.0,
+            # ★[FIX-D] s_cons 锁 0:FIX-A 之后结构性抗任务,直接禁用
+            'lambda_s_cons':      0.0,
+            'lambda_spec_peak':   0.5,
+            'lambda_r_focal_hl':  0.8,
+            'lambda_r_dual_cons': 0.15,
+            'lambda_r_smooth':    0.05 * anneal,
         }
         return weights
 
@@ -81,7 +96,9 @@ def build_optimizer(model, base_lr=2e-4, weight_decay=1e-4):
         if not param.requires_grad:
             continue
         if ('sa1' in name or 'sa2' in name or 'sa3' in name or
-            'sa4' in name or 'hf_enhance' in name):
+            'sa4' in name or 'hf_enhance' in name or
+            'refinement_head' in name or
+            'top_down_refine' in name):
             new_module_params.append(param)
         elif ('fuse_h4' in name or 'fuse_h8' in name or
               'swin16_proj' in name):

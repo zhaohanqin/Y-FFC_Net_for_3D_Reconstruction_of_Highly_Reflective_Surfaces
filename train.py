@@ -153,58 +153,66 @@ class ImprovedFringeDataset(Dataset):
 
 class ImprovedWeightScheduler:
     """
-    策略（修复版）：
-      早期(0~30%)   以 L1 快速收敛
-      中期(30~60%)  加大 focal/dice/freq
-      后期(60~100%) 权重冻结在平台值，不再变化 ← 关键修复
+    ★[FIX-D] 全量改用「常量权重 + 例外两项退火」,根治"权重曲线驱动的中期回升"。
 
-    原版问题：权重持续线性增大直到最后一轮，导致后期优化目标不断漂移，
-    与学习率衰减产生冲突，叠加 LR 回弹造成损失突增。
+    旧版策略(已废弃):
+      早期(0~30%)以 L1 快速收敛 → 中期(30~60%)加大 focal/dice/freq →
+      后期(60~100%) 权重冻结。
+    旧版问题(实测):
+      多个 aux 损失(dice / focal / grad_edge / perceptual / s_lik / spec_peak)
+      的数值在 epoch ≈ 10 后就已经进入 plateau,但权重还在沿 30%~60% 进度
+      持续线性爬升。"恒定的子损失值 × 单调增大的权重 = 加权贡献单调增大",
+      在你 50-epoch 训练里仅 dice 一项贡献就从 0.080 涨到 0.165,叠加其他
+      三项一共净增 ≈ +0.10,正好等于观察到的总 loss 中期回升幅度。这不是
+      模型变差,纯粹是调度策略本身的算术现象。
+
+    新版策略:
+      ① 所有 aux 权重直接锁 plateau,从 epoch 0 起不变。理由:
+          - 你的模型 SSIM 在 epoch ~13 就到 0.98+,主任务收敛根本不需要
+            "先抑后扬"的课程;
+          - 锁定权重后,总 loss 的演化只反映"sub_loss 数值变化"本身,
+            曲线天然单调下降。
+      ② 仅 `grad_spec` 和 `r_smooth` 保留 60% 之后的退火(沿用 FIX-B 的设计):
+          这两项确实与主任务的细节恢复冲突,后期必须让路。
+      ③ `lambda_s_cons` 直接置 0:FIX-A 把 pred_s_lik 改成二值监督后,
+         它的值域已经从连续 [0,1] 收缩到 ≈{0,1},而 est_b 仍预测连续值,
+         再让它们做 L1 一致性是结构性抗任务,实测 s_cons 单调上涨
+         从 0.003 → 0.04 就是证据。
     """
     def __init__(self, total_epochs):
         self.T = max(total_epochs, 1)
 
     def get_weights(self, ep):
-        # 在 60% 训练进度处截断，之后权重不再变化
         p = min(ep / self.T, 1.0)
-        p_clamped = min(p / 0.6, 1.0)  # 主权重：60% 处达到最终值
-        # [P2-UPGRADE] spec_likelihood 系列加速：40% 进度即达上限
-        p_fast = min(p / 0.4, 1.0)
-        # ★[V3.2] r 系列权重: 30% 进度即达上限（更早保护漫反射输出）
-        p_r = min(p / 0.3, 1.0)
-        # ★[FIX-B] 后期退火因子：60% 进度后从 1.0 线性降到 0.2，
-        #   让与主任务冲突的辅助项（grad_spec / r_smooth）在细节恢复阶段让路，
-        #   这是解决"训练后期总 loss 上升"的关键。
+        # 后期退火因子:仅 grad_spec 和 r_smooth 用(主任务冲突项,细节阶段必须让路)
         anneal = 1.0 if p <= 0.6 else max(0.2, 1.0 - (p - 0.6) / 0.4 * 0.8)
 
         return {
-            'lambda_ssim':       1.0,
-            'lambda_l1':         max(0.5, 1.0 - 0.5 * p_clamped),
-            'lambda_freq':       min(0.15, 0.05 + 0.10 * p_clamped),      # 上限降低
-            'lambda_perceptual': min(0.10, 0.02 + 0.08 * p_clamped),      # 上限降低
-            'lambda_spec':       0.5,
-            'lambda_stat':       0.0,    # [P5] 移除冗余 stat 损失
-            'lambda_grad':       max(0.3, 0.5 - 0.2 * p_clamped),
-            'lambda_grad_edge':  min(0.8, 0.3 + 0.5 * p_clamped),
-            # ★[FIX-B 问题1] grad_spec 震荡且无益主任务：上限减半 + 后期退火至接近 0
-            'lambda_grad_spec':  min(0.03, 0.01 + 0.02 * p_clamped) * anneal,
-            'lambda_focal':      min(0.8, 0.3 + 0.5 * p_clamped),         # 上限降低
-            'lambda_dice':       min(0.3, 0.1 + 0.2 * p_clamped),         # 上限降低
-            'lambda_gc':         min(0.2, 0.05 + 0.15 * p_clamped),       # 上限降低
-            'lambda_cs':         min(0.05, 0.02 + 0.03 * p_clamped),
-            # ★[FIX-B 问题2] s_lik 上限 0.8→1.0：二值监督后需要更强驱动力
-            #   把 pred_s_lik 在高光区抬过 0.5。
-            'lambda_s_lik':      min(1.0,  0.4 + 0.6 * p_fast),
-            'lambda_s_cons':     min(0.08, 0.02 + 0.06 * p_fast),
-            # [NEW S3] 高光峰值欠预测惩罚：0.1 → 0.5 / 40% 进度
-            'lambda_spec_peak':  min(0.5, 0.1 + 0.4 * p_fast),
-            # ════════════════════════════════════════════════════════════════
-            # ★[V3.2 新增 — 直接保护漫反射 r 输出的损失项调度] ★
-            # ════════════════════════════════════════════════════════════════
-            'lambda_r_focal_hl':  min(0.8, 0.4 + 0.4 * p_r),
-            'lambda_r_dual_cons': min(0.15, 0.05 + 0.10 * p_r),
-            # ★[FIX-B 问题1] r_smooth 与主任务对抗：上限减半 + 后期退火
-            'lambda_r_smooth':    min(0.05, 0.02 + 0.03 * p_r) * anneal,
+            'lambda_ssim':        1.0,
+            'lambda_l1':          0.5,
+            'lambda_freq':        0.15,
+            'lambda_perceptual':  0.10,
+            'lambda_spec':        0.5,
+            'lambda_stat':        0.0,   # [P5] 移除冗余 stat 损失
+            'lambda_grad':        0.3,
+            'lambda_grad_edge':   0.8,
+            # ★[FIX-D] grad_spec 保留后期退火:仍是主任务冲突项,后期细节恢复阶段让路
+            'lambda_grad_spec':   0.03 * anneal,
+            'lambda_focal':       0.8,
+            'lambda_dice':        0.3,
+            'lambda_gc':          0.2,
+            'lambda_cs':          0.05,
+            'lambda_s_lik':       1.0,
+            # ★[FIX-D 关键] s_cons 锁 0:FIX-A 把 pred_s_lik 改二值监督后,
+            #   它和 est_b 已经是结构性不同的两种预测(二值 vs 连续),
+            #   再做一致性是抗任务。实测训练曲线中 s_cons 从 0.003
+            #   单调涨到 0.04,直接禁用。
+            'lambda_s_cons':      0.0,
+            'lambda_spec_peak':   0.5,
+            'lambda_r_focal_hl':  0.8,
+            'lambda_r_dual_cons': 0.15,
+            # ★[FIX-D] r_smooth 保留后期退火(沿用 FIX-B)
+            'lambda_r_smooth':    0.05 * anneal,
         }
 
     def step(self, criterion, ep):

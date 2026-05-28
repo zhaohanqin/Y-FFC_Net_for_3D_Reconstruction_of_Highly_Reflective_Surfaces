@@ -5,6 +5,18 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+def _safe_tensor(tensor, nan=0.0, posinf=1.0e4, neginf=-1.0e4, clamp=None):
+    """Numerical guard used only at high-risk boundaries.
+
+    It prevents one unstable FFT/attention activation from turning the whole
+    training run into persistent NaN/Inf while keeping normal finite values
+    unchanged.
+    """
+    tensor = torch.nan_to_num(tensor, nan=nan, posinf=posinf, neginf=neginf)
+    if clamp is not None:
+        tensor = tensor.clamp(clamp[0], clamp[1])
+    return tensor
+
 def gaussian_window(size, sigma):
     """用于 SSIM 计算的高斯窗口生成函数。"""
     coords = torch.arange(size, dtype=torch.float32)
@@ -12,7 +24,6 @@ def gaussian_window(size, sigma):
     g = torch.exp(-(coords ** 2) / (2 * sigma ** 2))
     g /= g.sum()
     return g.unsqueeze(0) * g.unsqueeze(1)
-
 
 class SSIM(nn.Module):
     """SSIM 结构相似性指标。[P12] as_loss=True 时不 clamp，保留梯度流。"""
@@ -44,8 +55,9 @@ class SSIM(nn.Module):
         C2 = (0.03) ** 2
         eps = 1e-8
 
-        ssim_map = ((2 * mu12 + C1) * (2 * sigma12 + C2)) / (
-            (mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2) + eps)
+        denom = ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2)).clamp_min(eps)
+        ssim_map = ((2 * mu12 + C1) * (2 * sigma12 + C2)) / denom
+        ssim_map = _safe_tensor(ssim_map, nan=0.0, posinf=1.0, neginf=-0.5)
         # [P12-FIX] 训练时用 soft clamp 保护：允许梯度流但限制在合理范围
         # 原版 as_loss=True 完全不 clamp，可能出现 >1 的值使 1-ssim 变负
         if not self.as_loss:
@@ -54,7 +66,6 @@ class SSIM(nn.Module):
             # soft clamp：限制在 [-0.5, 1.0] 范围，保护梯度但阻止极端值
             ssim_map = torch.clamp(ssim_map, -0.5, 1.0)
         return ssim_map.mean()
-
 
 class MSSSIM(nn.Module):
     """[P3] 多尺度 SSIM 损失：3 级降采样，加权融合对比度和结构分量。"""
@@ -85,8 +96,10 @@ class MSSSIM(nn.Module):
         s1_sq = torch.clamp(s1_sq, min=0)
         s2_sq = torch.clamp(s2_sq, min=0)
         C1, C2 = 0.01**2, 0.03**2
-        lum = (2*mu12 + C1) / (mu1_sq + mu2_sq + C1)
-        cs = (2*s12 + C2) / (s1_sq + s2_sq + C2)
+        lum = (2 * mu12 + C1) / (mu1_sq + mu2_sq + C1).clamp_min(1e-8)
+        cs = (2 * s12 + C2) / (s1_sq + s2_sq + C2).clamp_min(1e-8)
+        lum = _safe_tensor(lum, nan=0.0, posinf=1.0, neginf=-0.5, clamp=(-0.5, 1.0))
+        cs = _safe_tensor(cs, nan=0.0, posinf=1.0, neginf=0.0, clamp=(0.0, 1.0))
         return lum.mean(), cs.mean()
 
     def forward(self, img1, img2):

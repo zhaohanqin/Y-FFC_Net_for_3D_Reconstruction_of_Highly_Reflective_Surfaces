@@ -7,7 +7,7 @@ import torch.nn as nn
 
 from .losses import CompositeLoss
 from .models import YFFC
-from .training.simple_loop import train
+from .training.engine import train_model
 from .training.utils import EMA, replace_bn_with_gn
 
 
@@ -121,10 +121,12 @@ def main():
         try:
             with torch.no_grad():
                 out = model(test_input)
-            print(f"前向传播成功: r={out['r'].shape}, g={out['g'].shape}, b={out['b'].shape}")
+            print(f"前向传播成功: r={out['r'].shape}, g={out['g'].shape}, "
+                  f"b={out['b'].shape}, s={out['s'].shape}")
             assert out["r"].shape == test_input.shape
             assert out["g"].shape == test_input.shape
             assert out["b"].shape == test_input.shape
+            assert out["s"].shape == test_input.shape
             print("输出 shape 校验通过")
         except Exception as e:
             print(f"前向传播失败: {e}")
@@ -141,8 +143,10 @@ def main():
             gt_gradient = torch.rand_like(out['g'])
             with torch.no_grad():
                 loss, loss_dict = criterion(
-                    out['r'], target, out['b'], gt_specular, out['g'], gt_gradient, out.get('cs'))
-            print(f"CompositeLoss 前向成功, total={loss.item():.4f}")
+                    out['r'], target, out['b'], gt_specular,
+                    out['g'], gt_gradient, pred_s_lik=out['s'])
+            print(f"CompositeLoss 前向成功, total={loss.item():.4f}, "
+                  f"keys={list(loss_dict.keys())}")
         except Exception as e:
             print(f"损失函数测试失败: {e}")
 
@@ -168,6 +172,7 @@ def main():
             with torch.no_grad():
                 out_gn = model_gn(test_input)
             assert out_gn["r"].shape == test_input.shape
+            assert out_gn["s"].shape == test_input.shape
             print("BN->GN 替换后前向传播正常")
             del model_gn
         except Exception as e:
@@ -185,4 +190,35 @@ def main():
             args.use_augmentation = False
         if hasattr(args, 'no_ohem') and args.no_ohem:
             args.use_ohem = False
-        train(args)
+
+        image_size = (args.image_size, args.image_size)
+        cfg = {
+            'EPOCHS': args.epochs,
+            'BATCH_SIZE': args.batch_size,
+            'BASE_LR': args.base_lr,
+            'WEIGHT_DECAY': args.weight_decay,
+            'ACCUMULATION_STEPS': args.accumulation_steps,
+            'GRAD_CLIP_VALUE': 1.0,
+            'IMAGE_SIZE': image_size,
+            'TRAIN_SPLIT_RATIO': args.train_split_ratio,
+            'NUM_WORKERS': args.num_workers,
+            'USE_GN': args.use_gn,
+            'USE_EMA': args.use_ema,
+            'EMA_DECAY': args.ema_decay,
+            'USE_OHEM': args.use_ohem,
+            'USE_AMP': False,
+            'USE_HIGHLIGHT_AUG': args.use_augmentation,
+            'HIGHLIGHT_AUG_P': 0.5,
+            'INPUT_DIR': args.input_dir,
+            'TARGET_DIR': args.target_dir,
+            'VAL_INPUT_DIR': args.val_input_dir,
+            'VAL_TARGET_DIR': args.val_target_dir,
+            'SAVE_EVERY_N_EPOCHS': args.save_interval,
+            'VIS_EVERY_N_EPOCHS': 10,
+            'VIS_NUM_SAMPLES': 2,
+            'VIS_SAMPLE_SEED': None,
+            'USE_EARLY_STOPPING': False,
+            'EARLY_STOPPING_PATIENCE': 30,
+            'OUTPUT_FOLDER': args.save_dir,
+        }
+        train_model(cfg)

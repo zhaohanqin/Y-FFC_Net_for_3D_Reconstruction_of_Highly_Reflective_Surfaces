@@ -83,10 +83,11 @@ def train_model(cfg):
     print(f"  可训练: {trainable_params:,}  冻结: {total_params - trainable_params:,}")
 
     # ══════════ 2. 数据集 ══════════
+    # 默认开启合成高反光增强：只作用于训练集，验证集保持原图，避免评估被增强扰动。
     min_side = min(img_hw)  # 取短边计算高光半径
     if cfg.get('USE_HIGHLIGHT_AUG', True):
         hl_aug = HighlightAugmentation(
-            p=float(cfg.get('HIGHLIGHT_AUG_P', 0.5)), num_range=(1, 6),
+            p=float(cfg.get('HIGHLIGHT_AUG_P', 1.0)), num_range=(1, 6),
             radius_range=(3, max(5, min_side // 20)),
             intensity_range=(0.2, 0.7))
         aug = EnhancedPairedTransform(highlight_aug=hl_aug)
@@ -110,21 +111,12 @@ def train_model(cfg):
         full_ds_no_aug = ImprovedFringeDataset(
             cfg['INPUT_DIR'], cfg['TARGET_DIR'],
             resize=img_hw, paired_transform=None)
-        total_size = len(full_ds)
-        if total_size < 2:
-            raise ValueError("自动划分训练/验证至少需要 2 张图像；请增加数据或提供独立验证集。")
-        train_size = int(cfg['TRAIN_SPLIT_RATIO'] * total_size)
-        train_size = max(1, min(train_size, total_size - 1))
-        val_size = total_size - train_size
+        train_size = int(cfg['TRAIN_SPLIT_RATIO'] * len(full_ds))
+        val_size = len(full_ds) - train_size
         g = torch.Generator().manual_seed(42)
-        rand_idx = torch.randperm(total_size, generator=g).tolist()
+        rand_idx = torch.randperm(len(full_ds), generator=g).tolist()
         train_ds = torch.utils.data.Subset(full_ds, rand_idx[:train_size])
         val_ds = torch.utils.data.Subset(full_ds_no_aug, rand_idx[train_size:])
-
-    if len(train_ds) < cfg['BATCH_SIZE']:
-        raise ValueError(
-            f"训练样本数({len(train_ds)}) 小于 batch_size({cfg['BATCH_SIZE']})，"
-            "drop_last=True 会导致没有可训练 batch；请调小 batch_size 或增加数据。")
 
     train_loader = DataLoader(
         train_ds, batch_size=cfg['BATCH_SIZE'], shuffle=True,
@@ -135,6 +127,11 @@ def train_model(cfg):
         num_workers=cfg['NUM_WORKERS'],
         pin_memory=(device.type == 'cuda'))
 
+    print(f"数据集: 训练={len(train_ds)}, 验证={len(val_ds)}")
+    print(f"批次大小: {cfg['BATCH_SIZE']} × 累积{cfg['ACCUMULATION_STEPS']}"
+          f" = 等效 {cfg['BATCH_SIZE'] * cfg['ACCUMULATION_STEPS']}")
+
+    # 可视化使用单独固定样本集：每次训练随机抽一次，同一次训练全程不变
     vis_interval = int(cfg.get('VIS_EVERY_N_EPOCHS', 10))
     vis_num_samples = int(cfg.get('VIS_NUM_SAMPLES', 2))
     vis_loader = None
@@ -154,10 +151,6 @@ def train_model(cfg):
         cfg['VIS_SAMPLE_INDICES'] = []
         print("可视化样本: 已禁用")
 
-    print(f"数据集: 训练={len(train_ds)}, 验证={len(val_ds)}")
-    print(f"批次大小: {cfg['BATCH_SIZE']} × 累积{cfg['ACCUMULATION_STEPS']}"
-          f" = 等效 {cfg['BATCH_SIZE'] * cfg['ACCUMULATION_STEPS']}")
-
     # ══════════ 3. 损失函数 ══════════
     criterion = EnhancedCompositeLoss(
         use_perceptual=True, use_ohem=cfg['USE_OHEM']).to(device)
@@ -165,14 +158,12 @@ def train_model(cfg):
 
     # 打印损失函数结构
     print(f"\n损失函数: EnhancedCompositeLoss")
-    print(f"  use_perceptual={True}, use_ohem={cfg['USE_OHEM']}")
+    print(f"  use_perceptual={True}, use_ohem={cfg['USE_OHEM']}, use_amp={cfg['USE_AMP']}")
     print(f"  子损失项: {', '.join(SUB_LOSS_KEYS)}")
 
     # ══════════ 4. 优化器 + 调度器 ══════════
     print("\n分层学习率配置:")
     optimizer = build_optimizer_v2(model, cfg['BASE_LR'], cfg['WEIGHT_DECAY'])
-    if len(train_loader) == 0:
-        raise ValueError("训练 DataLoader 为空，请检查数据量、batch_size 和 drop_last 设置。")
     scheduler = build_scheduler(
         optimizer,
         warmup_iters=min(500, math.ceil(len(train_loader) / cfg['ACCUMULATION_STEPS']) * 3),
@@ -180,7 +171,7 @@ def train_model(cfg):
         iters_per_epoch=math.ceil(len(train_loader) / cfg['ACCUMULATION_STEPS']))
 
     # ══════════ 5. AMP + EMA ══════════
-    scaler = torch.amp.GradScaler('cuda', enabled=(device.type == 'cuda'))
+    scaler = torch.amp.GradScaler('cuda', enabled=(device.type == 'cuda' and cfg['USE_AMP']))
     ema = EMA(model, cfg['EMA_DECAY']) if cfg['USE_EMA'] else None
 
     # ══════════ 6. 历史记录 + 最优模型跟踪 ══════════
@@ -241,9 +232,6 @@ def train_model(cfg):
     print(f"  最新模型 -> {last_model_path}")
     print(f"  综合评分权重: SSIM×{COMPOSITE_ALPHA:.1f} + Loss归一化×{1 - COMPOSITE_ALPHA:.1f}")
 
-    # ══════════ 可视化间隔配置 ══════════
-    vis_interval = cfg.get('VIS_EVERY_N_EPOCHS', 10)  # 默认每 10 轮可视化一次
-
     # ══════════ 7. 训练循环 ══════════
     start_time_total = time.time()
     print(f"\n训练开始: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -261,7 +249,8 @@ def train_model(cfg):
             scaler, ema, device,
             accum=cfg['ACCUMULATION_STEPS'],
             max_norm=cfg['GRAD_CLIP_VALUE'],
-            epoch=ep, total_epochs=cfg['EPOCHS'])
+            epoch=ep, total_epochs=cfg['EPOCHS'],
+            use_amp=cfg['USE_AMP'])
 
         # --- 验证 ---
         if ema:

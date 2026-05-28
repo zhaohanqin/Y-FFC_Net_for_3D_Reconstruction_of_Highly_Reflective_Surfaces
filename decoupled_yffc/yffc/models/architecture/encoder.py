@@ -66,10 +66,10 @@ class Encoder(nn.Module):
          swin_8:  [B, 192, H/8,  W/8]
          swin_16: [B, 384, H/16, W/16]
       3. H/4 和 H/8 使用 AdaptiveSkipFusion 做内容自适应 skip 融合，增强 x_bb_2 / x_bb_3。
-      4. H/16 使用 CrossModalFusion(x_bb_4, swin_feat_16) 做瓶颈层融合。
+      4. H/16 仍沿用第一阶段 CrossModalFusion(x_bb_4, swin_feat_16) 做瓶颈层融合。
       5. 融合结果进入 cba_after_backbone、FFC bottleneck 和 HighFrequencyEnhancement。
 
-    不改 Decoder 接口，不引入 H/32 特征，不做多尺度 CrossModalFusion。
+    本阶段不改 Decoder 接口，不引入 H/32 特征，不做多尺度 CrossModalFusion。
     返回 5 级特征，保持后续 Decoder 的 skip connection 约定不变。
     """
 
@@ -114,11 +114,11 @@ class Encoder(nn.Module):
         self.fuse_h4 = AdaptiveSkipFusion(
             res_channels=128,
             swin_channels=self.swin_branch.channels_4,
-            init_beta=0.03)
+            init_beta=0.10)
         self.fuse_h8 = AdaptiveSkipFusion(
             res_channels=256,
             swin_channels=self.swin_branch.channels_8,
-            init_beta=0.05)
+            init_beta=0.15)
         self.swin16_proj = nn.Sequential(
             nn.Conv2d(self.swin_branch.channels_16, 512, kernel_size=1, stride=1, padding=0, bias=False),
             nn.BatchNorm2d(512),

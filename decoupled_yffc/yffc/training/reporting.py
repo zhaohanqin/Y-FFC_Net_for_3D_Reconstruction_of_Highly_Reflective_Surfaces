@@ -111,6 +111,8 @@ def save_training_summary(output_folder, cfg, history, best_info, total_time_str
         f.write(f'  Use EMA           : {cfg["USE_EMA"]}\n')
         f.write(f'  Use OHEM          : {cfg["USE_OHEM"]}\n')
         f.write(f'  Mixed Precision   : Enabled (AMP)\n')
+        f.write(f'  Val Vis Interval  : {cfg.get("VIS_EVERY_N_EPOCHS", 10)}\n')
+        f.write(f'  Val Vis Samples   : {cfg.get("VIS_NUM_SAMPLES", 2)}\n')
         f.write(f'  Val Vis Seed Used : {cfg.get("VIS_SAMPLE_SEED_USED")}\n')
         f.write(f'  Val Vis Indices   : {cfg.get("VIS_SAMPLE_INDICES", [])}\n\n')
 

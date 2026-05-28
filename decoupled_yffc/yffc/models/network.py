@@ -4,7 +4,7 @@ The original monolithic model implementation has been split into focused
 subpackages under yffc.models. Importing from this module remains supported.
 """
 
-from .common import _tukey_window, truncated_normal_
+from .common import _safe_tensor, _tukey_window, truncated_normal_
 from .attention import Attention_block, CrossModalFusion, SpecularAwareAttention
 from .blocks import (
     Conv2D_BN_activa,
@@ -23,6 +23,7 @@ from .architecture import (
     MainDecoder,
     YFFC,
     _SpectralDecompositionUnit,
+    cross_scale_consistency_loss,
 )
 
 __all__ = [name for name in globals() if not name.startswith('__')]

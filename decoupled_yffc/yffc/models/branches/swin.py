@@ -10,11 +10,21 @@ class SwinEncoderBranch(nn.Module):
     """
     Swin-Tiny 单通道多尺度上下文分支，输出 H/4、H/8、H/16 三个层级特征。
 
-    输入为 [B, 1, H, W]，不再 resize 到 224x224。若 H/W 不能被 32 整除，
-    先在右侧和下侧 padding，后续在 Encoder 中插值对齐到 ResNet 对应尺度。
+    输入为 [B, 1, H, W]，不再像旧 ViT 分支那样 resize 到 224x224。
+    Swin 直接在训练/推理 patch 的原始空间采样上建模；如果 H/W 不能被 32 整除，
+    只在右侧和下侧做必要 padding，后续在 Encoder 中插值对齐到 ResNet 对应尺度。
     torchvision Swin 中间特征为 NHWC，这里统一转回 NCHW。
 
+    对结构光条纹图像，这一点非常关键：强制 resize 会改变条纹频率、局部相位关系
+    和高光边界形态，可能破坏后续相位恢复所依赖的空间采样一致性。Swin 的窗口注意力
+    支持可变 patch 尺寸，因此可以保留原始 patch 内的相位、周期和细条纹位置关系。
+
+    在整个模型中的位置：
+        被 Encoder 调用，与 ResNet50 并行提取窗口上下文特征。
+        H/4 用于增强 x_bb_2，H/8 用于增强 x_bb_3，H/16 用于瓶颈层 CrossModalFusion。
+
     训练/推理建议：
+        第三阶段加入 AdaptiveSkipFusion 后显存会高于第一阶段。
         推荐输入 320x256、384x384、512x512 等 patch，尽量让 H/W 被 32 整除。
         大图不建议直接整图训练，推理时建议 sliding-window + overlap 融合。
     """
@@ -102,14 +112,15 @@ class AdaptiveSkipFusion(nn.Module):
     """
     轻量级自适应 Swin skip 融合模块。
 
-    先把 Swin skip 投影到 ResNet skip 的通道数，再根据
-    concat([res_feat, swin_proj]) 生成逐位置、逐通道 gate：
-        fused = res_feat + beta * gate * swin_proj
+    作用：
+      - 先把 Swin skip 投影到 ResNet skip 的通道数；
+      - 根据 concat([res_feat, swin_proj]) 生成逐位置、逐通道 gate；
+      - 使用 fused = res_feat + beta * gate * swin_proj 做内容自适应残差注入。
 
-    beta 初始为 0.0，让模型初始时接近纯 ResNet skip，避免突然改变 Decoder
-    已经适配的 skip 特征分布。gate 控制不同空间位置、不同通道上 Swin 上下文
-    注入多少。H/4、H/8 分辨率较高，因此这里使用轻量门控，不直接使用重型
-    CrossModalFusion；H/16 仍保留 CrossModalFusion 做瓶颈强交互。
+    beta 是整体强度控制参数，初始为 0.0，让模型初始时接近纯 ResNet skip，
+    避免突然改变 Decoder 已经适配的 skip 特征分布。gate 负责控制不同空间位置、
+    不同通道上 Swin 上下文注入多少。H/4、H/8 分辨率较高，因此这里使用轻量门控，
+    不直接使用重型 CrossModalFusion；H/16 仍保留 CrossModalFusion 做瓶颈强交互。
     """
 
     def __init__(self, res_channels, swin_channels, init_beta=0.03, gate_reduction=2):

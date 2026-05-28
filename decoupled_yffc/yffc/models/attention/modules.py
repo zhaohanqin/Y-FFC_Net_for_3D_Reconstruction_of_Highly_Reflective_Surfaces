@@ -4,6 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from ..common import _safe_tensor
+
 
 class Attention_block(nn.Module):
     """
@@ -39,7 +41,6 @@ class Attention_block(nn.Module):
         psi = self.psi(psi)
         return x * psi
 
-
 class CrossModalFusion(nn.Module):
     """
     轻量级 CNN-Transformer 双向交叉注意力融合模块。
@@ -53,6 +54,10 @@ class CrossModalFusion(nn.Module):
 
     使用 sr_ratio 对键值对做空间降采样，降低高分辨率特征上的注意力开销。
     本阶段只用于瓶颈层 H/16 融合，不用于 H/4、H/8 skip 融合。
+
+    输入含义：
+      - cnn_feat: ResNet 深层局部纹理特征
+      - context_feat: Swin H/16 窗口上下文特征
     """
 
     def __init__(self, cnn_dim, context_dim, out_dim, num_heads=4, sr_ratio=2):
@@ -89,7 +94,7 @@ class CrossModalFusion(nn.Module):
             nn.Sigmoid(),
         )
 
-        # 最终投影
+        # 最终投影：融合后再做一次局部卷积精炼。
         self.final_proj = nn.Sequential(
             nn.Conv2d(out_dim, out_dim, 3, 1, 1, bias=False),
             nn.BatchNorm2d(out_dim),
@@ -111,11 +116,11 @@ class CrossModalFusion(nn.Module):
         nh = self.num_heads
         hd = self.head_dim
 
-        q = q.reshape(B, nh, hd, H * W).permute(0, 1, 3, 2)   # (B, nh, HW, hd)
-        k = k.reshape(B, nh, hd, Hk * Wk).permute(0, 1, 3, 2) # (B, nh, HkWk, hd)
-        v = v.reshape(B, nh, hd, Hk * Wk).permute(0, 1, 3, 2) # (B, nh, HkWk, hd)
+        q = q.reshape(B, nh, hd, H * W).permute(0, 1, 3, 2)
+        k = k.reshape(B, nh, hd, Hk * Wk).permute(0, 1, 3, 2)
+        v = v.reshape(B, nh, hd, Hk * Wk).permute(0, 1, 3, 2)
 
-        attn = (q @ k.transpose(-2, -1)) * self.scale           # (B, nh, HW, HkWk)
+        attn = (q @ k.transpose(-2, -1)) * self.scale
         attn = attn.softmax(dim=-1)
         out = (attn @ v).permute(0, 1, 3, 2).reshape(B, C, H, W)
         return proj(out)
@@ -153,9 +158,7 @@ class CrossModalFusion(nn.Module):
         # 门控融合两个方向的结果。
         gate = self.gate(torch.cat([c2ctx_out, ctx2c_out], dim=1))
         fused = gate * c2ctx_out + (1.0 - gate) * ctx2c_out
-
         return self.final_proj(fused)
-
 
 class SpecularAwareAttention(nn.Module):
     """
@@ -186,6 +189,9 @@ class SpecularAwareAttention(nn.Module):
             nn.BatchNorm2d(in_channels),
             nn.Sigmoid(),
         )
+        # Keep the brightness-aware attention as a residual hint rather than
+        # multiplying every decoder stage by up to 2× at initialization.
+        self.att_scale = nn.Parameter(torch.tensor(0.20))
 
     def forward(self, features, original_input):
         inp = original_input
@@ -202,4 +208,5 @@ class SpecularAwareAttention(nn.Module):
             masks.append(torch.sigmoid(self.steepness * (spec_prior - eff_t)))
         multi_mask = torch.cat(masks, dim=1)
         att = self.modulation(torch.cat([features, multi_mask], dim=1))
-        return features * (1.0 + att)
+        scale = self.att_scale.clamp(0.0, 0.5)
+        return _safe_tensor(features * (1.0 + scale * att), nan=0.0, posinf=1.0e4, neginf=-1.0e4, clamp=(-1.0e4, 1.0e4))

@@ -42,13 +42,15 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scheduler,
             pred_diffuse = output['r']
             pred_grad = output['g']
             est_b = output['b']
+            pred_s_lik = output.get('s')
 
             with torch.amp.autocast(device_type='cuda', enabled=False):
                 loss, loss_dict = criterion(
                     pred_diffuse.float(), target_img.float(),
                     est_b.float(), gt_specular.float(),
                     pred_grad.float(), gt_gradient.float(),
-                    output.get('cs'))
+                    output.get('cs'), input_img=input_img.float(),
+                    pred_s_lik=pred_s_lik.float() if pred_s_lik is not None else None)
 
             loss = loss / accumulation_steps
 
@@ -105,7 +107,8 @@ def validate(model, dataloader, criterion, device):
         output = model(input_img)
         loss, loss_dict = criterion(
             output['r'], target_img, output['b'], gt_specular,
-            output['g'], gt_gradient, output.get('cs'))
+            output['g'], gt_gradient, output.get('cs'), input_img=input_img,
+            pred_s_lik=output.get('s'))
 
         running_loss += loss_dict['total']
         running_ssim += (1.0 - loss_dict['ssim'])
@@ -149,7 +152,6 @@ def train(args):
         print("[Aug] 已启用 EnhancedPairedTransform + HighlightAugmentation(p=0.5)")
     else:
         paired_aug = None
-
     full_train_dataset = FringeDataset(args.input_dir, args.target_dir,
                                        resize=args.image_size, paired_transform=paired_aug)
     if args.val_input_dir and args.val_target_dir:
@@ -191,9 +193,9 @@ def train(args):
 
     # 优化器 + 调度器
     optimizer = build_optimizer(model, base_lr=args.base_lr, weight_decay=args.weight_decay)
-    if len(train_loader) == 0:
-        raise ValueError("训练 DataLoader 为空，请检查数据量、batch_size 和 drop_last 设置。")
     iters_per_epoch = math.ceil(len(train_loader) / args.accumulation_steps)
+    if iters_per_epoch == 0:
+        raise ValueError("训练 DataLoader 为空，请检查数据量、batch_size 和 drop_last 设置。")
     scheduler = build_scheduler(optimizer, warmup_iters=min(500, iters_per_epoch * 3),
                                 total_epochs=args.epochs, iters_per_epoch=iters_per_epoch)
 
@@ -260,8 +262,7 @@ def train(args):
             ckpt_path = os.path.join(args.save_dir, f'checkpoint_epoch{epoch + 1}.pth')
             os.makedirs(args.save_dir, exist_ok=True)
             torch.save({'epoch': epoch + 1, 'model_state_dict': model.state_dict(),
-                        'optimizer_state_dict': optimizer.state_dict(),
-                        'image_size': args.image_size}, ckpt_path)
+                        'optimizer_state_dict': optimizer.state_dict()}, ckpt_path)
 
     print("=" * 70)
     print(f"训练完成！最佳 SSIM: {best_val_ssim:.4f}")
