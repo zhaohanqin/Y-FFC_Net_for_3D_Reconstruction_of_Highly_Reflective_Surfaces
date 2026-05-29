@@ -10,7 +10,7 @@
 
 ## 顶层入口
 
-- `train.py`：推荐的增强训练入口，配置块风格与根目录 `train.py` 保持一致。
+- `train.py`：推荐的增强训练入口，配置块风格与根目录 `train.py` 保持一致，并转发到 `yffc.training.engine.train_model`。
 - `Y_FFC_unified.py`：兼容入口，转发到拆分后的 `yffc.cli`，用于保留类似旧单文件的 `test/train` 子命令。
 - `README.md`：当前文件，说明拆分结构和使用方式。
 
@@ -23,7 +23,7 @@
 - `yffc/models/blocks/`：卷积、上采样、多尺度卷积等通用块。
 - `yffc/models/ffc/`：Fast Fourier Convolution 相关模块。
 - `yffc/models/heads/`：高频增强和残差精修头。
-- `yffc/losses/`：SSIM/MS-SSIM、感知损失、频域损失、specular focal/dice、梯度一致性和复合损失。
+- `yffc/losses/`：SSIM/MS-SSIM、Charbonnier、感知损失、频域损失、specular focal/dice、梯度一致性，以及包含 `s_lik`、`spec_peak`、`r_focal_hl`、`r_dual_cons`、`r_smooth` 的增强复合损失。
 - `yffc/data/`：数据集和配对增强。
 - `yffc/training/`：训练循环、优化器、EMA、scheduler、指标记录、可视化、报告和增强训练编排。
 - `yffc/cli.py`：兼容 `Y_FFC_unified.py train/test` 的命令行入口。
@@ -42,15 +42,21 @@ cd decoupled_yffc
 python train.py
 ```
 
-`train.py` 内部集中配置训练参数。当前默认值已与根目录 `train.py` 对齐，包括：
+`train.py` 内部集中配置训练参数。当前默认值已与当前拆分实现对齐，包括：
 
+- `EPOCHS = 50`
+- `BATCH_SIZE = 3`
+- `BASE_LR = 2e-4`
+- `ACCUMULATION_STEPS = 3`
+- `GRAD_CLIP_VALUE = 1.0`
 - `IMAGE_SIZE = (128, 160)`
 - `INPUT_DIR = 'data2/inputs'`
 - `TARGET_DIR = 'data2/targets'`
 - `USE_GN = True`
-- `USE_EMA = True`
+- `USE_EMA = True`（`EMA_DECAY = 0.9995`）
 - `USE_OHEM = True`
-- `EnhancedPairedTransform + HighlightAugmentation(p=0.5)`
+- `USE_AMP = False`
+- `USE_HIGHLIGHT_AUG = True`，并使用 `HighlightAugmentation(p=0.5)`
 
 ## X-FFC-Swin 结构要点
 
@@ -88,7 +94,7 @@ cd decoupled_yffc
 python Y_FFC_unified.py train --input_dir data2/inputs --target_dir data2/targets --use_gn --use_ema
 ```
 
-CLI 训练默认也会启用合成高光增强和 OHEM；如果需要关闭：
+CLI `train` 子命令默认会启用合成高光增强和 OHEM；如果需要关闭：
 
 ```powershell
 python Y_FFC_unified.py train --input_dir data2/inputs --target_dir data2/targets --no_augmentation --no_ohem
@@ -104,8 +110,8 @@ python Y_FFC_unified.py train --input_dir data2/inputs --target_dir data2/target
 4. `HighlightAugmentation` 会随机叠加高斯 blob 高反光，并同步更新 `gt_specular`。
 5. 没有独立验证集时，使用固定 seed 自动划分训练/验证，验证集不做增强。
 6. 使用 `EnhancedCompositeLoss(use_ohem=USE_OHEM)`，训练循环会把模型输出里的 `cs` 传入复合损失。
-7. 使用 `ImprovedWeightScheduler` 动态调度 `ssim/l1/freq/spec/grad/focal/dice/gc/cs` 等损失权重。
-8. 使用 `build_optimizer_v2` 分层学习率，`encoder.swin_branch.swin` 使用低学习率，`fuse_h4/fuse_h8/swin16_proj/refinement_head/top_down_refine` 作为新模块使用 base LR。
+7. 使用 `ImprovedWeightScheduler` 动态更新损失权重：当前策略以常量权重为主，仅 `grad_spec` 与 `r_smooth` 在后期退火，`lambda_s_cons` 固定为 `0.0`。
+8. 使用 `build_optimizer_v2` 分层学习率：`encoder.swin_branch.swin` 使用低学习率（`0.1x base_lr`），`fuse_h4/fuse_h8/swin16_proj/refinement_head/top_down_refine` 等新模块使用 `base_lr`。
 9. scheduler 只在真实 `optimizer.step()` 后推进，避免梯度累积时学习率走快。
 10. 训练日志会打印 `fuse_h4.beta`、`fuse_h8.beta` 和 gate mean，用于观察 Swin skip 是否被模型使用。
 11. 验证和可视化时可临时切换 EMA 权重。
@@ -121,6 +127,17 @@ python Y_FFC_unified.py train --input_dir data2/inputs --target_dir data2/target
 - 从文件名提取数字后尝试 `target_{digits}{ext}`。
 
 如果无法匹配，会抛出 `FileNotFoundError`。
+
+## 当前损失设计要点
+
+当前 `EnhancedCompositeLoss` 相比旧版 README 中的描述又补充了几项关键监督：
+
+- `l_s_lik`：对高光概率图 `pred_s_lik` 做二值高光监督，使用带 `pos_weight` 的 BCE + Dice，提升高反光区域的可见性。
+- `l_spec_peak`：对高光区域的 `est_b` 欠预测进行单侧惩罚。
+- `l_r_focal_hl`：在高光区域直接约束 `pred_r` 与目标漫反射的一致性。
+- `l_r_dual_cons`：约束 `pred_r_direct` 与最终 `pred_r` 的一致性。
+- `l_r_smooth`：对高光区域的漫反射结果加入局部平滑先验。
+- `l_grad_spec`：当前使用 `gt_specular` 的 Sobel 结果作为稳定监督目标，避免动态目标带来的中期回升。
 
 ## 注意
 
