@@ -1216,6 +1216,14 @@ def save_training_summary(output_folder, cfg, history, best_info, total_time_str
     final_vl_mae  = history['val_maes'][-1]     if history['val_maes']     else float('nan')
     final_vl_mse  = history['val_mses'][-1]     if history.get('val_mses') else None
     final_vl_psnr = history['val_psnrs'][-1]    if history.get('val_psnrs') else None
+    final_tr_mse  = history['train_mses'][-1]   if history.get('train_mses') else None
+    final_tr_psnr = history['train_psnrs'][-1]  if history.get('train_psnrs') else None
+
+    def _fmt(val, spec, suffix=''):
+        """安全格式化：None / NaN 显示为 N/A，否则按 spec 格式并附加 suffix。"""
+        if val is None or (isinstance(val, float) and math.isnan(val)):
+            return 'N/A'
+        return format(val, spec) + suffix
 
     sep = '=' * 64 + '\n'
     sep2 = '-' * 64 + '\n'
@@ -1261,13 +1269,16 @@ def save_training_summary(output_folder, cfg, history, best_info, total_time_str
             f.write(f'  {tag}\n')
             f.write(sep2)
             f.write(f'  Epoch             : {info["epoch"]}\n')
-            f.write(f'  Val Loss          : {info["loss"]:.6f}\n')
-            f.write(f'  Val SSIM          : {info["ssim"]:.4f}\n')
-            f.write(f'  Val MAE           : {info["mae"]:.6f}\n')
-            if 'mse' in info and info['mse'] is not None:
-                f.write(f'  Val MSE           : {info["mse"]:.6f}\n')
-            if 'psnr' in info and info['psnr'] is not None:
-                f.write(f'  Val PSNR          : {info["psnr"]:.2f} dB\n')
+            f.write(f'  Train Loss        : {_fmt(info.get("train_loss"), ".6f")}\n')
+            f.write(f'  Val   Loss        : {_fmt(info.get("loss"), ".6f")}\n')
+            f.write(f'  Train SSIM        : {_fmt(info.get("train_ssim"), ".4f")}\n')
+            f.write(f'  Val   SSIM        : {_fmt(info.get("ssim"), ".4f")}\n')
+            f.write(f'  Train MAE         : {_fmt(info.get("train_mae"), ".6f")}\n')
+            f.write(f'  Val   MAE         : {_fmt(info.get("mae"), ".6f")}\n')
+            f.write(f'  Train MSE         : {_fmt(info.get("train_mse"), ".6f")}\n')
+            f.write(f'  Val   MSE         : {_fmt(info.get("mse"), ".6f")}\n')
+            f.write(f'  Train PSNR        : {_fmt(info.get("train_psnr"), ".2f", " dB")}\n')
+            f.write(f'  Val   PSNR        : {_fmt(info.get("psnr"), ".2f", " dB")}\n')
             f.write(f'  Saved Path        : {info["path"]}\n\n')
 
         # ③ 最终 epoch（含子损失分解）
@@ -1281,10 +1292,10 @@ def save_training_summary(output_folder, cfg, history, best_info, total_time_str
         f.write(f'  Val   SSIM        : {final_vl_ssim:.4f}\n')
         f.write(f'  Train MAE         : {final_tr_mae:.6f}\n')
         f.write(f'  Val   MAE         : {final_vl_mae:.6f}\n')
-        if final_vl_mse is not None:
-            f.write(f'  Val   MSE         : {final_vl_mse:.6f}\n')
-        if final_vl_psnr is not None:
-            f.write(f'  Val   PSNR        : {final_vl_psnr:.2f} dB\n')
+        f.write(f'  Train MSE         : {_fmt(final_tr_mse, ".6f")}\n')
+        f.write(f'  Val   MSE         : {_fmt(final_vl_mse, ".6f")}\n')
+        f.write(f'  Train PSNR        : {_fmt(final_tr_psnr, ".2f", " dB")}\n')
+        f.write(f'  Val   PSNR        : {_fmt(final_vl_psnr, ".2f", " dB")}\n')
 
         # 子损失分解（最终 epoch）
         val_sub = history.get('val_sub_losses', {})
@@ -1495,16 +1506,18 @@ def train_model(cfg):
     best_val_ssim   = 0.0
     best_val_loss   = float('inf')
 
+    # 每个最优模型同时记录训练 (train_*) 与验证 (loss/ssim/mae/mse/psnr) 指标，
+    # 便于在总结中同步展示该 epoch 的 Train / Val 全量指标。
+    _best_info_init = lambda path: {
+        'epoch': 0, 'loss': float('inf'), 'ssim': 0.0, 'mae': float('inf'),
+        'mse': None, 'psnr': None,
+        'train_loss': None, 'train_ssim': None, 'train_mae': None,
+        'train_mse': None, 'train_psnr': None,
+        'path': path}
     best_info = {
-        'Best Overall (SSIM×0.7 + NormLoss×0.3)': {
-            'epoch': 0, 'loss': float('inf'), 'ssim': 0.0, 'mae': float('inf'),
-            'mse': None, 'psnr': None, 'path': best_composite_path},
-        'Best SSIM': {
-            'epoch': 0, 'loss': float('inf'), 'ssim': 0.0, 'mae': float('inf'),
-            'mse': None, 'psnr': None, 'path': best_ssim_path},
-        'Best Loss': {
-            'epoch': 0, 'loss': float('inf'), 'ssim': 0.0, 'mae': float('inf'),
-            'mse': None, 'psnr': None, 'path': best_loss_path},
+        'Best Overall (SSIM×0.7 + NormLoss×0.3)': _best_info_init(best_composite_path),
+        'Best SSIM': _best_info_init(best_ssim_path),
+        'Best Loss': _best_info_init(best_loss_path),
     }
 
     # 早停
@@ -1652,7 +1665,9 @@ def train_model(cfg):
             improved_flags.append(f'综合↑{composite:.4f}')
             best_info['Best Overall (SSIM×0.7 + NormLoss×0.3)'].update(
                 {'epoch': ep + 1, 'loss': vl, 'ssim': vs, 'mae': vm,
-                 'mse': val_mse, 'psnr': val_psnr})
+                 'mse': val_mse, 'psnr': val_psnr,
+                 'train_loss': tl, 'train_ssim': ts, 'train_mae': tm,
+                 'train_mse': train_mse, 'train_psnr': train_psnr})
         else:
             early_stopping_counter += 1
 
@@ -1663,7 +1678,9 @@ def train_model(cfg):
             improved_flags.append(f'SSIM↑{vs:.4f}')
             best_info['Best SSIM'].update(
                 {'epoch': ep + 1, 'loss': vl, 'ssim': vs, 'mae': vm,
-                 'mse': val_mse, 'psnr': val_psnr})
+                 'mse': val_mse, 'psnr': val_psnr,
+                 'train_loss': tl, 'train_ssim': ts, 'train_mae': tm,
+                 'train_mse': train_mse, 'train_psnr': train_psnr})
 
         # 策略 C：Loss 最优
         if vl < best_val_loss:
@@ -1672,7 +1689,9 @@ def train_model(cfg):
             improved_flags.append(f'Loss↓{vl:.6f}')
             best_info['Best Loss'].update(
                 {'epoch': ep + 1, 'loss': vl, 'ssim': vs, 'mae': vm,
-                 'mse': val_mse, 'psnr': val_psnr})
+                 'mse': val_mse, 'psnr': val_psnr,
+                 'train_loss': tl, 'train_ssim': ts, 'train_mae': tm,
+                 'train_mse': train_mse, 'train_psnr': train_psnr})
 
         if improved_flags:
             print(f"  ✅ 模型更新: {' | '.join(improved_flags)}")
@@ -1828,7 +1847,7 @@ def main():
     # ╚══════════════════════════════════════════════════════════════╝
 
     # ========== 基础训练参数 ==========
-    EPOCHS                = 50       # 训练总轮数
+    EPOCHS                = 5       # 训练总轮数
     BATCH_SIZE            = 3         # 384 分辨率推荐 2~4
     # ★[V3.2 调整] BASE_LR 1e-4 → 2e-4
     # 原因：V3.2 新增 dual-head 与 r 系列损失，新结构从头训练，1e-4 收敛过慢。
@@ -1862,10 +1881,10 @@ def main():
     VAL_TARGET_DIR        = None     # 独立验证集目标目录
 
     # ========== 模型保存与检查点 ==========
-    SAVE_EVERY_N_EPOCHS   = 20       # 每 N 轮保存检查点（0=不保存）
+    SAVE_EVERY_N_EPOCHS   = 10       # 每 N 轮保存检查点（0=不保存）
 
     # ========== 可视化间隔 ==========
-    VIS_EVERY_N_EPOCHS    = 10       # 每 N 轮保存验证样本可视化（0=不保存）
+    VIS_EVERY_N_EPOCHS    = 1       # 每 N 轮保存验证样本可视化（0=不保存）
     VIS_NUM_SAMPLES       = 2        # 每次保存几张固定验证样本
     VIS_SAMPLE_SEED       = None     # None=每次训练随机抽样；填整数可复现同一批图像
 
