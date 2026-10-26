@@ -5,7 +5,7 @@ train_single_encoder.py — 消融实验 C 训练入口（去除 Swin 编码分�
 
 薄包装方式复用 train.py 全部流程，相对 train.py 的修改清单：
   - [新增] set_global_seed()：全局随机种子 42
-  - [修改] 模型类：YFFC → Y_FFC_single_encoder.YFFC_SingleEncoder
+  - [修改] 模型类：XFFC → X_FFC_single_encoder.YFFC_SingleEncoder
   - [修改] OUTPUT_FOLDER → experiments/ablation_single_encoder_<时间戳>
   - [修改] VIS_SAMPLE_SEED：None → 42
   - 损失函数、权重调度、优化器、LR 调度、数据管线全部零修改
@@ -30,12 +30,12 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 import train as base_train
-from Y_FFC_single_encoder import YFFC_SingleEncoder
+from X_FFC_single_encoder import YFFC_SingleEncoder
 
 # ════════════════════════════════════════════════════════════════════
 # ★ 核心修改：替换 train.train_model 内部实例化的模型类
 # ════════════════════════════════════════════════════════════════════
-base_train.YFFC = YFFC_SingleEncoder
+base_train.XFFC = YFFC_SingleEncoder
 
 GLOBAL_SEED = 42
 
@@ -51,7 +51,7 @@ def set_global_seed(seed=GLOBAL_SEED):
 def main():
     print("=" * 60)
     print("消融实验 C：去除 Swin 编码分支 (双编码器 → 单 ResNet50 编码器)")
-    print("模型类:", base_train.YFFC.__name__)
+    print("模型类:", base_train.XFFC.__name__)
     print("=" * 60)
     set_global_seed()
 

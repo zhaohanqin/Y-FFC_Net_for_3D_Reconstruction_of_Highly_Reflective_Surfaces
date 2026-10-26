@@ -1,0 +1,319 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-32-node-753-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 62f448c2d891005875eb66592cad65b9ddd52734223e0783c28a082b4e94141e
+  - elementId: slide-32-node-754-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">07 · MAIN DECODER · LEVEL 3</span></p>
+    sourceLayout: 9ef0902457297ae309de6c8a9337615b14316a6c8bdae343eee9e8b4083edca1
+  - elementId: slide-32-node-755-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">MainDecoder Level 3 (H/4) · 输入输出 (重点)</span></p>
+    sourceLayout: c38d49a2d4fba880983256423c8ed7f479ee62d7051c7d20e752923229eafb21
+  - elementId: slide-32-node-756-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">32 / 50</span></p>
+    sourceLayout: f199cb3fb79c9b344c1d7bb95676fdef22a0ea626e942233ecf10d9895abe055
+  - elementId: slide-32-node-757-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: 44ea4c7b7ade1724d928f7a2165df23e4ef183e52ea9e697b69aeb2696c85e49
+  - elementId: slide-32-node-758-Shape-5
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 288
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 37ca2b5bdac2cc5edde9b43a07242f84c32f363d9922fce7ad066e753ed1172c
+  - elementId: slide-32-node-759-Shape-6
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 5.76
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#7C3AED'
+    border:
+      style: solid
+      width: 1
+      color: '#7C3AED'
+    sourceLayout: b06dae26ab19fed0a6076e8d1f1eb726302005e9d0b1a792672bdde2a00c3fc3
+  - elementId: slide-32-node-760-Text-7
+    elementType: text
+    bounds:
+      - 50.4
+      - 115.2
+      - 266.4
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">输入</span></p>
+    sourceLayout: 38356553a925fc4b1406b6efb46be9cb0691f5b3559c1e0e6568b7dcc57ab702
+  - elementId: slide-32-node-761-Text-8
+    elementType: text
+    bounds:
+      - 50.4
+      - 140.4
+      - 266.4
+      - 352.8
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#0D9488'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:12px;font-family:Calibri;font-weight:700">L2 输出</span><span style="color:#1F2937;font-size:11px;font-family:Consolas">  [B, ~704, H/8, W/8]</span></p><p><span style="color:#000000;font-size:5px;font-family:Calibri"> </span></p><p><span style="color:#0D9488;font-size:12px;font-family:Consolas;font-weight:700">x_bb_2</span><span style="color:#1F2937;font-size:11px;font-family:Consolas">  [B, 128, H/4, W/4]</span></p><p><span style="color:#475569;font-size:10px;font-family:Calibri">    Encoder H/4 skip (已经过 ASF 与 TopDown)</span></p><p><span style="color:#000000;font-size:5px;font-family:Calibri"> </span></p><p><span style="color:#10B981;font-size:12px;font-family:Consolas;font-weight:700">enh3</span><span style="color:#1F2937;font-size:11px;font-family:Consolas">  [B, 32, H/4, W/4]</span></p><p><span style="color:#000000;font-size:5px;font-family:Calibri"> </span></p><p><span style="color:#DB2777;font-size:12px;font-family:Consolas;font-weight:700">g, s, x</span><span style="color:#1F2937;font-size:11px;font-family:Consolas">  → resize 到 H/4</span></p>
+    sourceLayout: 3b87849889d253d8e6c57d7d4eadf8b95c428cc581637f9c50d10fbe9f3028c1
+  - elementId: slide-32-node-762-Shape-9
+    elementType: shape
+    bounds:
+      - 338.4
+      - 108
+      - 324
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: d73d006c1c5a1d0bd4a7db396c0a72706a43ac036c9f770ffa6bf178c01d580f
+  - elementId: slide-32-node-763-Shape-10
+    elementType: shape
+    bounds:
+      - 338.4
+      - 108
+      - 5.76
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: d6e5ae8bcbed9b15f9aca3fdaaff09b0185d8a1ce441243c943724995b201526
+  - elementId: slide-32-node-764-Text-11
+    elementType: text
+    bounds:
+      - 352.8
+      - 115.2
+      - 302.4
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">内部数据流</span></p>
+    sourceLayout: 8bdafc73bfc094fb4fb1d11fff3b6ae642f7a3eef3ffc1b19a5f417da94489a7
+  - elementId: slide-32-node-765-Shape-12
+    elementType: shape
+    bounds:
+      - 352.8
+      - 144
+      - 302.4
+      - 349.2
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0F172A'
+    border:
+      style: solid
+      width: 1
+      color: '#0F172A'
+    sourceLayout: 4cd3c34c2fab008bbd0860ef26f735b0fd847c7876527728a432cc98879e77d5
+  - elementId: slide-32-node-766-Text-13
+    elementType: text
+    bounds:
+      - 363.6
+      - 151.2
+      - 280.8
+      - 334.8
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#E2E8F0'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas"># (1) 多分支特征提取</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">x = FeatureExtrationLayersB(L2_out)</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">#   4 路 conv 分支 cat</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">#   -&gt; 640 通道</span></p><p></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas"># (2) 空间上采 *2</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">x = TransposedConvBlock(x)</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">#   -&gt; 192 通道, H/4 分辨率</span></p><p></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas"># (3) H/4 频域增强</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">x = FFC_H4(x)</span></p><p></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas"># (4) 三路先验调制</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">g_4 = resize(g, H/4)</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">s_4 = resize(s, H/4)</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">x_4 = resize(orig_x, H/4)</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">x = x * (1</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">       + a1 * grad_gate_3(g_4)</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">       + a2 * joint_gate_3(</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">              [g_4,x_4,s_4])</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">       + a3 * spec_lik_gate_3(s_4))</span></p><p></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas"># (5) 高光感知 sa3</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">x = SpecularAwareAttention(x, x_orig)</span></p><p></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas"># (6) Skip 门控 att3</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">gated_xbb2 = Attention_block(x, x_bb_2)</span></p><p></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas"># (7) cat 三路特征</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">x = cat(x, gated_xbb2, enh3)</span></p>
+    sourceLayout: 194e227b604c7186a58c8027affd365d6ce364d57904b8e95fee6a144ad2c70d
+  - elementId: slide-32-node-767-Shape-14
+    elementType: shape
+    bounds:
+      - 676.8
+      - 108
+      - 248.4
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: f25901784174551d509f5d1e1f800f417bf9463d79129fcea03b4fe21747f730
+  - elementId: slide-32-node-768-Shape-15
+    elementType: shape
+    bounds:
+      - 676.8
+      - 108
+      - 5.76
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0D9488'
+    border:
+      style: solid
+      width: 1
+      color: '#0D9488'
+    sourceLayout: f416b0e974d60b1ba102df76ffd907c99c356767690cafb37c36a3c44f043a3e
+  - elementId: slide-32-node-769-Text-16
+    elementType: text
+    bounds:
+      - 691.2
+      - 115.2
+      - 223.2
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">输出</span></p>
+    sourceLayout: d86ac5220c91438295bc62bf1c3722cfd020d865ceed3c40c765f2044551afee
+  - elementId: slide-32-node-770-Text-17
+    elementType: text
+    bounds:
+      - 691.2
+      - 140.4
+      - 223.2
+      - 352.8
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#0D9488'
+      align:
+        - left
+        - top
+      wrap: true
+      text: '<p><span style="color:#0D9488;font-size:12px;font-family:Calibri;font-weight:700">L3 输出特征</span><span style="color:#1F2937;font-size:11px;font-family:Consolas">  形状: [B, ~352, H/4, W/4]</span></p><p><span style="color:#475569;font-size:10px;font-family:Consolas">  组成: 192 + 128 + 32</span></p><p><span style="color:#000000;font-size:5px;font-family:Calibri"> </span></p><p><span style="color:#7C3AED;font-size:12px;font-family:Calibri;font-weight:700">本级特点</span><span style="color:#1F2937;font-size:10.5px;font-family:Calibri">  · H/4 是条纹细节关键尺度</span></p><p><span style="color:#1F2937;font-size:10.5px;font-family:Calibri">  · 4 路 FeatureExtractionB 提供多视野</span></p><p><span style="color:#1F2937;font-size:10.5px;font-family:Calibri">  · FFC_H4 保留频域全局感受野</span></p><p><span style="color:#000000;font-size:5px;font-family:Calibri"> </span></p><p><span style="color:#DB2777;font-size:12px;font-family:Calibri;font-weight:700">去向</span><span style="color:#1F2937;font-size:10.5px;font-family:Calibri">  → Level 4 (H/2) TransposedConvBlock ↑×2</span></p>'
+    sourceLayout: 385ec8245e39fdf095ee11d4bb7eb056f4e984f1e2707bbd64d11014edf4df17
+  - elementId: slide-32-node-771-Text-18
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: 123c7d8941cf958681eb8f411f669d95bafcbf968d150326eb7c4a1095bdb0cc

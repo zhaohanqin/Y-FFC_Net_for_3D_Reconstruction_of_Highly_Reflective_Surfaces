@@ -1,0 +1,133 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-36-node-824-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: cf7acc71ec44cc52e06a24f234488c7e2271ebfe11994ee8923900194894345a
+  - elementId: slide-36-node-825-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">08 · FUSION + REFINEMENT</span></p>
+    sourceLayout: 8a985cb8ac0a1925e5f3c9aebd89c809bf8521b15ac584bb81e5005ec28fe987
+  - elementId: slide-36-node-826-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">双路漫反射融合 + ResidualRefinementHead</span></p>
+    sourceLayout: 9ca12d3113f5167245443b7563cccc1b72290f83934c5582737ebf5be07f30ab
+  - elementId: slide-36-node-827-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">36 / 50</span></p>
+    sourceLayout: a30593aea07148b2bfa9734976f9dff13242fa003fe8c36892d910b0303ba75c
+  - elementId: slide-36-node-828-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: ac59ceb706a72d40ebea87c6b0c411edbe2a27ebd2b9838cf49c178512c2e29b
+  - elementId: slide-36-node-829-Image-0
+    elementType: image
+    bounds:
+      - 161.793
+      - 104.4
+      - 636.174
+      - 356.4
+    src: media/8e3cbe6b70410904c9f3342d.png
+    fit:
+      mode: fill
+    sourceLayout: 16a1ed6756715af85f3bc7b873dcd62f34bbc25b1ff0e78a5ee2caca0094345a
+  - elementId: slide-36-node-830-Text-5
+    elementType: text
+    bounds:
+      - 36
+      - 471.6
+      - 885.6
+      - 39.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11.5
+      color: '#475569'
+      align:
+        - center
+        - top
+      wrap: true
+      text: <p><span style="color:#475569;font-size:11.5px;font-style:italic">r_sub = clamp(x − b, 0, 1) 是物理减法路径; r_direct 是解码器直接预测; α = sigmoid(alpha_logit) 自适应融合两路; ResidualRefinementHead 做 ±0.15 的像素级微调。</span></p>
+    sourceLayout: 66e38b87899b561a5b100ffb187bc8dba0dbeed3ce31af47f9fca5914ad6744e
+  - elementId: slide-36-node-831-Text-6
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: 8bb41254f33a78c9234fa358b452547f5e992f0ddd3316ebc731d9728b0dd696

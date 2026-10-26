@@ -1,0 +1,706 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-21-node-482-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 95c647bdc1b2b782f4824ffc20af67e3043abce1eb5d64eb919fb8faac4d2c01
+  - elementId: slide-21-node-483-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">05 · GRADIENT DECODER · PER-BLOCK I/O</span></p>
+    sourceLayout: 75ca2347f0d91d4f2c2cbbce1d1bd5f5874d004f747bb243fe87ab53bbba3a18
+  - elementId: slide-21-node-484-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">GradientDecoder · 每一级 Block 的输入与输出 (重点)</span></p>
+    sourceLayout: 7a354d91ebc5f2addc7494912d737940bf304ad1471ba3c7b9d35b66797d2b37
+  - elementId: slide-21-node-485-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">21 / 50</span></p>
+    sourceLayout: 99949113d05cebcaa25ed1a253e4addc53277252c73b88ce223b35d20a0de9d0
+  - elementId: slide-21-node-486-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: 413ce8a3344b6ca8fdef275f69d56ca402f55a87dccced5ceb5355ae7dd813a1
+  - elementId: slide-21-node-487-Text-5
+    elementType: text
+    bounds:
+      - 36
+      - 100.8
+      - 885.6
+      - 28.8
+    content:
+      fontFamily: Consolas
+      fontSize: 12
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:12px;font-family:Consolas;font-style:italic">forward(backbone_features, x_c, original_input) → (xe1, xe2, xe3, xe4, x_g, x_s)</span></p>
+    sourceLayout: acfd4b6339fd8f0bbd495cea2a9cce3e71f7bb244c8d2d2518df380ab3d30b6c
+  - elementId: slide-21-node-488-Shape-6
+    elementType: shape
+    bounds:
+      - 36
+      - 140.4
+      - 889.2
+      - 30.24
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 22f97f0ac091819eacecf0c14b3e4a21a64e6e3a4292e185bf0f202346ffa686
+  - elementId: slide-21-node-489-Text-7
+    elementType: text
+    bounds:
+      - 43.2
+      - 140.4
+      - 90
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:12px;font-weight:700">Block</span></p>
+    sourceLayout: 4b3bd0be02cd33c4610c909d15134531196c4be7f815d24268d1b7238e3a5d00
+  - elementId: slide-21-node-490-Text-8
+    elementType: text
+    bounds:
+      - 144
+      - 140.4
+      - 205.2
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:12px;font-weight:700">输入张量</span></p>
+    sourceLayout: 9f13411e2f982abffe0bde30f298ecf748e1baf35a5225a672f47d9fb7cd1ce8
+  - elementId: slide-21-node-491-Text-9
+    elementType: text
+    bounds:
+      - 360
+      - 140.4
+      - 316.8
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:12px;font-weight:700">内部主要操作</span></p>
+    sourceLayout: d2b11226c18ae52acfb869404701d12d4c0d3298f34a227836deaef5390f3f03
+  - elementId: slide-21-node-492-Text-10
+    elementType: text
+    bounds:
+      - 687.6
+      - 140.4
+      - 234
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:12px;font-weight:700">输出 (形状)</span></p>
+    sourceLayout: 85c75c7b8dbb8a56efbbd7d856f048f94c530f4244de1a04fee819d8225fed78
+  - elementId: slide-21-node-493-Shape-11
+    elementType: shape
+    bounds:
+      - 36
+      - 170.64
+      - 889.2
+      - 68.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.5
+      color: '#E2E8F0'
+    sourceLayout: 503dfbb5caef116313403f52f95e29173b30d199d8ad94f605f882b422b892e1
+  - elementId: slide-21-node-494-Shape-12
+    elementType: shape
+    bounds:
+      - 36
+      - 170.64
+      - 5.76
+      - 68.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#DB2777'
+    border:
+      style: solid
+      width: 1
+      color: '#DB2777'
+    sourceLayout: e2999ab0efabbe9a742c7f05628ac9d3122a1f52e30e1c6856249f480e760db8
+  - elementId: slide-21-node-495-Text-13
+    elementType: text
+    bounds:
+      - 46.8
+      - 170.64
+      - 86.4
+      - 68.4
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#DB2777'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#DB2777;font-size:11px;font-weight:700">Block 1</span></p><p><span style="color:#DB2777;font-size:11px;font-weight:700">(H/16)</span></p>
+    sourceLayout: 9858b44b133f85dd0c92d01aa10b1578de0ad4b207217e7f29fb15bab3fd545d
+  - elementId: slide-21-node-496-Text-14
+    elementType: text
+    bounds:
+      - 144
+      - 170.64
+      - 205.2
+      - 68.4
+    content:
+      fontFamily: Consolas
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px;font-family:Consolas">x_bb_4 [B,512,H/16]</span></p><p><span style="color:#1F2937;font-size:9.5px;font-family:Consolas">x_c    [B,256,H/16]</span></p>
+    sourceLayout: 5672a8334f4f30b5ceca83278e809e837cf861cfc700e763f4c45ab4685ffbc3
+  - elementId: slide-21-node-497-Text-15
+    elementType: text
+    bounds:
+      - 360
+      - 170.64
+      - 316.8
+      - 68.4
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: '<p><span style="color:#1F2937;font-size:9.5px">① fuse_global: cat(x_bb_4, x_c) → 512ch (Conv 1×1)</span></p><p><span style="color:#1F2937;font-size:9.5px">② Conv 7×7 → Conv 1×1 → Conv 3×3</span></p><p><span style="color:#1F2937;font-size:9.5px">③ FFC_BN_ACT (r=0.25)</span></p><p><span style="color:#1F2937;font-size:9.5px">④ Conv 5×5</span></p>'
+    sourceLayout: d18504883d1eee8ddd2813b63580d66ebd1062474f70c3dd1e2d7384bde7403e
+  - elementId: slide-21-node-498-Text-16
+    elementType: text
+    bounds:
+      - 687.6
+      - 170.64
+      - 234
+      - 68.4
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:10px;font-family:Consolas;font-weight:700">xe1</span></p><p><span style="color:#0D9488;font-size:10px;font-family:Consolas;font-weight:700">[B,256,H/16,W/16]</span></p>
+    sourceLayout: 5d16c8a4184e009a80ed1a4c514900ce824bd3ef21f507995e0208298af71d8f
+  - elementId: slide-21-node-499-Shape-17
+    elementType: shape
+    bounds:
+      - 36
+      - 239.04
+      - 889.2
+      - 68.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.5
+      color: '#E2E8F0'
+    sourceLayout: ee04aaf297ca87897f0f080d43a6c1164b43615b05d0e5dee94e8214dffea104
+  - elementId: slide-21-node-500-Shape-18
+    elementType: shape
+    bounds:
+      - 36
+      - 239.04
+      - 5.76
+      - 68.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#DB2777'
+    border:
+      style: solid
+      width: 1
+      color: '#DB2777'
+    sourceLayout: f9b65a92e6076cba19d2abe71dfaf94fbca51f736e6446bdc66184c1fe4685b8
+  - elementId: slide-21-node-501-Text-19
+    elementType: text
+    bounds:
+      - 46.8
+      - 239.04
+      - 86.4
+      - 68.4
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#DB2777'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#DB2777;font-size:11px;font-weight:700">Block 2</span></p><p><span style="color:#DB2777;font-size:11px;font-weight:700">(H/8)</span></p>
+    sourceLayout: 871f45df2328f4f63ed1a8cc48a1eda8aa9e5463351f2cca0e7499b0d78df380
+  - elementId: slide-21-node-502-Text-20
+    elementType: text
+    bounds:
+      - 144
+      - 239.04
+      - 205.2
+      - 68.4
+    content:
+      fontFamily: Consolas
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px;font-family:Consolas">xe1    [B,256,H/16]</span></p><p><span style="color:#1F2937;font-size:9.5px;font-family:Consolas">x_bb_3 [B,256,H/8]</span></p>
+    sourceLayout: d43aba8eee620c7b2b465a785f69463fa1cb6262d21ea5d617b0bf4631414ffe
+  - elementId: slide-21-node-503-Text-21
+    elementType: text
+    bounds:
+      - 360
+      - 239.04
+      - 316.8
+      - 68.4
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px">① cat(up(xe1), x_bb_3)</span></p><p><span style="color:#1F2937;font-size:9.5px">② Conv 3×3 → FFC_BN_ACT (r=0.25)</span></p><p><span style="color:#1F2937;font-size:9.5px">③ ConvTranspose 4×4 stride 2 (↑×2)</span></p>
+    sourceLayout: bb51a3efc1f529a9547bfe6666188ed8eb5e3b3c471880b2439c6b770cab0fdd
+  - elementId: slide-21-node-504-Text-22
+    elementType: text
+    bounds:
+      - 687.6
+      - 239.04
+      - 234
+      - 68.4
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:10px;font-family:Consolas;font-weight:700">xe2</span></p><p><span style="color:#0D9488;font-size:10px;font-family:Consolas;font-weight:700">[B,128,H/8,W/8]</span></p>
+    sourceLayout: b547e4431e4c396852614846af7899a1a470044516a43668132b70ae0501c8aa
+  - elementId: slide-21-node-505-Shape-23
+    elementType: shape
+    bounds:
+      - 36
+      - 307.44
+      - 889.2
+      - 68.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.5
+      color: '#E2E8F0'
+    sourceLayout: 0c7d2697d5ab9a95d11de2125cd8224c699d44e4817437dccd37714d8c46d21e
+  - elementId: slide-21-node-506-Shape-24
+    elementType: shape
+    bounds:
+      - 36
+      - 307.44
+      - 5.76
+      - 68.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#DB2777'
+    border:
+      style: solid
+      width: 1
+      color: '#DB2777'
+    sourceLayout: 94cb8c08db444702bf37e8630767ce3447722fd18adba6dceaed7f043acd3da4
+  - elementId: slide-21-node-507-Text-25
+    elementType: text
+    bounds:
+      - 46.8
+      - 307.44
+      - 86.4
+      - 68.4
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#DB2777'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#DB2777;font-size:11px;font-weight:700">Block 3</span></p><p><span style="color:#DB2777;font-size:11px;font-weight:700">(H/4)</span></p>
+    sourceLayout: 6713cc4297b11a30711182bf7d6f2f5349e6ebe84c63d62a8d6ef1a457b4988d
+  - elementId: slide-21-node-508-Text-26
+    elementType: text
+    bounds:
+      - 144
+      - 307.44
+      - 205.2
+      - 68.4
+    content:
+      fontFamily: Consolas
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px;font-family:Consolas">xe2    [B,128,H/8]</span></p><p><span style="color:#1F2937;font-size:9.5px;font-family:Consolas">x_bb_2 [B,128,H/4]</span></p>
+    sourceLayout: bffcf2210179dda77e588f474b4c46755032ba2150db3455baa453c12d866058
+  - elementId: slide-21-node-509-Text-27
+    elementType: text
+    bounds:
+      - 360
+      - 307.44
+      - 316.8
+      - 68.4
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px">① cat(xe2, x_bb_2)</span></p><p><span style="color:#1F2937;font-size:9.5px">② Conv 3×3 → FFC_BN_ACT (r=0.25)</span></p><p><span style="color:#1F2937;font-size:9.5px">③ ConvTranspose 4×4 stride 2 (↑×2)</span></p>
+    sourceLayout: 33afa52e0ee62d5b22eb7ed3b788a921bbea7207d7143f93ef83c65bb3bbb6d2
+  - elementId: slide-21-node-510-Text-28
+    elementType: text
+    bounds:
+      - 687.6
+      - 307.44
+      - 234
+      - 68.4
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:10px;font-family:Consolas;font-weight:700">xe3</span></p><p><span style="color:#0D9488;font-size:10px;font-family:Consolas;font-weight:700">[B,64,H/4,W/4]</span></p>
+    sourceLayout: b14ea2709414c8a655dae1628e0c703e15242c65e3eb763ab0260cca27570b72
+  - elementId: slide-21-node-511-Shape-29
+    elementType: shape
+    bounds:
+      - 36
+      - 375.84
+      - 889.2
+      - 68.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.5
+      color: '#E2E8F0'
+    sourceLayout: 4ceba9a2e36e6c0a42f006029b4695fd80326d995703686fb73bc9eee819ac33
+  - elementId: slide-21-node-512-Shape-30
+    elementType: shape
+    bounds:
+      - 36
+      - 375.84
+      - 5.76
+      - 68.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#DB2777'
+    border:
+      style: solid
+      width: 1
+      color: '#DB2777'
+    sourceLayout: 84b99c753c75d626e20486b23c5c3e226ea4dfca06fbb4d2672b740ce8537120
+  - elementId: slide-21-node-513-Text-31
+    elementType: text
+    bounds:
+      - 46.8
+      - 375.84
+      - 86.4
+      - 68.4
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#DB2777'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#DB2777;font-size:11px;font-weight:700">Block 4</span></p><p><span style="color:#DB2777;font-size:11px;font-weight:700">(H/2)</span></p>
+    sourceLayout: b42631119c2f740167d391f2f7ef6ebfea2b506c51903b85ffa9de02104c0cf5
+  - elementId: slide-21-node-514-Text-32
+    elementType: text
+    bounds:
+      - 144
+      - 375.84
+      - 205.2
+      - 68.4
+    content:
+      fontFamily: Consolas
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px;font-family:Consolas">xe3    [B,64,H/4]</span></p><p><span style="color:#1F2937;font-size:9.5px;font-family:Consolas">x_bb_1 [B,64,H/2]</span></p>
+    sourceLayout: ad080945a5cc718ec00495d935a6fcb154b977e653533a4b352517ac5dbde8a0
+  - elementId: slide-21-node-515-Text-33
+    elementType: text
+    bounds:
+      - 360
+      - 375.84
+      - 316.8
+      - 68.4
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px">① cat(xe3, x_bb_1)</span></p><p><span style="color:#1F2937;font-size:9.5px">② Conv 3×3 + ConvTranspose stride 2 (↑×2)</span></p>
+    sourceLayout: 668b2773c60b8baa66c5863561524a47b1c1bd343bb99e3758c93c5db4b2f3d5
+  - elementId: slide-21-node-516-Text-34
+    elementType: text
+    bounds:
+      - 687.6
+      - 375.84
+      - 234
+      - 68.4
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:10px;font-family:Consolas;font-weight:700">xe4</span></p><p><span style="color:#0D9488;font-size:10px;font-family:Consolas;font-weight:700">[B,32,H/2,W/2]</span></p>
+    sourceLayout: ac0a5c63f2c60a0dd027ebcee207155a1b0b1f3cc0efa08a90faddee3513b89f
+  - elementId: slide-21-node-517-Shape-35
+    elementType: shape
+    bounds:
+      - 36
+      - 444.24
+      - 889.2
+      - 68.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.5
+      color: '#E2E8F0'
+    sourceLayout: 94172e63415b14460af2305866f5a40c357f0d89fc18b377eece524bb6245d0a
+  - elementId: slide-21-node-518-Shape-36
+    elementType: shape
+    bounds:
+      - 36
+      - 444.24
+      - 5.76
+      - 68.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#DB2777'
+    border:
+      style: solid
+      width: 1
+      color: '#DB2777'
+    sourceLayout: aece91bdbccf629f1e9fc14f80c789d2e96433caed419d9f647521d169076fa6
+  - elementId: slide-21-node-519-Text-37
+    elementType: text
+    bounds:
+      - 46.8
+      - 444.24
+      - 86.4
+      - 68.4
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#DB2777'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#DB2777;font-size:11px;font-weight:700">Block 5</span></p><p><span style="color:#DB2777;font-size:11px;font-weight:700">(H)</span></p>
+    sourceLayout: 5ec0162a53f4421253d6d07f93677efb3afeb82d2553213329af26d498e68d32
+  - elementId: slide-21-node-520-Text-38
+    elementType: text
+    bounds:
+      - 144
+      - 444.24
+      - 205.2
+      - 68.4
+    content:
+      fontFamily: Consolas
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px;font-family:Consolas">xe4 [B,32,H/2]</span></p><p><span style="color:#1F2937;font-size:9.5px;font-family:Consolas">x_bb_1 [B,64,H/2]</span></p><p><span style="color:#1F2937;font-size:9.5px;font-family:Consolas">original x</span></p>
+    sourceLayout: e461f1d209163cd3797fde5736316b2fe26dc1723bed6702344be36bd724a913
+  - elementId: slide-21-node-521-Text-39
+    elementType: text
+    bounds:
+      - 360
+      - 444.24
+      - 316.8
+      - 68.4
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px">① cat(xe4, x_bb_1) → ConvTranspose ↑×2 → full-res 共享特征</span></p><p><span style="color:#1F2937;font-size:9.5px">② cat(shared, x) → x_concat (含原图)</span></p><p><span style="color:#1F2937;font-size:9.5px">③ 分别送入两个输出头</span></p>
+    sourceLayout: 0039e2c7c84f5acfede3eacd406fcde4c53d53c3db060f93947fb8d1a8aa4906
+  - elementId: slide-21-node-522-Text-40
+    elementType: text
+    bounds:
+      - 687.6
+      - 444.24
+      - 234
+      - 68.4
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:10px;font-family:Consolas;font-weight:700">shared [..,H,W]</span></p><p><span style="color:#0D9488;font-size:10px;font-family:Consolas;font-weight:700">x_concat [..,H,W]</span></p><p><span style="color:#0D9488;font-size:10px;font-family:Consolas;font-weight:700">→ g 与 s 头</span></p>
+    sourceLayout: aec93eb3a967eaa42c88cf69b5e67cf1cfaf67ce133bf51bd36bbad05fd6bcef
+  - elementId: slide-21-node-523-Text-41
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: 9a217adec83697046a0a76424477fffee4f963c220e04b2d396ea5822dd23d43

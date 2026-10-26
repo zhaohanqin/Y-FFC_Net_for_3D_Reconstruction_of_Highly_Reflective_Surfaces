@@ -1,0 +1,73 @@
+version: v2
+title: DEEP LEARNING · STRUCTURED LIGHT · HIGHLIGHT REMOVAL
+size:
+  - 960
+  - 540
+theme:
+  colors:
+    primary: '#1F2937'
+    accent: '#2563EB'
+    text: '#111827'
+    muted: '#6B7280'
+    background: '#FFFFFF'
+  textStyles:
+    title:
+      fontFamily: MiSans
+      fontSize: 36
+      bold: true
+      color: $text
+    body:
+      fontFamily: MiSans
+      fontSize: 18
+      color: $text
+pages:
+  - pages/page-1.page
+  - pages/page-2.page
+  - pages/page-3.page
+  - pages/page-4.page
+  - pages/page-5.page
+  - pages/page-6.page
+  - pages/page-7.page
+  - pages/page-8.page
+  - pages/page-9.page
+  - pages/page-10.page
+  - pages/page-11.page
+  - pages/page-12.page
+  - pages/page-13.page
+  - pages/page-14.page
+  - pages/page-15.page
+  - pages/page-16.page
+  - pages/page-17.page
+  - pages/page-18.page
+  - pages/page-19.page
+  - pages/page-20.page
+  - pages/page-21.page
+  - pages/page-22.page
+  - pages/page-23.page
+  - pages/page-24.page
+  - pages/page-25.page
+  - pages/page-26.page
+  - pages/page-27.page
+  - pages/page-28.page
+  - pages/page-29.page
+  - pages/page-30.page
+  - pages/page-31.page
+  - pages/page-32.page
+  - pages/page-33.page
+  - pages/page-34.page
+  - pages/page-35.page
+  - pages/page-36.page
+  - pages/page-37.page
+  - pages/page-38.page
+  - pages/page-39.page
+  - pages/page-40.page
+  - pages/page-41.page
+  - pages/page-42.page
+  - pages/page-43.page
+  - pages/page-44.page
+  - pages/page-45.page
+  - pages/page-46.page
+  - pages/page-47.page
+  - pages/page-48.page
+  - pages/page-49.page
+  - pages/page-50.page

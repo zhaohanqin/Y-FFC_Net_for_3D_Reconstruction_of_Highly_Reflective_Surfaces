@@ -1,0 +1,89 @@
+pageType: content
+background:
+  type: solid
+  color: '#1E2761'
+elements:
+  - elementId: slide-14-node-322-Text-1
+    elementType: text
+    bounds:
+      - 57.6
+      - 180
+      - 792
+      - 36
+    content:
+      fontFamily: Calibri
+      fontSize: 16
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:16px;font-weight:700">PART 04</span></p>
+    sourceLayout: 00debc6ca849a3c19ae7eb992f32dc6680acc6f138ba42c3bb8939576b1e59d5
+  - elementId: slide-14-node-323-Text-2
+    elementType: text
+    bounds:
+      - 57.6
+      - 219.6
+      - 792
+      - 86.4
+    content:
+      fontFamily: Calibri
+      fontSize: 50
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:50px;font-weight:700">FFC 频域卷积核心</span></p>
+    sourceLayout: 4c68983a4159307a169613ab40879c0e876a2f2444d7672ce0af107cbb5e1658
+  - elementId: slide-14-node-324-Text-3
+    elementType: text
+    bounds:
+      - 57.6
+      - 313.2
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 17
+      color: '#CADCFC'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#CADCFC;font-size:17px">FourierUnit · SpectralTransform · FFC_BN_ACT · 以及 FFC 在模型中的包含关系</span></p>
+    sourceLayout: 532625ea4d0df8dd7205536c573a91407cabda99dc898cdfa3e6c957e94a072b
+  - elementId: slide-14-node-325-Shape-4
+    elementType: line
+    bounds:
+      - 57.6
+      - 363.6
+      - 108
+      - 0
+    viewBox:
+      - 108
+      - 0.001
+    points: 0,0 108,0.001
+    border:
+      style: solid
+      width: 3
+      color: '#0D9488'
+    sourceLayout: eea5a2089f2bae9a7d1d1715cb89f56d2aba9d6051653505cad2a7e984ad9e05
+  - elementId: slide-14-node-326-Text-5
+    elementType: text
+    bounds:
+      - 864
+      - 504
+      - 72
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#CADCFC'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#CADCFC;font-size:10px">14 / 50</span></p>
+    sourceLayout: eeb0b742d533ca8c6e2fc0a6c2bbd599195bf57372611aa20ffcaf2f22f93e7f

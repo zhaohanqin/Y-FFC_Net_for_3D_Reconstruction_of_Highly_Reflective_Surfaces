@@ -1,0 +1,1535 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-45-node-966-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 08d7aa029048f277f3a9b44fb698ca83a2d053006bab52d07c7cc394c40a984b
+  - elementId: slide-45-node-967-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">10 · OPTIMIZER &amp; CONFIG</span></p>
+    sourceLayout: 02e79c6e0c45d4248f39cc5ef3cf3d9e75db335943579f8498f483a9e291835a
+  - elementId: slide-45-node-968-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">分层学习率 (build_optimizer_v2) 与默认训练配置</span></p>
+    sourceLayout: e218c0cc526c5f2ee651940af11f1de12b74d04722130b5b359d62c4954eb269
+  - elementId: slide-45-node-969-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">45 / 50</span></p>
+    sourceLayout: f9a90eeb40a106f9872191fe4d67ea7d9a2dabe3a9cde1fe22dd00ede2d3c9f3
+  - elementId: slide-45-node-970-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: db76eb2f231cc3c927ea2214de33c863121fce29f8125c7dcf7050e20b2922c3
+  - elementId: slide-45-node-971-Shape-5
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 482.4
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 4c00a6e2d12ed9cebb1093f1bb6e4fc8623e3815257a1a8e634f96205ded9f9e
+  - elementId: slide-45-node-972-Shape-6
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 5.76
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0D9488'
+    border:
+      style: solid
+      width: 1
+      color: '#0D9488'
+    sourceLayout: 73a118e4ac41d001ff89d13cb270fea1040b9fc0f73063f22056fb3accbec556
+  - elementId: slide-45-node-973-Text-7
+    elementType: text
+    bounds:
+      - 50.4
+      - 115.2
+      - 460.8
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">AdamW 分层学习率参数组</span></p>
+    sourceLayout: fc09051bafb9819d14b07c3f4b1bb0c69b9592c53fc036bef9d30af1403586ad
+  - elementId: slide-45-node-974-Shape-8
+    elementType: shape
+    bounds:
+      - 50.4
+      - 147.6
+      - 453.6
+      - 25.2
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 9ed4fdee41500f2f1cf82e81388be3cadb9b0116e2f8af597cd9936b0fc8b8d7
+  - elementId: slide-45-node-975-Text-9
+    elementType: text
+    bounds:
+      - 57.6
+      - 147.6
+      - 140.4
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:11px;font-weight:700">参数组</span></p>
+    sourceLayout: 03e6205437a60c964c1ca90f5fa5245457ea680e82dff606a06a5aba81729234
+  - elementId: slide-45-node-976-Text-10
+    elementType: text
+    bounds:
+      - 198
+      - 147.6
+      - 187.2
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:11px;font-weight:700">匹配模块</span></p>
+    sourceLayout: d9e854db6b5ed29e3c1461450250a3487d514feb77232d52912cc7b00259d0a6
+  - elementId: slide-45-node-977-Text-11
+    elementType: text
+    bounds:
+      - 385.2
+      - 147.6
+      - 115.2
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:11px;font-weight:700">学习率</span></p>
+    sourceLayout: 6ffb8e6cc830fdf7fd11e94309cf1a0297d21b73cdeb7983fcc1a8a945e4efe2
+  - elementId: slide-45-node-978-Shape-12
+    elementType: shape
+    bounds:
+      - 50.4
+      - 172.8
+      - 453.6
+      - 36
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.4
+      color: '#E2E8F0'
+    sourceLayout: 947cc02ad3746be22a0f570afaaf2fdbd49c39a2eff9cd354a63881b6d5899c7
+  - elementId: slide-45-node-979-Shape-13
+    elementType: shape
+    bounds:
+      - 50.4
+      - 172.8
+      - 5.04
+      - 36
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#DB2777'
+    border:
+      style: solid
+      width: 1
+      color: '#DB2777'
+    sourceLayout: cddb97830c376b2ed3a380efb85d40ca20b02aaebdac8319c477e1b567e742eb
+  - elementId: slide-45-node-980-Text-14
+    elementType: text
+    bounds:
+      - 61.2
+      - 172.8
+      - 136.8
+      - 36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#DB2777'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#DB2777;font-size:10px;font-family:Consolas;font-weight:700">encoder_pretrained</span></p>
+    sourceLayout: e0b0f35c741116c749e6cfdf2d42b2ba00669174c4d93c500a65379320bb8ce3
+  - elementId: slide-45-node-981-Text-15
+    elementType: text
+    bounds:
+      - 198
+      - 172.8
+      - 183.6
+      - 36
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px">ResNet stem/layer · Swin 主体</span></p>
+    sourceLayout: 487b82994e7d1299740236d5c5c2e68682fa1ca4a7cf176cbdcfbe846bf69449
+  - elementId: slide-45-node-982-Text-16
+    elementType: text
+    bounds:
+      - 385.2
+      - 172.8
+      - 111.6
+      - 36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:10px;font-family:Consolas;font-weight:700">base_lr × 0.1</span></p>
+    sourceLayout: a7b0b869df7fcc3fb8671583e7cb3f23b971bdde23a33115f6eec0069b5d78b3
+  - elementId: slide-45-node-983-Shape-17
+    elementType: shape
+    bounds:
+      - 50.4
+      - 208.8
+      - 453.6
+      - 36
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.4
+      color: '#E2E8F0'
+    sourceLayout: 67a6f328dff996c04f07b8b6c185c09e9b35d7a6bc6eeb32763aead19aa3b646
+  - elementId: slide-45-node-984-Shape-18
+    elementType: shape
+    bounds:
+      - 50.4
+      - 208.8
+      - 5.04
+      - 36
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0D9488'
+    border:
+      style: solid
+      width: 1
+      color: '#0D9488'
+    sourceLayout: 00549fad487baa4eb0fb5ff8b931e160819af84030ab8e30a5c5ccc70f88e698
+  - elementId: slide-45-node-985-Text-19
+    elementType: text
+    bounds:
+      - 61.2
+      - 208.8
+      - 136.8
+      - 36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:10px;font-family:Consolas;font-weight:700">adaptive_skip_fusion</span></p>
+    sourceLayout: 8e7458f332a138c323c223becfc2811a838ba0430ccf5a6f039bba9f7415a4fb
+  - elementId: slide-45-node-986-Text-20
+    elementType: text
+    bounds:
+      - 198
+      - 208.8
+      - 183.6
+      - 36
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px">fuse_h4 / fuse_h8 / swin16_proj</span></p>
+    sourceLayout: 01c46b03f3da58e0a8e35670ff077bd8932fce2a535a6163f59fb21a6e35d1a7
+  - elementId: slide-45-node-987-Text-21
+    elementType: text
+    bounds:
+      - 385.2
+      - 208.8
+      - 111.6
+      - 36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:10px;font-family:Consolas;font-weight:700">base_lr × 1.0</span></p>
+    sourceLayout: 718362af0e8114de80e33b2106f85e4b4de9a1fe2cc09f7bed6e8a9607638799
+  - elementId: slide-45-node-988-Shape-22
+    elementType: shape
+    bounds:
+      - 50.4
+      - 244.8
+      - 453.6
+      - 36
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.4
+      color: '#E2E8F0'
+    sourceLayout: 3ac25a73093321f9fc5674e3956fa31a9391cc6941aa2ace4a2ffcd6f1120c79
+  - elementId: slide-45-node-989-Shape-23
+    elementType: shape
+    bounds:
+      - 50.4
+      - 244.8
+      - 5.04
+      - 36
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#7C3AED'
+    border:
+      style: solid
+      width: 1
+      color: '#7C3AED'
+    sourceLayout: aa50b49e4622e297c907ba3e7e5f70848666ab0fe184497ab870467418cc590d
+  - elementId: slide-45-node-990-Text-24
+    elementType: text
+    bounds:
+      - 61.2
+      - 244.8
+      - 136.8
+      - 36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#7C3AED'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#7C3AED;font-size:10px;font-family:Consolas;font-weight:700">fusion</span></p>
+    sourceLayout: 4f4618c0a81df9e30a3794c4d72d9cb9c257ac6cd408bd073868896c4ae11521
+  - elementId: slide-45-node-991-Text-25
+    elementType: text
+    bounds:
+      - 198
+      - 244.8
+      - 183.6
+      - 36
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px">其余融合相关参数 (CMF / TopDown 等)</span></p>
+    sourceLayout: db2f4fe1efc94ee3492aac87e677a1fd5e433a1de190dd2b05f0b9836527a5e4
+  - elementId: slide-45-node-992-Text-26
+    elementType: text
+    bounds:
+      - 385.2
+      - 244.8
+      - 111.6
+      - 36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:10px;font-family:Consolas;font-weight:700">base_lr × 0.5</span></p>
+    sourceLayout: 4a4c9dedf14d729fe287d73959602ca8fbdc7457a871b0348f38866135248a6e
+  - elementId: slide-45-node-993-Shape-27
+    elementType: shape
+    bounds:
+      - 50.4
+      - 280.8
+      - 453.6
+      - 36
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.4
+      color: '#E2E8F0'
+    sourceLayout: 87a2c542c0ce755d06bdcb2f85f3a1cf746dfb89e0103d86cddf88bceb69bd28
+  - elementId: slide-45-node-994-Shape-28
+    elementType: shape
+    bounds:
+      - 50.4
+      - 280.8
+      - 5.04
+      - 36
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: ce914a5a76f572db2f284ae7f4d1239812981f644cb9f73f54b181442cd93f19
+  - elementId: slide-45-node-995-Text-29
+    elementType: text
+    bounds:
+      - 61.2
+      - 280.8
+      - 136.8
+      - 36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:10px;font-family:Consolas;font-weight:700">decoders</span></p>
+    sourceLayout: 6ad0eeeaf9e9062754264f966d8a3f486ef20556fe9894926c5789adca3d7fde
+  - elementId: slide-45-node-996-Text-30
+    elementType: text
+    bounds:
+      - 198
+      - 280.8
+      - 183.6
+      - 36
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px">gradient_decoder / main_decoder / enh</span></p>
+    sourceLayout: 0c7f9d36a1a70a265d7c489d9f5360e2edd3ce506ca285ea6a362dc1dcd073a5
+  - elementId: slide-45-node-997-Text-31
+    elementType: text
+    bounds:
+      - 385.2
+      - 280.8
+      - 111.6
+      - 36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:10px;font-family:Consolas;font-weight:700">base_lr × 1.0</span></p>
+    sourceLayout: 05162aa8662f33d7892c48eb2f7ee1ad508520748af2969f67b458d99a0f4d9e
+  - elementId: slide-45-node-998-Shape-32
+    elementType: shape
+    bounds:
+      - 50.4
+      - 316.8
+      - 453.6
+      - 36
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.4
+      color: '#E2E8F0'
+    sourceLayout: d9ff12af9a0c6e770558f6a70d73801abc7585b725823c049883d20715323567
+  - elementId: slide-45-node-999-Shape-33
+    elementType: shape
+    bounds:
+      - 50.4
+      - 316.8
+      - 5.04
+      - 36
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F59E0B'
+    border:
+      style: solid
+      width: 1
+      color: '#F59E0B'
+    sourceLayout: f730ae244ec62cbfbd78ef70c59925646a09860abc664ae2ce1f412b3ed439c9
+  - elementId: slide-45-node-1000-Text-34
+    elementType: text
+    bounds:
+      - 61.2
+      - 316.8
+      - 136.8
+      - 36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#F59E0B'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#F59E0B;font-size:10px;font-family:Consolas;font-weight:700">ffc</span></p>
+    sourceLayout: b085ee7313ae3aa628ddf045d89c1ade226c5ba2057ca100bf08c9472c8d6fcf
+  - elementId: slide-45-node-1001-Text-35
+    elementType: text
+    bounds:
+      - 198
+      - 316.8
+      - 183.6
+      - 36
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px">名称含 ffc 的参数</span></p>
+    sourceLayout: f6a026d5db362c9d048d9ae15cb94a5b847ab2bf693172b5b5cd02fd4100b48e
+  - elementId: slide-45-node-1002-Text-36
+    elementType: text
+    bounds:
+      - 385.2
+      - 316.8
+      - 111.6
+      - 36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:10px;font-family:Consolas;font-weight:700">base_lr × 0.5</span></p>
+    sourceLayout: 4aa76106338acc7555541862f8884fbd0647135ddc32a6c5721f7edd37baf782
+  - elementId: slide-45-node-1003-Shape-37
+    elementType: shape
+    bounds:
+      - 50.4
+      - 352.8
+      - 453.6
+      - 36
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.4
+      color: '#E2E8F0'
+    sourceLayout: 2c27f74d5f029180f7d078b8a05466535390320b8c8f3630e29638f53fbb991a
+  - elementId: slide-45-node-1004-Shape-38
+    elementType: shape
+    bounds:
+      - 50.4
+      - 352.8
+      - 5.04
+      - 36
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#10B981'
+    border:
+      style: solid
+      width: 1
+      color: '#10B981'
+    sourceLayout: bc9fc1c78ab821a4272308e35673a70269d755d4c281a5fbeebd36a40abbe82c
+  - elementId: slide-45-node-1005-Text-39
+    elementType: text
+    bounds:
+      - 61.2
+      - 352.8
+      - 136.8
+      - 36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#10B981'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#10B981;font-size:10px;font-family:Consolas;font-weight:700">new_modules</span></p>
+    sourceLayout: 5e2aa01b89ec738dc473c91e535712454146b813298be49931346e0fba9547f5
+  - elementId: slide-45-node-1006-Text-40
+    elementType: text
+    bounds:
+      - 198
+      - 352.8
+      - 183.6
+      - 36
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px">sa1~sa4 / hf_enhance / refinement_head</span></p>
+    sourceLayout: 7d35759a5ee5ac962127313048046254e250462d938dbe9db62ac8f714c7c420
+  - elementId: slide-45-node-1007-Text-41
+    elementType: text
+    bounds:
+      - 385.2
+      - 352.8
+      - 111.6
+      - 36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:10px;font-family:Consolas;font-weight:700">base_lr × 1.0</span></p>
+    sourceLayout: 72780c0aee103b14b389c4e4afc00cc0e53cf68ff7ef702dd6e2c937fddf9d30
+  - elementId: slide-45-node-1008-Text-42
+    elementType: text
+    bounds:
+      - 50.4
+      - 428.4
+      - 453.6
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px;font-style:italic">WEIGHT_DECAY = 1e-4 · scheduler = warmup + 后续衰减 · 按 optimizer.step() 步调</span></p>
+    sourceLayout: 3a85957cf68abe7ad2c6d90314574f4961d4796780cf6e842f650b8ec4936348
+  - elementId: slide-45-node-1009-Shape-43
+    elementType: shape
+    bounds:
+      - 525.6
+      - 108
+      - 399.6
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: c660ed5750c5039071f4a6f4de9f71f93d08b036c3239acc57d5afef8f7bd246
+  - elementId: slide-45-node-1010-Shape-44
+    elementType: shape
+    bounds:
+      - 525.6
+      - 108
+      - 5.76
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F59E0B'
+    border:
+      style: solid
+      width: 1
+      color: '#F59E0B'
+    sourceLayout: 1e5fd8a68813afff04e0bb633ffac5b5d1a1fae5f0cad4d9bb71c6e818f10e2c
+  - elementId: slide-45-node-1011-Text-45
+    elementType: text
+    bounds:
+      - 540
+      - 115.2
+      - 374.4
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">默认训练配置 (train.py)</span></p>
+    sourceLayout: 006c66f875e8344469a1ed54d80e07ec94729be074e21a9dd7d4cf25ae00ba9c
+  - elementId: slide-45-node-1012-Shape-46
+    elementType: shape
+    bounds:
+      - 540
+      - 147.6
+      - 374.4
+      - 21.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.3
+      color: '#E2E8F0'
+    sourceLayout: 315db1a58542968c510fb72d9fb00271fd20e36de760a4ba5c10fb6d3a7b0418
+  - elementId: slide-45-node-1013-Text-47
+    elementType: text
+    bounds:
+      - 547.2
+      - 147.6
+      - 187.2
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas;font-weight:700">EPOCHS</span></p>
+    sourceLayout: b27426460149596df64f1641918c87b7fd8c9cf8a43e727aa5c8adcb771a1eb7
+  - elementId: slide-45-node-1014-Text-48
+    elementType: text
+    bounds:
+      - 734.4
+      - 147.6
+      - 172.8
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#F59E0B'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#F59E0B;font-size:10px;font-family:Consolas;font-weight:700">300</span></p>
+    sourceLayout: d19c9b257b54f18d078bbe5781b513d2f483336c608a57af5f4a085d1a925b71
+  - elementId: slide-45-node-1015-Shape-49
+    elementType: shape
+    bounds:
+      - 540
+      - 170.64
+      - 374.4
+      - 21.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.3
+      color: '#E2E8F0'
+    sourceLayout: e5daa94140665e4d82f41f77e432b346f231c4c764b60163259ab6136623cc6c
+  - elementId: slide-45-node-1016-Text-50
+    elementType: text
+    bounds:
+      - 547.2
+      - 170.64
+      - 187.2
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas;font-weight:700">BATCH_SIZE</span></p>
+    sourceLayout: 0be5950cf11c7e1dd80c590db78957f5c12a59c8d1d6d823216c492c5d54db8a
+  - elementId: slide-45-node-1017-Text-51
+    elementType: text
+    bounds:
+      - 734.4
+      - 170.64
+      - 172.8
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#F59E0B'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#F59E0B;font-size:10px;font-family:Consolas;font-weight:700">3</span></p>
+    sourceLayout: 6d0b18d93e07b41672f222d7d333df63ea1cc1f34877ca55e8b9d92f1f36b53c
+  - elementId: slide-45-node-1018-Shape-52
+    elementType: shape
+    bounds:
+      - 540
+      - 193.68
+      - 374.4
+      - 21.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.3
+      color: '#E2E8F0'
+    sourceLayout: c5311e28795872a0d0e3fe4e8214f75dcc59f22f43d987b64494880c592e2666
+  - elementId: slide-45-node-1019-Text-53
+    elementType: text
+    bounds:
+      - 547.2
+      - 193.68
+      - 187.2
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas;font-weight:700">BASE_LR</span></p>
+    sourceLayout: 781e94f1a092620706f6a17710e98561e72a7605175efe9be050571c6210feed
+  - elementId: slide-45-node-1020-Text-54
+    elementType: text
+    bounds:
+      - 734.4
+      - 193.68
+      - 172.8
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#F59E0B'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#F59E0B;font-size:10px;font-family:Consolas;font-weight:700">2e-4</span></p>
+    sourceLayout: d7e63b7723f1f9d7cedc5d7c2b95af6ed6cc98bd13e881e68037d75e790fb355
+  - elementId: slide-45-node-1021-Shape-55
+    elementType: shape
+    bounds:
+      - 540
+      - 216.72
+      - 374.4
+      - 21.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.3
+      color: '#E2E8F0'
+    sourceLayout: e9eeeb7c907c05ed5d1642ef9652e1909e16e6a9e5ba94fa9e43db1f3628d255
+  - elementId: slide-45-node-1022-Text-56
+    elementType: text
+    bounds:
+      - 547.2
+      - 216.72
+      - 187.2
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas;font-weight:700">WEIGHT_DECAY</span></p>
+    sourceLayout: 7f781423e4cf0ff1f27ae3feb5bb8d5b8af15bd3357701f1f65967885745323c
+  - elementId: slide-45-node-1023-Text-57
+    elementType: text
+    bounds:
+      - 734.4
+      - 216.72
+      - 172.8
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#F59E0B'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#F59E0B;font-size:10px;font-family:Consolas;font-weight:700">1e-4</span></p>
+    sourceLayout: 6e7b042704009e06020b142b07abc34e8e790862541ec6e1b57ef2ad2d320df6
+  - elementId: slide-45-node-1024-Shape-58
+    elementType: shape
+    bounds:
+      - 540
+      - 239.76
+      - 374.4
+      - 21.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.3
+      color: '#E2E8F0'
+    sourceLayout: 37d7f5ea07793a3cebef7be4e0113d4fb4de87a715bc964babd9e1e70e3d7906
+  - elementId: slide-45-node-1025-Text-59
+    elementType: text
+    bounds:
+      - 547.2
+      - 239.76
+      - 187.2
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas;font-weight:700">ACCUMULATION_STEPS</span></p>
+    sourceLayout: 22d602d8897119228d8ec67e1b60686eaaf2130ae5d00b36762e06b0c0a20244
+  - elementId: slide-45-node-1026-Text-60
+    elementType: text
+    bounds:
+      - 734.4
+      - 239.76
+      - 172.8
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#F59E0B'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#F59E0B;font-size:10px;font-family:Consolas;font-weight:700">3</span></p>
+    sourceLayout: d013d2b0e26b02bce02fcd4e9545d6b7ad2ee7ed5f1d7bcc8ef418b1a0641d5c
+  - elementId: slide-45-node-1027-Shape-61
+    elementType: shape
+    bounds:
+      - 540
+      - 262.8
+      - 374.4
+      - 21.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.3
+      color: '#E2E8F0'
+    sourceLayout: 223aa8a257287d9bda1eac1b0386eb9afb13cf1761cde6595780b9a4974c5f71
+  - elementId: slide-45-node-1028-Text-62
+    elementType: text
+    bounds:
+      - 547.2
+      - 262.8
+      - 187.2
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas;font-weight:700">GRAD_CLIP_VALUE</span></p>
+    sourceLayout: dadd6e887f41cef7c54c84bc2507441df76ac44769058484f806bc1ad820d3e3
+  - elementId: slide-45-node-1029-Text-63
+    elementType: text
+    bounds:
+      - 734.4
+      - 262.8
+      - 172.8
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#F59E0B'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#F59E0B;font-size:10px;font-family:Consolas;font-weight:700">1.0</span></p>
+    sourceLayout: 38d10f13a2e80d04f49fbad90da690fc0068a5ebafcb41ccf31578bdd6848de3
+  - elementId: slide-45-node-1030-Shape-64
+    elementType: shape
+    bounds:
+      - 540
+      - 285.84
+      - 374.4
+      - 21.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.3
+      color: '#E2E8F0'
+    sourceLayout: f95d55e264b4a1faa34b43e719353a96d58250976e74deded6c6a68e47a3f600
+  - elementId: slide-45-node-1031-Text-65
+    elementType: text
+    bounds:
+      - 547.2
+      - 285.84
+      - 187.2
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas;font-weight:700">IMAGE_SIZE</span></p>
+    sourceLayout: a4706791bd45db6ae0a726ede83604663bf080a702520262e3a2da1865aec1b4
+  - elementId: slide-45-node-1032-Text-66
+    elementType: text
+    bounds:
+      - 734.4
+      - 285.84
+      - 172.8
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#F59E0B'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#F59E0B;font-size:10px;font-family:Consolas;font-weight:700">(128, 160)</span></p>
+    sourceLayout: 9407e77ba4a3e9bc7b42279175d7345144bb4790240baafd67e1f13d594d1417
+  - elementId: slide-45-node-1033-Shape-67
+    elementType: shape
+    bounds:
+      - 540
+      - 308.88
+      - 374.4
+      - 21.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.3
+      color: '#E2E8F0'
+    sourceLayout: 1d25f90d10461043b509b098da349ff131ba1c557aac4724aeaef0206df5ceca
+  - elementId: slide-45-node-1034-Text-68
+    elementType: text
+    bounds:
+      - 547.2
+      - 308.88
+      - 187.2
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas;font-weight:700">TRAIN_SPLIT_RATIO</span></p>
+    sourceLayout: cae99fa67c4f24edab32bf807ccfa849aae91d3b8fff3fc68885d01a6f1891b1
+  - elementId: slide-45-node-1035-Text-69
+    elementType: text
+    bounds:
+      - 734.4
+      - 308.88
+      - 172.8
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#F59E0B'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#F59E0B;font-size:10px;font-family:Consolas;font-weight:700">0.8</span></p>
+    sourceLayout: 5f31a62e56fb1116d6dc4ed791eda93c1e3c4c12dca88e48d8243abb2cdd96cd
+  - elementId: slide-45-node-1036-Shape-70
+    elementType: shape
+    bounds:
+      - 540
+      - 331.92
+      - 374.4
+      - 21.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.3
+      color: '#E2E8F0'
+    sourceLayout: bfb1da2f590e4378c85571ac7b9542cc5ea9a5e391a16af4c4c8326e686ad329
+  - elementId: slide-45-node-1037-Text-71
+    elementType: text
+    bounds:
+      - 547.2
+      - 331.92
+      - 187.2
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas;font-weight:700">USE_GN</span></p>
+    sourceLayout: c9ac96c417b0bfad0dd60c76677fffc5b3462e3d390c33b5b3a9c9ad09319b55
+  - elementId: slide-45-node-1038-Text-72
+    elementType: text
+    bounds:
+      - 734.4
+      - 331.92
+      - 172.8
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#F59E0B'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#F59E0B;font-size:10px;font-family:Consolas;font-weight:700">True</span></p>
+    sourceLayout: f2c1caa93c8a77c502acee103eaeae995c9f15f95ef110e0a67c1a7eb6667280
+  - elementId: slide-45-node-1039-Shape-73
+    elementType: shape
+    bounds:
+      - 540
+      - 354.96
+      - 374.4
+      - 21.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.3
+      color: '#E2E8F0'
+    sourceLayout: a5aa946d7cbf5de7858acfa3e8ba8bffce3a3f01e5ce82bdac3da4070f6c5327
+  - elementId: slide-45-node-1040-Text-74
+    elementType: text
+    bounds:
+      - 547.2
+      - 354.96
+      - 187.2
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas;font-weight:700">USE_EMA / DECAY</span></p>
+    sourceLayout: 3220d1377b214a50e5bbdd47d21808137aab60b4707d1f12b5f7703dbb48ce10
+  - elementId: slide-45-node-1041-Text-75
+    elementType: text
+    bounds:
+      - 734.4
+      - 354.96
+      - 172.8
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#F59E0B'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#F59E0B;font-size:10px;font-family:Consolas;font-weight:700">True / 0.9995</span></p>
+    sourceLayout: 250b3e9eb44c1884be1f75eff4a7d15006aeb80a2c411a9476a03e1b37088a7b
+  - elementId: slide-45-node-1042-Shape-76
+    elementType: shape
+    bounds:
+      - 540
+      - 378
+      - 374.4
+      - 21.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.3
+      color: '#E2E8F0'
+    sourceLayout: 3d6bcc74a53761209863d23f9f4b77faf56c0175a14f2d82d9002314a8b591ad
+  - elementId: slide-45-node-1043-Text-77
+    elementType: text
+    bounds:
+      - 547.2
+      - 378
+      - 187.2
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas;font-weight:700">USE_OHEM</span></p>
+    sourceLayout: c2bea4f5d87519f18cc2c24b077a8b41319c6bdfae9ebe7bfdae3518fc7ca458
+  - elementId: slide-45-node-1044-Text-78
+    elementType: text
+    bounds:
+      - 734.4
+      - 378
+      - 172.8
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#F59E0B'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#F59E0B;font-size:10px;font-family:Consolas;font-weight:700">True</span></p>
+    sourceLayout: eca7409549b59c3e4c40c187c50e8764bde9fb2a7925541f78aafedd85a09835
+  - elementId: slide-45-node-1045-Shape-79
+    elementType: shape
+    bounds:
+      - 540
+      - 401.04
+      - 374.4
+      - 21.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.3
+      color: '#E2E8F0'
+    sourceLayout: fd5cd1db93282971606269befc6a30fd99f0d552f86279da50c3d958eb3e76e4
+  - elementId: slide-45-node-1046-Text-80
+    elementType: text
+    bounds:
+      - 547.2
+      - 401.04
+      - 187.2
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas;font-weight:700">USE_AMP</span></p>
+    sourceLayout: d07934647ceb113c3c25a04432c4b608cc3e9c30b4a97fc052a831edabe77442
+  - elementId: slide-45-node-1047-Text-81
+    elementType: text
+    bounds:
+      - 734.4
+      - 401.04
+      - 172.8
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#F59E0B'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#F59E0B;font-size:10px;font-family:Consolas;font-weight:700">False</span></p>
+    sourceLayout: d0df286449f43b6396cfb29253b38112bc28e33ea42208a3e02abc4e1b659551
+  - elementId: slide-45-node-1048-Shape-82
+    elementType: shape
+    bounds:
+      - 540
+      - 424.08
+      - 374.4
+      - 21.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.3
+      color: '#E2E8F0'
+    sourceLayout: bb7d7112705ec4dbf3b511d6ffe5bdba2d9202be3f098f8491ca140a9c38b971
+  - elementId: slide-45-node-1049-Text-83
+    elementType: text
+    bounds:
+      - 547.2
+      - 424.08
+      - 187.2
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas;font-weight:700">USE_HIGHLIGHT_AUG</span></p>
+    sourceLayout: e91aea56e0d46e2ce2a104f25d6003e6fc809eb6da2b2990f0883dc133ea0359
+  - elementId: slide-45-node-1050-Text-84
+    elementType: text
+    bounds:
+      - 734.4
+      - 424.08
+      - 172.8
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#F59E0B'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#F59E0B;font-size:10px;font-family:Consolas;font-weight:700">True (p=0.5)</span></p>
+    sourceLayout: 4ff6f71b214be924f2bda342dc02fd6549864c1a62d0abc690b572a15b72a2d6
+  - elementId: slide-45-node-1051-Shape-85
+    elementType: shape
+    bounds:
+      - 540
+      - 447.12
+      - 374.4
+      - 21.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.3
+      color: '#E2E8F0'
+    sourceLayout: c125560643aaea0de209f44654ac5a076869f3f0d702edf609ee62560dedd908
+  - elementId: slide-45-node-1052-Text-86
+    elementType: text
+    bounds:
+      - 547.2
+      - 447.12
+      - 187.2
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas;font-weight:700">SAVE_EVERY_N</span></p>
+    sourceLayout: ca089d54f89126b8da13123c17d543ff6553e4c9801f064db3bb577597aab3eb
+  - elementId: slide-45-node-1053-Text-87
+    elementType: text
+    bounds:
+      - 734.4
+      - 447.12
+      - 172.8
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#F59E0B'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#F59E0B;font-size:10px;font-family:Consolas;font-weight:700">20  epochs</span></p>
+    sourceLayout: f7322c3b0dfb8b5ea74f52c8970d4ec5d161607ac8e7072615db04286979530f
+  - elementId: slide-45-node-1054-Shape-88
+    elementType: shape
+    bounds:
+      - 540
+      - 470.16
+      - 374.4
+      - 21.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.3
+      color: '#E2E8F0'
+    sourceLayout: ad58e1cd482a8156b08578023f4294d55d24c2fca9fa97664ad8758728c87aa6
+  - elementId: slide-45-node-1055-Text-89
+    elementType: text
+    bounds:
+      - 547.2
+      - 470.16
+      - 187.2
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas;font-weight:700">VIS_EVERY_N</span></p>
+    sourceLayout: 06c44c1e3aead5a3cced84af6034da123efa62b433116c82e3f735361ab643b7
+  - elementId: slide-45-node-1056-Text-90
+    elementType: text
+    bounds:
+      - 734.4
+      - 470.16
+      - 172.8
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#F59E0B'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#F59E0B;font-size:10px;font-family:Consolas;font-weight:700">10  epochs</span></p>
+    sourceLayout: 03c486f50fed0dd15d0899bca6a7310a39459aeff650e190e0b3880f0f68ad52
+  - elementId: slide-45-node-1057-Text-91
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: bad8d9fec37d52293b10d2f9ccb4db515ca49e668147eff5a7799a56be9d22f1

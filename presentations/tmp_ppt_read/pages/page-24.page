@@ -1,0 +1,133 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-24-node-543-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: f38a952ab57910cf43ec4349bcf61e6768dd165729e156ae8c4e2f8d6d2c5f73
+  - elementId: slide-24-node-544-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">06 · ENHANCEMENT LAYERS</span></p>
+    sourceLayout: cd934e40812c1094fd85691ed887d6738bb504100f59dc49355332c362b5f65c
+  - elementId: slide-24-node-545-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">EnhancementLayers · 4 级并列单元 + _SpectralDecompositionUnit 内部结构</span></p>
+    sourceLayout: dbc4ced717dd4b63b9291fc7cc4fc747bebedbd08321ea8f3a767e2fd9aa50bf
+  - elementId: slide-24-node-546-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">24 / 50</span></p>
+    sourceLayout: 2e25743e6870aec3fb361e8fd540d29465b7a960a911f6a141247d51385c406e
+  - elementId: slide-24-node-547-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: 639f34da28c3e3afae0b7bc9e390d3edd0eb5d33dc28ba0ccca9ea7e045996b1
+  - elementId: slide-24-node-548-Image-0
+    elementType: image
+    bounds:
+      - 161.793
+      - 104.4
+      - 636.174
+      - 356.4
+    src: media/ef95aa12a5ad5ab3b8562485.png
+    fit:
+      mode: fill
+    sourceLayout: acf2203f9bd90a3af5e6671ab6a3c7bd32f8db6009fe65d82f4f7499f1a3905e
+  - elementId: slide-24-node-549-Text-5
+    elementType: text
+    bounds:
+      - 36
+      - 471.6
+      - 885.6
+      - 39.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11.5
+      color: '#475569'
+      align:
+        - center
+        - top
+      wrap: true
+      text: <p><span style="color:#475569;font-size:11.5px;font-style:italic">4 个 _SpectralDecompositionUnit 并列处理 xe1..xe4, 共享 g_map / 原图 x / s_map 作为外部门控信号, 输出 enh1..enh4 给主解码器使用。</span></p>
+    sourceLayout: b83110782aad99c18a076c092110347f966ab5a1269c9eb2980f360451fd9c13
+  - elementId: slide-24-node-550-Text-6
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: 62d5b88731e49a5068c1c8f34123be80d7f16ebd1354ea32bcac6e70842bb4a1

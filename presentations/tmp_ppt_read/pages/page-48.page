@@ -1,0 +1,138 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-48-node-1093-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 34c9798916712ac974830966194564c22ec24e1289643a761f0598c0721ecdf9
+  - elementId: slide-48-node-1094-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">11 · CONTAINMENT TREE</span></p>
+    sourceLayout: 4919f6093edb61ed84cba8b6829563d3c3ad6e3e5ee60f8794f04c826e6da2e0
+  - elementId: slide-48-node-1095-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">模块包含关系 · 完整树形结构</span></p>
+    sourceLayout: f7e5c4b4697697a1ab683f8ee59bf757bb47b90d9615d7d725f2c1b757d18043
+  - elementId: slide-48-node-1096-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">48 / 50</span></p>
+    sourceLayout: 8ec710946d24035a3afd4d37103a254fcf2a34625a5a8059a42f27d2d6ef6122
+  - elementId: slide-48-node-1097-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: eea9beb51dd01b442a04bb19a000003a8e1d6996046e513b5f8c3ab48edae777
+  - elementId: slide-48-node-1098-Shape-5
+    elementType: shape
+    bounds:
+      - 36
+      - 104.4
+      - 889.2
+      - 396
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0F172A'
+    border:
+      style: solid
+      width: 1
+      color: '#0F172A'
+    sourceLayout: d8b7f95957715d31f9b297dbdeeacf2b117b1d678c363bd63bdc1364c184f7b6
+  - elementId: slide-48-node-1099-Text-6
+    elementType: text
+    bounds:
+      - 46.8
+      - 111.6
+      - 867.6
+      - 381.6
+    content:
+      fontFamily: Consolas
+      fontSize: 9
+      color: '#E2E8F0'
+      align:
+        - left
+        - top
+      wrap: true
+      text: '<p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">YFFC  (主网络入口)</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">├── Encoder                                   双分支多尺度编码器</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">│   ├── ResNet50 (灰度适配, layer4 dilated)   → x_bb_1..4</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">│   ├── SwinEncoderBranch (Swin-Tiny)         → swin_4 / swin_8 / swin_16</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">│   ├── AdaptiveSkipFusion × 2 (H/4, H/8)     轻量门控融合 ResNet + Swin skip</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">│   ├── CrossModalFusion (H/16)               双向 Cross-Attention + gate</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">│   ├── CrossScaleTopDownRefinement           H/16 → H/8 → H/4 语义回流</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">│   ├── cba_after_backbone                    Conv 1×1: 512 → 256</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">│   ├── FFC_BN_ACT (ratio=0.5)         ★FFC★  瓶颈残差注入</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">│   └── HighFrequencyEnhancement              Laplacian + 可学习高频 + SE</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">│</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">├── GradientDecoder                           5 个 Block · 双输出头</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">│   ├── fuse_global_context                   cat(x_bb_4, x_c) → 512ch</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">│   ├── Block 1 (H/16): 7×7 → 1×1 → 3×3 → FFC_BN_ACT(r=0.25) ★FFC★</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">│   ├── Block 2 (H/8) : 3×3 → FFC_BN_ACT(r=0.25) ★FFC★ → ConvT</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">│   ├── Block 3 (H/4) : 3×3 → FFC_BN_ACT(r=0.25) ★FFC★ → ConvT</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">│   ├── Block 4 (H/2) : 3×3 → ConvT</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">│   ├── Block 5 (H)   : cat(xe4, x_bb_1) → ConvT → cat(shared, x)</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">│   ├── Grad Head     → Conv 3×3 → Sigmoid → g</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">│   └── Spec-Lik Head → 3×3 → 3×3 → 5×5 → Sigmoid → s</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">│</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">├── EnhancementLayers                         4 个 _SpectralDecompositionUnit</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">│   └── 每个单元: projection_branch (7×7) + specular_branch (3×3)</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">│                + FFC_BN_ACT ★FFC★ + Self-gate + edge_gate × spec_gate</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">│                + β-受控残差注入 → enh1..4</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">│</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">├── MainDecoder                               5 级 · 双头输出</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">│   ├── L1 (H/16): FFC1 + FFC2 ★FFC★ + Multiscale + sa1 + att1 + cat(enh1)</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">│   ├── L2 (H/8) : TransposedConvBlock + FFC_H8 ★FFC★ + 三路先验 + sa2 + att2 + cat(enh2)</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">│   ├── L3 (H/4) : FeatureExtractionB + TransposedConvBlock + FFC_H4 ★FFC★ + 三路先验 + sa3 + att3 + cat(enh3)</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">│   ├── L4 (H/2) : TransposedConvBlock + 三路先验 + sa4 + att4 + cat(enh4)</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">│   └── L5 (H)   : TransposedConvBlock → cat(g) → output_reduce/dilated → b_head + r_direct_head + alpha_logit</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">│</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">└── ResidualRefinementHead                    cat(r_fused, x, r_direct) → 24→16→1 → Tanh delta</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">                                              r = clamp(r_fused + 0.15·delta)</span></p>'
+    sourceLayout: d09535e92ffe107a8b57a6a4f4bc461703d39f2beef3240b4d874627a36b96c7
+  - elementId: slide-48-node-1100-Text-7
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: e18032e8fa30fca08cb029210614c3a62deac7e82c872a98971a946f4c247c38

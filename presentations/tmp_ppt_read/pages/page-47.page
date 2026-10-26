@@ -1,0 +1,501 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-47-node-1063-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 1387f9b460c11c3bed3bf0765a27d3ab72dba2bf745f124823d7632e16f5b236
+  - elementId: slide-47-node-1064-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">11 · KEY DESIGN</span></p>
+    sourceLayout: cb810cc72d4168fbafe6320f630ed0d3ea57d3fef6b9016a554e3cd2256ca3a2
+  - elementId: slide-47-node-1065-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">关键设计回顾 · 六大支柱</span></p>
+    sourceLayout: 5ca741ee730bc9b16dd7cce7d246b63b34b7687b1d2c8b4d5f83f583a847b1ce
+  - elementId: slide-47-node-1066-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">47 / 50</span></p>
+    sourceLayout: 148805ae0a07a82a966f2f6d4ae893c049961b496c921f3115fe251d990e5764
+  - elementId: slide-47-node-1067-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: 2f646b89af41c2ef37a66eb7fb76a0d33584587f095c6ac97c6ae7e9ab09c2fb
+  - elementId: slide-47-node-1068-Shape-5
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 435.6
+      - 122.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 9ab0628313277d31d69bd85f0cbf4767215e1cecb33e142bed3fc6f4c6dc148e
+  - elementId: slide-47-node-1069-Shape-6
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 5.76
+      - 122.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0D9488'
+    border:
+      style: solid
+      width: 1
+      color: '#0D9488'
+    sourceLayout: 3d92cd50a0559b0349acd06472a2e92245c8287bf8f4ef81565afecee49e6e31
+  - elementId: slide-47-node-1070-Text-7
+    elementType: text
+    bounds:
+      - 54
+      - 116.64
+      - 406.8
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">双分支编码</span></p>
+    sourceLayout: 1d228a30331388ea36602621a83393cb549c9274bbfffba2aa8959159942cb42
+  - elementId: slide-47-node-1071-Text-8
+    elementType: text
+    bounds:
+      - 54
+      - 147.6
+      - 406.8
+      - 79.2
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:11px">ResNet50 局部纹理 + Swin-Tiny 窗口上下文; ASF 轻量融合 (H/4, H/8) + CMF 双向 CA (H/16) + TopDownRefinement 语义回流</span></p>
+    sourceLayout: 4bdf33b069e6c75690001a673a184874c5f9e1dee518f3d645775aadac923074
+  - elementId: slide-47-node-1072-Shape-9
+    elementType: shape
+    bounds:
+      - 480.96
+      - 108
+      - 435.6
+      - 122.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 9b30f64fcf2451ab69353d47446004981de9f98e9530c9a51a2de4433119f423
+  - elementId: slide-47-node-1073-Shape-10
+    elementType: shape
+    bounds:
+      - 480.96
+      - 108
+      - 5.76
+      - 122.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F59E0B'
+    border:
+      style: solid
+      width: 1
+      color: '#F59E0B'
+    sourceLayout: dda8b7849b61726742e3f9b2d95ba1460903c5143866012a405ee20fe2fbb7c9
+  - elementId: slide-47-node-1074-Text-11
+    elementType: text
+    bounds:
+      - 498.96
+      - 116.64
+      - 406.8
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">FFC 频域全局</span></p>
+    sourceLayout: fa0ee981783c55a8587ade8d632423b0f29a136aa582fb2561018ee198f8e5a6
+  - elementId: slide-47-node-1075-Text-12
+    elementType: text
+    bounds:
+      - 498.96
+      - 147.6
+      - 406.8
+      - 79.2
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:11px">FourierUnit → SpectralTransform → FFC_BN_ACT 三层封装; 出现在 Encoder 瓶颈 / GradientDecoder / MainDecoder / EnhancementLayers, 共 8+ 处调用</span></p>
+    sourceLayout: 08142685aab872e413ad0f884ba335bb896ef037c8c2a42e28cace0fd048aa38
+  - elementId: slide-47-node-1076-Shape-13
+    elementType: shape
+    bounds:
+      - 36
+      - 241.2
+      - 435.6
+      - 122.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: bf828a53d23172d3401738ecc8575e3fd0dc264a7ed120620c190d48eacb8db1
+  - elementId: slide-47-node-1077-Shape-14
+    elementType: shape
+    bounds:
+      - 36
+      - 241.2
+      - 5.76
+      - 122.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#7C3AED'
+    border:
+      style: solid
+      width: 1
+      color: '#7C3AED'
+    sourceLayout: 3a7f0e380f376906e8218ee1dec76a6c2d9d168bf076fc302924144933d50472
+  - elementId: slide-47-node-1078-Text-15
+    elementType: text
+    bounds:
+      - 54
+      - 249.84
+      - 406.8
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">双路漫反射</span></p>
+    sourceLayout: 2700ea2fe4c0ec547d32e137c9ba16d0835630b0d8ca69b2a81938e0beaab3a5
+  - elementId: slide-47-node-1079-Text-16
+    elementType: text
+    bounds:
+      - 54
+      - 280.8
+      - 406.8
+      - 79.2
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:11px">r_sub = clamp(x - b) 保留物理减法路径; r_direct 提供暗部兜底; α = sigmoid(alpha_logit) 自适应融合</span></p>
+    sourceLayout: aa8bba928e2e7f17e0202708687f00b047664cabfc00fbaa0ee8123d2908ef54
+  - elementId: slide-47-node-1080-Shape-17
+    elementType: shape
+    bounds:
+      - 480.96
+      - 241.2
+      - 435.6
+      - 122.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: ed99fbd1c0b0c5c5cbbdb246687da38e863c93d88b5d6b54420cfe9d38c16479
+  - elementId: slide-47-node-1081-Shape-18
+    elementType: shape
+    bounds:
+      - 480.96
+      - 241.2
+      - 5.76
+      - 122.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#DB2777'
+    border:
+      style: solid
+      width: 1
+      color: '#DB2777'
+    sourceLayout: 47510a33c1d4de2125ffcb2e2ff7b21575d2f5b7f0d3bfe0eed3db159c15a695
+  - elementId: slide-47-node-1082-Text-19
+    elementType: text
+    bounds:
+      - 498.96
+      - 249.84
+      - 406.8
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">多任务联合监督</span></p>
+    sourceLayout: 6bfba68141f08575f06455a49385b26d23b98ada14282692db30fd9421e3718a
+  - elementId: slide-47-node-1083-Text-20
+    elementType: text
+    bounds:
+      - 498.96
+      - 280.8
+      - 406.8
+      - 79.2
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:11px">r (主) + b (镜面) + g (梯度) + s (高光概率) + r_direct + cs 六类输出协同, 19+ 子损失项加权</span></p>
+    sourceLayout: 36d22fb751d4d067821a654d5e43146b60f143602e0070c945b7f309dc91a49e
+  - elementId: slide-47-node-1084-Shape-21
+    elementType: shape
+    bounds:
+      - 36
+      - 374.4
+      - 435.6
+      - 122.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 1c35268ab35b495254d01cd8e9dee90549f6141a79d6c2d6fe44c399cb4406e9
+  - elementId: slide-47-node-1085-Shape-22
+    elementType: shape
+    bounds:
+      - 36
+      - 374.4
+      - 5.76
+      - 122.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#10B981'
+    border:
+      style: solid
+      width: 1
+      color: '#10B981'
+    sourceLayout: a3a8f49fc9a3ac71a920b269b3bb3b1f36626bd4f603178b7bdc507ee5f60e06
+  - elementId: slide-47-node-1086-Text-23
+    elementType: text
+    bounds:
+      - 54
+      - 383.04
+      - 406.8
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">SpecularAware 调制</span></p>
+    sourceLayout: c5dc45b14563e06f09dc9b305c95ba7c78777583ef9aefe3a481b1604bfdf9c1
+  - elementId: slide-47-node-1087-Text-24
+    elementType: text
+    bounds:
+      - 54
+      - 414
+      - 406.8
+      - 79.2
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: '<p><span style="color:#1F2937;font-size:11px">主解码器 4 级 sa1-sa4: 由原图亮度 + 局部对比度构造多级软 mask, 残差调制特征; 不破坏主分支梯度流</span></p>'
+    sourceLayout: 2aeb83c983e3977ad069bf793cd539cf18ed4f4c4d753e759663514fc5042e8c
+  - elementId: slide-47-node-1088-Shape-25
+    elementType: shape
+    bounds:
+      - 480.96
+      - 374.4
+      - 435.6
+      - 122.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 9e8495f33856d474ccccf0fa2d062fc23c2bc1c06b88a3591006600bec23f7eb
+  - elementId: slide-47-node-1089-Shape-26
+    elementType: shape
+    bounds:
+      - 480.96
+      - 374.4
+      - 5.76
+      - 122.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 28ef466b77a0ed7b4bc3229e08d57f988f17386eaba85b9b7e1a4627c3cf52a9
+  - elementId: slide-47-node-1090-Text-27
+    elementType: text
+    bounds:
+      - 498.96
+      - 383.04
+      - 406.8
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">残差精修</span></p>
+    sourceLayout: e3a0c9d2753b287e471bac89a1fad551aa3a4e2dddbefbc645bec57db69e9b0c
+  - elementId: slide-47-node-1091-Text-28
+    elementType: text
+    bounds:
+      - 498.96
+      - 414
+      - 406.8
+      - 79.2
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:11px">ResidualRefinementHead 三输入 (r_fused, x, r_direct), Tanh 输出 delta, 系数 0.15 限制幅度 ∈ [-0.15, 0.15]</span></p>
+    sourceLayout: b6fee293d4085f552765847d18d087793423b774e2eeb9b4e4af30cc9ceb52a0
+  - elementId: slide-47-node-1092-Text-29
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: 95eab1a2f779815b23904b43c4ed4d8feac6cb2e580a2170c0028c3c5fc282b8

@@ -1,0 +1,89 @@
+pageType: content
+background:
+  type: solid
+  color: '#1E2761'
+elements:
+  - elementId: slide-38-node-848-Text-1
+    elementType: text
+    bounds:
+      - 57.6
+      - 180
+      - 792
+      - 36
+    content:
+      fontFamily: Calibri
+      fontSize: 16
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:16px;font-weight:700">PART 09</span></p>
+    sourceLayout: 55e7ad6ecc601122ef62b762df4521cbc5e71699deca820cbbe1825dbaa13b2f
+  - elementId: slide-38-node-849-Text-2
+    elementType: text
+    bounds:
+      - 57.6
+      - 219.6
+      - 792
+      - 86.4
+    content:
+      fontFamily: Calibri
+      fontSize: 50
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:50px;font-weight:700">损失函数 EnhancedCompositeLoss</span></p>
+    sourceLayout: 4622b3f06c6554a73148f3ca105a022ea0c6fd1d7068f0f4e96293e3faaaee4c
+  - elementId: slide-38-node-850-Text-3
+    elementType: text
+    bounds:
+      - 57.6
+      - 313.2
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 17
+      color: '#CADCFC'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#CADCFC;font-size:17px">多任务复合损失 · 漫反射 + 镜面 + 梯度 + 高光概率 + 双路 + 跨尺度</span></p>
+    sourceLayout: cb940e66e396bf64945d59aff0a5f632a9e5ac744fc73215ace5435817c7b32b
+  - elementId: slide-38-node-851-Shape-4
+    elementType: line
+    bounds:
+      - 57.6
+      - 363.6
+      - 108
+      - 0
+    viewBox:
+      - 108
+      - 0.001
+    points: 0,0 108,0.001
+    border:
+      style: solid
+      width: 3
+      color: '#0D9488'
+    sourceLayout: 93649bbfb4a2bd8d1546d5d1a3e8ad2f0aceb6e3228a0bdbb122f712d6cdf91f
+  - elementId: slide-38-node-852-Text-5
+    elementType: text
+    bounds:
+      - 864
+      - 504
+      - 72
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#CADCFC'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#CADCFC;font-size:10px">38 / 50</span></p>
+    sourceLayout: 3c1bcb9ed208f502fd2f46502def611ed939e7cf390b8b01050dd7d507e4c5d5

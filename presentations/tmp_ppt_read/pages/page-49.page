@@ -1,0 +1,831 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-49-node-1101-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: a1e9c67e1bc5f09a3a24c56524edee3ee71f154b864f53af882374d9bdd8c8b0
+  - elementId: slide-49-node-1102-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">11 · OUTPUTS</span></p>
+    sourceLayout: 51b87162d1bd4886d2781336cc0e6e907b8a71a6c93fb70bd875867289531f0f
+  - elementId: slide-49-node-1103-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">输出含义与使用建议 · 推理文件命名规范</span></p>
+    sourceLayout: 8277f4e51e52125422f5eb7712985ef80744bfd0a76ce0a46fbf2040c57b02a5
+  - elementId: slide-49-node-1104-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">49 / 50</span></p>
+    sourceLayout: f2cd4ec29d94c17fcae01dd77a3b3b631cf91f2e574201669daaf339be59062f
+  - elementId: slide-49-node-1105-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: 1980babdc78d7ea04513c1ff8dc63c7dbefbae19d9261049097e1239ddab2a05
+  - elementId: slide-49-node-1106-Shape-5
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 432
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: f78ea2fcd983117239959c28383b60b67a20e12a38d6a1c4372c6959ed8959f1
+  - elementId: slide-49-node-1107-Shape-6
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 5.76
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 7f8e5b30a52bb9cc8955fd81c94a5b7559db07d01bbbd2eb20d702bbadd17f0c
+  - elementId: slide-49-node-1108-Text-7
+    elementType: text
+    bounds:
+      - 50.4
+      - 115.2
+      - 410.4
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">YFFC.forward 输出分类</span></p>
+    sourceLayout: 1df2ebd2b7df8e2689945d4b9dea73ea925722a55d495dca30c4a77d704e2a5a
+  - elementId: slide-49-node-1109-Text-8
+    elementType: text
+    bounds:
+      - 50.4
+      - 144
+      - 410.4
+      - 349.2
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#0D9488'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:12px;font-family:Calibri;font-weight:700">★ 主要交付</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">    r — 最终漫反射图, 推理主结果, 用于后续相位解算等下游任务</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#F59E0B;font-size:12px;font-family:Calibri;font-weight:700">◆ 调试 / 可视化</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">    b — 镜面反射分量, 用于分析“去除了哪些高亮”</span></p><p><span style="color:#1F2937;font-size:11px;font-family:Calibri">    g — 网络对结构突变的预测, 反映边界关注度</span></p><p><span style="color:#1F2937;font-size:11px;font-family:Calibri">    s — 网络对高光位置的软定位, 反映高光检测准确性</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#7C3AED;font-size:12px;font-family:Calibri;font-weight:700">◇ 训练辅助 (不直接保存)</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">    r_direct — 主解码器直接预测路径, 训练时参与损失, 推理时参与双路融合</span></p><p><span style="color:#1F2937;font-size:11px;font-family:Calibri">    alpha    — 双路融合系数, 反映网络对两路的信任度</span></p><p><span style="color:#1F2937;font-size:11px;font-family:Calibri">    cs       — 跨尺度一致性标量, 仅作损失项, 不保存图像</span></p>
+    sourceLayout: 531b8338674f1e80f02b185a690cb1083d6ca5c61ca83477d48193207dffb433
+  - elementId: slide-49-node-1110-Shape-9
+    elementType: shape
+    bounds:
+      - 489.6
+      - 108
+      - 435.6
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: be9c542707ab4ea1080cd2f5e36b04ad23cc07e11605d48d73096193683dfc58
+  - elementId: slide-49-node-1111-Shape-10
+    elementType: shape
+    bounds:
+      - 489.6
+      - 108
+      - 5.76
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0D9488'
+    border:
+      style: solid
+      width: 1
+      color: '#0D9488'
+    sourceLayout: f9c4a51815ad1dbaada89cf888994d397fed2c0f8f0bfbe1ad2756a0c45b4222
+  - elementId: slide-49-node-1112-Text-11
+    elementType: text
+    bounds:
+      - 504
+      - 115.2
+      - 410.4
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">process_images.py · 保存文件命名规范</span></p>
+    sourceLayout: d499f8169ac995e41d73847ee599faec342a613fb47b6b3f158edf025d0be11d
+  - elementId: slide-49-node-1113-Shape-12
+    elementType: shape
+    bounds:
+      - 504
+      - 147.6
+      - 410.4
+      - 32.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.4
+      color: '#E2E8F0'
+    sourceLayout: 94cc3f8d28f934499c34ad8b2a65858d296a16a5c3dfb60b9e170cf26c00ae4b
+  - elementId: slide-49-node-1114-Shape-13
+    elementType: shape
+    bounds:
+      - 504
+      - 147.6
+      - 5.04
+      - 32.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0D9488'
+    border:
+      style: solid
+      width: 1
+      color: '#0D9488'
+    sourceLayout: 7b8256d40f4d9ab23e3eaa16e5f50d55758069604e25904f69705441d7b0b864
+  - elementId: slide-49-node-1115-Text-14
+    elementType: text
+    bounds:
+      - 514.8
+      - 147.6
+      - 201.6
+      - 32.4
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:10px;font-family:Consolas;font-weight:700">*_diffuse.png</span></p>
+    sourceLayout: 680b7eb60ff5a5c2b9f77e47ffebed95b81928c23b379f45be4216ef758a8fea
+  - elementId: slide-49-node-1116-Text-15
+    elementType: text
+    bounds:
+      - 716.4
+      - 147.6
+      - 194.4
+      - 32.4
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px">r · 最终漫反射 (主结果)</span></p>
+    sourceLayout: 9708af31264228ba7620899e663da8ecb996757b719cf2df9442c44d533aa821
+  - elementId: slide-49-node-1117-Shape-16
+    elementType: shape
+    bounds:
+      - 504
+      - 183.6
+      - 410.4
+      - 32.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.4
+      color: '#E2E8F0'
+    sourceLayout: df1324c5b76897f65a752d3680940baf12502d7e82e4b4aed335096ba305b136
+  - elementId: slide-49-node-1118-Shape-17
+    elementType: shape
+    bounds:
+      - 504
+      - 183.6
+      - 5.04
+      - 32.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#DB2777'
+    border:
+      style: solid
+      width: 1
+      color: '#DB2777'
+    sourceLayout: a780c2eb941c5117ba63d2dcc2be20ebe64140e237f2a095901f79f4b5197f64
+  - elementId: slide-49-node-1119-Text-18
+    elementType: text
+    bounds:
+      - 514.8
+      - 183.6
+      - 201.6
+      - 32.4
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#DB2777'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#DB2777;font-size:10px;font-family:Consolas;font-weight:700">*_specular.png</span></p>
+    sourceLayout: 5c0c97e87f89c44dddb7f7fc5f2e35aa6e309a0e61728100af0b6c0b4bb9576e
+  - elementId: slide-49-node-1120-Text-19
+    elementType: text
+    bounds:
+      - 716.4
+      - 183.6
+      - 194.4
+      - 32.4
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px">b · 镜面反射分量</span></p>
+    sourceLayout: ba5966f9b89a1c29049867454410155041f63090efe75a6e74eae78eb28cf507
+  - elementId: slide-49-node-1121-Shape-20
+    elementType: shape
+    bounds:
+      - 504
+      - 219.6
+      - 410.4
+      - 32.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.4
+      color: '#E2E8F0'
+    sourceLayout: 645382c0b46e99286167f9b13a42c3e1efaa2e4713c89c6817de30965eaae8bd
+  - elementId: slide-49-node-1122-Shape-21
+    elementType: shape
+    bounds:
+      - 504
+      - 219.6
+      - 5.04
+      - 32.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F59E0B'
+    border:
+      style: solid
+      width: 1
+      color: '#F59E0B'
+    sourceLayout: 9a093c8ae5ae182824baa6abeae092ca7824a4d685e2a13b881f12f7cd85f7bd
+  - elementId: slide-49-node-1123-Text-22
+    elementType: text
+    bounds:
+      - 514.8
+      - 219.6
+      - 201.6
+      - 32.4
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#F59E0B'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#F59E0B;font-size:10px;font-family:Consolas;font-weight:700">*_gradient.png</span></p>
+    sourceLayout: 33c4a1f4d4b55716143c2b019fed6e9d7962d119fd0ae98c919baed654eb6a46
+  - elementId: slide-49-node-1124-Text-23
+    elementType: text
+    bounds:
+      - 716.4
+      - 219.6
+      - 194.4
+      - 32.4
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px">g · 梯度图预测</span></p>
+    sourceLayout: 2e012dee23a2fa499e5016c2a8661c8f56b968725571f7b307187064e80324bc
+  - elementId: slide-49-node-1125-Shape-24
+    elementType: shape
+    bounds:
+      - 504
+      - 255.6
+      - 410.4
+      - 32.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.4
+      color: '#E2E8F0'
+    sourceLayout: 2c0ee0afaeda8ace797f736e40a433eca317eaf6bcfd2ab9f826c051752cd0a8
+  - elementId: slide-49-node-1126-Shape-25
+    elementType: shape
+    bounds:
+      - 504
+      - 255.6
+      - 5.04
+      - 32.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#7C3AED'
+    border:
+      style: solid
+      width: 1
+      color: '#7C3AED'
+    sourceLayout: f6101f9e1e1af15cb527913c1be7d53f6b18e35a11b43854996bac8ea21044b1
+  - elementId: slide-49-node-1127-Text-26
+    elementType: text
+    bounds:
+      - 514.8
+      - 255.6
+      - 201.6
+      - 32.4
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#7C3AED'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#7C3AED;font-size:10px;font-family:Consolas;font-weight:700">*_spec_likelihood.png</span></p>
+    sourceLayout: fb55eb06987b3d5de79c3531fb4763f8f1dddc55bce4b89deb48e349dc97d402
+  - elementId: slide-49-node-1128-Text-27
+    elementType: text
+    bounds:
+      - 716.4
+      - 255.6
+      - 194.4
+      - 32.4
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px">s · 高反光软概率图</span></p>
+    sourceLayout: 1d20eb2cee4e91b5746d36dac41a4b0640fd63cf57e55640102383973d69a3d5
+  - elementId: slide-49-node-1129-Shape-28
+    elementType: shape
+    bounds:
+      - 504
+      - 291.6
+      - 410.4
+      - 32.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.4
+      color: '#E2E8F0'
+    sourceLayout: 15416d77898cae1d556591d5e269320448b2962cd7bac248332e794c28fbaea5
+  - elementId: slide-49-node-1130-Shape-29
+    elementType: shape
+    bounds:
+      - 504
+      - 291.6
+      - 5.04
+      - 32.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 0fab4f39812422204cbe1da70feb4304ea3ae1105f03336ba7968e8dfda5782d
+  - elementId: slide-49-node-1131-Text-30
+    elementType: text
+    bounds:
+      - 514.8
+      - 291.6
+      - 201.6
+      - 32.4
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:10px;font-family:Consolas;font-weight:700">*_visualization.png</span></p>
+    sourceLayout: 62e4822532ef8e1e63052b824dcedc89da1779907faa8c667ec722a5e03f64b0
+  - elementId: slide-49-node-1132-Text-31
+    elementType: text
+    bounds:
+      - 716.4
+      - 291.6
+      - 194.4
+      - 32.4
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px">输入 + 输出 + 中间结果可视化</span></p>
+    sourceLayout: b5feb5a18c0b512763d4189474930a24f2c098c3967329393ee486ac8a33b020
+  - elementId: slide-49-node-1133-Shape-32
+    elementType: shape
+    bounds:
+      - 504
+      - 327.6
+      - 410.4
+      - 32.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.4
+      color: '#E2E8F0'
+    sourceLayout: a2f4e3776328e31e0bc6e107fad447affcc3e9da09e0be1fb4cb795bc3e65958
+  - elementId: slide-49-node-1134-Shape-33
+    elementType: shape
+    bounds:
+      - 504
+      - 327.6
+      - 5.04
+      - 32.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#10B981'
+    border:
+      style: solid
+      width: 1
+      color: '#10B981'
+    sourceLayout: 2206663736b03ee4915780e6b74700eb251ca4fd07d0c4b64b2d3e1d4af91da5
+  - elementId: slide-49-node-1135-Text-34
+    elementType: text
+    bounds:
+      - 514.8
+      - 327.6
+      - 201.6
+      - 32.4
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#10B981'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#10B981;font-size:10px;font-family:Consolas;font-weight:700">*_diffuse_16bit.png</span></p>
+    sourceLayout: 43cb2ebe0fbc8844d7934484fe04a88e027c25cf150050108ef791be788616bf
+  - elementId: slide-49-node-1136-Text-35
+    elementType: text
+    bounds:
+      - 716.4
+      - 327.6
+      - 194.4
+      - 32.4
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px">可选 · 16-bit 高动态漫反射</span></p>
+    sourceLayout: ab0a7b7d3babc22831d5fb98c07e3c6c6a1a5ec8dcd7f51f21510118f59bfeab
+  - elementId: slide-49-node-1137-Shape-36
+    elementType: shape
+    bounds:
+      - 504
+      - 363.6
+      - 410.4
+      - 32.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.4
+      color: '#E2E8F0'
+    sourceLayout: c4d0a5d04d7840f2f356eb0e6f1c5bb91f87613aa582f78f14a6ad4649d530e9
+  - elementId: slide-49-node-1138-Shape-37
+    elementType: shape
+    bounds:
+      - 504
+      - 363.6
+      - 5.04
+      - 32.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#10B981'
+    border:
+      style: solid
+      width: 1
+      color: '#10B981'
+    sourceLayout: 1d0319ebf078f4889a3687cb7310e8d9d750c83d012df827944b8fa2de71f0a0
+  - elementId: slide-49-node-1139-Text-38
+    elementType: text
+    bounds:
+      - 514.8
+      - 363.6
+      - 201.6
+      - 32.4
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#10B981'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#10B981;font-size:10px;font-family:Consolas;font-weight:700">*_specular_16bit.png</span></p>
+    sourceLayout: 32aacb1cef18268ff408b2f3167f50c75832823fbea923b98dcf38f788114413
+  - elementId: slide-49-node-1140-Text-39
+    elementType: text
+    bounds:
+      - 716.4
+      - 363.6
+      - 194.4
+      - 32.4
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px">可选 · 16-bit 镜面分量</span></p>
+    sourceLayout: e9d7277f5ca8815db0728dece75b730468d012c8a731894610cccb63e8b09253
+  - elementId: slide-49-node-1141-Shape-40
+    elementType: shape
+    bounds:
+      - 504
+      - 399.6
+      - 410.4
+      - 32.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.4
+      color: '#E2E8F0'
+    sourceLayout: b73aac7043311141de9c96669c6dab7e47a34bb5518bdce6c07c3c358214c6ec
+  - elementId: slide-49-node-1142-Shape-41
+    elementType: shape
+    bounds:
+      - 504
+      - 399.6
+      - 5.04
+      - 32.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#10B981'
+    border:
+      style: solid
+      width: 1
+      color: '#10B981'
+    sourceLayout: 51a9ea613290b81b9bacde3c48ca10575f1a5d5ff92560494cedbf673407b894
+  - elementId: slide-49-node-1143-Text-42
+    elementType: text
+    bounds:
+      - 514.8
+      - 399.6
+      - 201.6
+      - 32.4
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#10B981'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#10B981;font-size:10px;font-family:Consolas;font-weight:700">*_gradient_16bit.png</span></p>
+    sourceLayout: 695cebed125dc84f74cb161a71e5927622badeac1b70c21e7dc0d88e699d894a
+  - elementId: slide-49-node-1144-Text-43
+    elementType: text
+    bounds:
+      - 716.4
+      - 399.6
+      - 194.4
+      - 32.4
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px">可选 · 16-bit 梯度图</span></p>
+    sourceLayout: 0722204a2b3a9a79089a67e8bd8ed998fb0b9fd5a40997511ff5ee1c92d05865
+  - elementId: slide-49-node-1145-Shape-44
+    elementType: shape
+    bounds:
+      - 504
+      - 435.6
+      - 410.4
+      - 32.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.4
+      color: '#E2E8F0'
+    sourceLayout: 77bfaaa9f60f1f6f05ca9043f9e9747d85eff34d2abe9620f621ddd07ced687c
+  - elementId: slide-49-node-1146-Shape-45
+    elementType: shape
+    bounds:
+      - 504
+      - 435.6
+      - 5.04
+      - 32.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#10B981'
+    border:
+      style: solid
+      width: 1
+      color: '#10B981'
+    sourceLayout: 2e58061a6cdad2c0ffba9413da50b4e7a949bb8393dcc5857a18a724e4d74f5e
+  - elementId: slide-49-node-1147-Text-46
+    elementType: text
+    bounds:
+      - 514.8
+      - 435.6
+      - 201.6
+      - 32.4
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#10B981'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#10B981;font-size:10px;font-family:Consolas;font-weight:700">*_spec_likelihood_16bit.png</span></p>
+    sourceLayout: ad2254b019a1b1a46128a2ebed4eb4750512b5c8545f2879d05fce58822cdc76
+  - elementId: slide-49-node-1148-Text-47
+    elementType: text
+    bounds:
+      - 716.4
+      - 435.6
+      - 194.4
+      - 32.4
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px">可选 · 16-bit 高光概率图</span></p>
+    sourceLayout: f52613d3dd6f8b3fdb5287a62a04fc8fefef7c9ef87ed5ac26f4207cfd0350e3
+  - elementId: slide-49-node-1149-Text-48
+    elementType: text
+    bounds:
+      - 504
+      - 471.6
+      - 410.4
+      - 23.04
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9.5px;font-style:italic">批量推理时, 每张图会生成独立子目录; 所有 *_diffuse 同时复制到统一的 all_diffuse 文件夹方便后续使用。</span></p>
+    sourceLayout: 8824fddd50ae78b132e7021f13cb2f47584c51281070e75f4afbae86ad387728
+  - elementId: slide-49-node-1150-Text-49
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: a75d922beb4af53fdd23e802618b73da211331b685ada5e19c98a8b92462b4d4

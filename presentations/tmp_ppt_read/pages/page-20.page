@@ -1,0 +1,133 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-20-node-474-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 0a7252530a50d0ec147130b66610a721c0cd33ff6d09c2e79a8d6805fd6da327
+  - elementId: slide-20-node-475-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">05 · GRADIENT DECODER</span></p>
+    sourceLayout: 21bf6e45076f30c07546c6b3be4696574498ae8f4164ab1f4295552602156b18
+  - elementId: slide-20-node-476-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">GradientDecoder · 5 级 Block 与双任务输出</span></p>
+    sourceLayout: ed136a4f616a63b2fc42daee4536b7b5682a3df161633d8836f18fbc901a0cbd
+  - elementId: slide-20-node-477-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">20 / 50</span></p>
+    sourceLayout: 093198bf01121487f654672aa7971d13d0e4a95e330aeab3d7b8df49cd5eae6c
+  - elementId: slide-20-node-478-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: c2e31033780a0bf02bc21841e6ee4784fa04842b85c1f2e20c119b89946b7e80
+  - elementId: slide-20-node-479-Image-0
+    elementType: image
+    bounds:
+      - 161.793
+      - 104.4
+      - 636.174
+      - 356.4
+    src: media/eb3fd3df77382ed4a775680a.png
+    fit:
+      mode: fill
+    sourceLayout: c14c5400bc0dc44940bc08f49c49c6f9192b2e259b472fae9fe4a1faa6d84cdd
+  - elementId: slide-20-node-480-Text-5
+    elementType: text
+    bounds:
+      - 36
+      - 471.6
+      - 885.6
+      - 39.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11.5
+      color: '#475569'
+      align:
+        - center
+        - top
+      wrap: true
+      text: '<p><span style="color:#475569;font-size:11.5px;font-style:italic">5 级渐进上采样 H/16→H/8→H/4→H/2→H; 每级 cat 编码器 skip + 上一级 xe; Block 5 输出共享特征, 再分出两个并列输出头: 梯度图 g 与高反光软概率图 s。</span></p>'
+    sourceLayout: b9873c7af40d9dec1bc318608ba8b314db93c8174ca26d092d811a9c8f274dc4
+  - elementId: slide-20-node-481-Text-6
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: b3e8b0047881fe9d152d1b71f646ec2d16fd6ff799c1d1acc9a5c91f06c5e471

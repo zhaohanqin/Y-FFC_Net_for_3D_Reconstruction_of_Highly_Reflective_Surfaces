@@ -7,11 +7,11 @@
 1. `train.py` 训练 X-FFC-Swin。
 2. `process_images.py` 加载训练 checkpoint 做单张或批量推理。
 3. `phase_analysis/` 对去高光后的条纹图像做相位分析和可视化。
-4. `decoupled_yffc/` 是拆分模块版实现，结构与顶层主实现保持同步，便于后续工程化维护。
+4. `decoupled_XFFC/` 是拆分模块版实现，结构与顶层主实现保持同步，便于后续工程化维护。
 
 ## 当前模型结构
 
-主模型入口是 `Y_FFC_unified.py` 中的 `YFFC`。
+主模型入口是 `X_FFC_unified.py` 中的 `XFFC`。
 
 核心结构：
 
@@ -64,13 +64,17 @@
 
 ```text
 .
-├── Y_FFC_unified.py                 # 顶层统一模型、损失、增强、训练工具
+├── X_FFC_unified.py                 # 当前 X 型主模型；网络类名是 XFFC
 ├── train.py                         # 当前主要训练脚本
-├── process_images.py                # 推理脚本，支持滑窗 patch 推理
-├── X-FFC_V3_模型完整技术文档.md       # 当前模型技术文档
-├── decoupled_yffc/                  # 拆分模块版 X-FFC-Swin
+├── process_images.py                # 主流程推理脚本
+├── decoupled_XFFC/                  # 拆分模块版，兼容入口是 X_FFC_unified.py
+├── ablation_experiment/             # 消融模型与对应训练脚本
+├── comporison_model/                # HDRNet、DCUNet；目录内 Y_FFC_unified.py 是旧 Y 型副本
 ├── phase_analysis/                  # 相位分析、ROI、灰度剖面、可视化工具
-├── comporison_model/                # HDRNet、DCUNet 等对比模型
+├── docs/                            # 技术说明、模块问答和汇报大纲
+├── presentations/                   # 幻灯片、流程图和演示素材
+├── scripts/                         # 数据整理与点云误差工具
+├── tests/                           # 主模型语义对齐测试
 ├── data/ data2/ data3/              # 本地训练数据目录
 ├── experiments/                     # 训练输出目录
 └── processed_results/               # 推理输出目录
@@ -169,7 +173,7 @@ DEVICE = 'cuda'
 当前推理脚本会用：
 
 ```python
-YFFC(swin_pretrained=False)
+XFFC(swin_pretrained=False)
 ```
 
 原因是推理 checkpoint 已经包含训练后的 Swin 权重，不需要再下载 ImageNet 预训练权重，因此离线推理更稳。
@@ -214,16 +218,16 @@ python phase_analysis\integrated_absolute_phase_tool.py
 
 ## 拆分模块版
 
-`decoupled_yffc/` 是当前 X-FFC-Swin 的拆分版实现，适合阅读和后续模块化维护。
+`decoupled_XFFC/` 是当前 X-FFC-Swin 的拆分版实现，适合阅读和后续模块化维护。
 
 常用检查：
 
 ```powershell
-cd decoupled_yffc
-python -c "import torch; from yffc import YFFC; m=YFFC(swin_pretrained=False); x=torch.randn(1,1,320,256); y=m(x); print({k:v.shape for k,v in y.items()})"
+cd decoupled_XFFC
+python -c "import torch; from XFFC import XFFC; m=XFFC(swin_pretrained=False); x=torch.randn(1,1,320,256); y=m(x); print({k:v.shape for k,v in y.items()})"
 ```
 
-顶层 `Y_FFC_unified.py` 仍是当前训练脚本直接依赖的主实现；拆分版用于保持结构清晰和工程化同步。
+顶层 `X_FFC_unified.py` 仍是当前训练脚本直接依赖的主实现；拆分版用于保持结构清晰和工程化同步。
 
 ## 对比模型
 
@@ -266,27 +270,27 @@ pip install torch torchvision numpy pillow matplotlib tqdm opencv-python scipy
 静态检查：
 
 ```powershell
-python -m py_compile Y_FFC_unified.py train.py process_images.py
+python -m py_compile X_FFC_unified.py train.py process_images.py
 ```
 
 模型前向 smoke test：
 
 ```powershell
-python -c "import torch; from Y_FFC_unified import YFFC; m=YFFC(swin_pretrained=False); x=torch.randn(1,1,320,256); y=m(x); print({k:v.shape for k,v in y.items()})"
+python -c "import torch; from X_FFC_unified import XFFC; m=XFFC(swin_pretrained=False); x=torch.randn(1,1,320,256); y=m(x); print({k:v.shape for k,v in y.items()})"
 ```
 
 非 32 整除输入测试：
 
 ```powershell
-python -c "import torch; from Y_FFC_unified import YFFC; m=YFFC(swin_pretrained=False); x=torch.randn(1,1,300,260); y=m(x); print({k:v.shape for k,v in y.items()})"
+python -c "import torch; from X_FFC_unified import XFFC; m=XFFC(swin_pretrained=False); x=torch.randn(1,1,300,260); y=m(x); print({k:v.shape for k,v in y.items()})"
 ```
 
 期望 `r/g/b` 都与输入尺寸一致。
 
 ## 维护建议
 
-- 优先维护顶层 `Y_FFC_unified.py`、`train.py`、`process_images.py`。
-- 同步架构改动时，再更新 `decoupled_yffc/` 和 `X-FFC_V3_模型完整技术文档.md`。
+- 优先维护顶层 `X_FFC_unified.py`、`train.py`、`process_images.py`。
+- 同步架构改动时，再更新 `decoupled_XFFC/` 和 `X-FFC_V3_模型完整技术文档.md`。
 - 训练和推理脚本目前都偏“手动改配置区”的用法，做复现实验时应记录 `IMAGE_SIZE`、checkpoint、数据目录和增强配置。
 - 不要把 `experiments/`、`processed_results/`、`outputs/`、`checkpoints/`、`logs/` 等产物目录当作源码目录维护。
 - 旧 ViT checkpoint 不再兼容当前 Swin 结构；当前训练和推理都以新 X-FFC-Swin checkpoint 为准。

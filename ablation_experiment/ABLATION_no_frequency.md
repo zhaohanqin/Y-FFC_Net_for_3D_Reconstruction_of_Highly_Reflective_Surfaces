@@ -1,6 +1,6 @@
 # 消融实验 A：去除频域模块（ABLATION_no_frequency）
 
-**文件**：`Y_FFC_no_frequency.py` / `train_no_frequency.py`
+**文件**：`X_FFC_no_frequency.py` / `train_no_frequency.py`
 **对照**：完整 YFFC（baseline `train.py`，建议加同种子 42 重跑）
 
 ## 为什么这么做
@@ -27,4 +27,4 @@
 python train_no_frequency.py
 ```
 
-注意：本模型文件导入时会 patch `Y_FFC_unified.SpectralTransform`，请勿在同一进程内同时构建 baseline 模型。
+注意：本模型文件导入时会 patch `X_FFC_unified.SpectralTransform`，请勿在同一进程内同时构建 baseline 模型。

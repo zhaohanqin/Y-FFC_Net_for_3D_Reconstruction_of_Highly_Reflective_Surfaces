@@ -1,0 +1,567 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-4-node-104-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 22cf693654a4660c2375c2725d53fda88d9704a402026c095490b56f3a0d5c1e
+  - elementId: slide-4-node-105-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">01 · DESIGN GOALS</span></p>
+    sourceLayout: 88dc57f601f249d3bf3172ca31d62df185ca1f2e0e1ba51ce6c99a7da69c056b
+  - elementId: slide-4-node-106-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">要实现的效果与六大设计要点</span></p>
+    sourceLayout: 43aa6d470c3c7cce8657f48b66e80944a5eaa46b049cb369636322c7877563ba
+  - elementId: slide-4-node-107-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">4 / 50</span></p>
+    sourceLayout: b1142c96086209bd8daf4dc7496c559bc340221146653b3bf1361a824de81ce2
+  - elementId: slide-4-node-108-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: 3a4cd0c2712cdd5b5a86285c3bb1e0b8fe7a0d2b7edc0af4c19fd207f95a14be
+  - elementId: slide-4-node-109-Shape-5
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 432
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 49839b2a3f33dcee1965a4421ef123adfc56b28d8cf1a838780e6aeefd995631
+  - elementId: slide-4-node-110-Shape-6
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 5.76
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0D9488'
+    border:
+      style: solid
+      width: 1
+      color: '#0D9488'
+    sourceLayout: 1be1e3292754c39e19cdca171b95dd29f5b6fefbf6c7079841bf470bf6afb3fa
+  - elementId: slide-4-node-111-Text-7
+    elementType: text
+    bounds:
+      - 50.4
+      - 115.2
+      - 410.4
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 16
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:16px;font-weight:700">核心目标 · 保留条纹，去除高光</span></p>
+    sourceLayout: e18517bd263236d4666721f3f7fc042abd49f759f4c682d12dcd245c9ebd9c38
+  - elementId: slide-4-node-112-Text-8
+    elementType: text
+    bounds:
+      - 50.4
+      - 147.6
+      - 410.4
+      - 345.6
+    content:
+      fontFamily: Calibri
+      fontSize: 13
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:13px;font-family:Calibri;font-weight:700">去除局部饱和与强反光</span></p><p><span style="color:#475569;font-size:11.5px;font-family:Calibri">  · 同时尽可能保留条纹连续性、边缘位置和灰度结构</span></p><p><span style="color:#475569;font-size:11.5px;font-family:Calibri">  · 输出 r 不是“全图变暗”，而是恢复后续相位解算可用的条纹</span></p><p><span style="color:#000000;font-size:6px;font-family:Calibri"> </span></p><p><span style="color:#1F2937;font-size:13px;font-family:Calibri;font-weight:700">同时输出 b/g/s 的原因</span></p><p><span style="color:#475569;font-size:11.5px;font-family:Calibri">  · b 解释“被移除了哪些亮度”，提供物理减法路径</span></p><p><span style="color:#475569;font-size:11.5px;font-family:Calibri">  · g 提供边界先验，强化条纹/高光边缘的恢复</span></p><p><span style="color:#475569;font-size:11.5px;font-family:Calibri">  · s 提供高光位置先验，参与增强层与主解码门控</span></p><p><span style="color:#000000;font-size:6px;font-family:Calibri"> </span></p><p><span style="color:#1F2937;font-size:13px;font-family:Calibri;font-weight:700">为何需要 r_direct + r_sub 双路径</span></p><p><span style="color:#475569;font-size:11.5px;font-family:Calibri">  · r_sub = clamp(x - b) 保留物理含义，但暗区易丢细节</span></p><p><span style="color:#475569;font-size:11.5px;font-family:Calibri">  · r_direct 由解码器直接预测，作为暗部和困难区域兜底</span></p><p><span style="color:#475569;font-size:11.5px;font-family:Calibri">  · 两路用可学习 α 自适应融合，再用残差头做 ±0.15 微调</span></p>
+    sourceLayout: 1afb85dc21b506c94c04939bef6185a12a8cd0b5ae819f9c7cf8b2e63680d2df
+  - elementId: slide-4-node-113-Shape-9
+    elementType: shape
+    bounds:
+      - 489.6
+      - 108
+      - 208.8
+      - 122.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 1dbca0ab395f724e204ac4d9f17111b279f2e53f34e6455252848a9fcf81bba9
+  - elementId: slide-4-node-114-Shape-10
+    elementType: shape
+    bounds:
+      - 489.6
+      - 108
+      - 5.76
+      - 122.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0D9488'
+    border:
+      style: solid
+      width: 1
+      color: '#0D9488'
+    sourceLayout: aaa0f41b97ea3c1479df0938c1134f7ad00dc5762078d635875d829f5ac285f6
+  - elementId: slide-4-node-115-Text-11
+    elementType: text
+    bounds:
+      - 504
+      - 118.8
+      - 187.2
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">全局感受野</span></p>
+    sourceLayout: f7981e81ecb6d5585cc4dea40ae0d999969b61de3b44f038ed2ce1baa98fa61a
+  - elementId: slide-4-node-116-Text-12
+    elementType: text
+    bounds:
+      - 504
+      - 151.2
+      - 187.2
+      - 72
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:11px">FFC 频域 1×1 卷积，等价空间域全局加权 O(N·logN)</span></p>
+    sourceLayout: 5086d2420ed39add8616b2f6387988c680742c8984ea5ab3f115890c22e836d3
+  - elementId: slide-4-node-117-Shape-13
+    elementType: shape
+    bounds:
+      - 709.2
+      - 108
+      - 208.8
+      - 122.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: d1df408ecb8aa1c1f08e9c6f72fb0a3017b2ba4a510f849880ea39d4dc36c2a1
+  - elementId: slide-4-node-118-Shape-14
+    elementType: shape
+    bounds:
+      - 709.2
+      - 108
+      - 5.76
+      - 122.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 109a6dcf350071722fdb58256704d1c301a204f68e55b4fb31994639f98a70be
+  - elementId: slide-4-node-119-Text-15
+    elementType: text
+    bounds:
+      - 723.6
+      - 118.8
+      - 187.2
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">双分支互补</span></p>
+    sourceLayout: dc92fead007af1325682e8566676b68b4940754208751f5be42b541d35b1bdcd
+  - elementId: slide-4-node-120-Text-16
+    elementType: text
+    bounds:
+      - 723.6
+      - 151.2
+      - 187.2
+      - 72
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:11px">ResNet 局部纹理 + Swin 窗口长程上下文</span></p>
+    sourceLayout: 63ed1136c4b5203b018fdc0968632f56af1f143e02881ecb31b36b7678889d36
+  - elementId: slide-4-node-121-Shape-17
+    elementType: shape
+    bounds:
+      - 489.6
+      - 241.2
+      - 208.8
+      - 122.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 40833769002663efae6711a547eb79e899a3882da721b5b258a5d29be598c91f
+  - elementId: slide-4-node-122-Shape-18
+    elementType: shape
+    bounds:
+      - 489.6
+      - 241.2
+      - 5.76
+      - 122.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#7C3AED'
+    border:
+      style: solid
+      width: 1
+      color: '#7C3AED'
+    sourceLayout: 123e9d2cc4837d42ff30d11181b3b37340af91db0ce3f8dc74ececc7ef9595a1
+  - elementId: slide-4-node-123-Text-19
+    elementType: text
+    bounds:
+      - 504
+      - 252
+      - 187.2
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">多任务监督</span></p>
+    sourceLayout: 55286df815f4d55c52b289fdf406cda351c1deeafdfd1f64219b0e76a3cfc726
+  - elementId: slide-4-node-124-Text-20
+    elementType: text
+    bounds:
+      - 504
+      - 284.4
+      - 187.2
+      - 72
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:11px">梯度 g + 高光概率 s + 漫反射 r 联合学习</span></p>
+    sourceLayout: ad323cbc538b49a8f22fc9e22be62066d344a8197364c630b4d64163be170363
+  - elementId: slide-4-node-125-Shape-21
+    elementType: shape
+    bounds:
+      - 709.2
+      - 241.2
+      - 208.8
+      - 122.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 5c80ec78e6ae3bfbbc863d57c07fa84d1e7840f7195dd95d4d3cba17e3cae44d
+  - elementId: slide-4-node-126-Shape-22
+    elementType: shape
+    bounds:
+      - 709.2
+      - 241.2
+      - 5.76
+      - 122.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#DB2777'
+    border:
+      style: solid
+      width: 1
+      color: '#DB2777'
+    sourceLayout: 6e31eafdb9a08525984173e137012313600fee52018080509bf65f34aad95941
+  - elementId: slide-4-node-127-Text-23
+    elementType: text
+    bounds:
+      - 723.6
+      - 252
+      - 187.2
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">物理可解释</span></p>
+    sourceLayout: 366dfa4c01e948fc63d9f69600723c8f9a5d032199ba00031deff471c596ca5f
+  - elementId: slide-4-node-128-Text-24
+    elementType: text
+    bounds:
+      - 723.6
+      - 284.4
+      - 187.2
+      - 72
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:11px">保留 r_sub = clamp(x − b) 物理减法路径</span></p>
+    sourceLayout: 9a9e7c1b0692ff7463b5ad2dcb08a44c9be1de8773f9a5e9edcc60e407be3423
+  - elementId: slide-4-node-129-Shape-25
+    elementType: shape
+    bounds:
+      - 489.6
+      - 374.4
+      - 208.8
+      - 122.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: f8f20a46448b5eaa42ea01ed13fa0165c4d317aa02e5188cfe157be55bcd0c76
+  - elementId: slide-4-node-130-Shape-26
+    elementType: shape
+    bounds:
+      - 489.6
+      - 374.4
+      - 5.76
+      - 122.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F59E0B'
+    border:
+      style: solid
+      width: 1
+      color: '#F59E0B'
+    sourceLayout: 1f9899e99b39d0cd23d25a90a49c3ba28a85b89ceb9b01bd9dc7861a23cfcfda
+  - elementId: slide-4-node-131-Text-27
+    elementType: text
+    bounds:
+      - 504
+      - 385.2
+      - 187.2
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">暗部兜底</span></p>
+    sourceLayout: afa1e369d447627046cc3452350fdb466cc523392f8433266da517dadf3f4a52
+  - elementId: slide-4-node-132-Text-28
+    elementType: text
+    bounds:
+      - 504
+      - 417.6
+      - 187.2
+      - 72
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:11px">r_direct 直接预测路径覆盖减法盲区</span></p>
+    sourceLayout: 80d6fdb4f6a5e54b865bb8f3aca3d19e5ba6fadc65fac3639efe4a65c0141064
+  - elementId: slide-4-node-133-Shape-29
+    elementType: shape
+    bounds:
+      - 709.2
+      - 374.4
+      - 208.8
+      - 122.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 0fc43ff6568013fe3b3efd6792c41b302f8ea288a847318ee2d239063d758474
+  - elementId: slide-4-node-134-Shape-30
+    elementType: shape
+    bounds:
+      - 709.2
+      - 374.4
+      - 5.76
+      - 122.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#10B981'
+    border:
+      style: solid
+      width: 1
+      color: '#10B981'
+    sourceLayout: 19908f9f46e086c4d73c535e3957c60563b2db63233c26b69a7e3f663e756bc8
+  - elementId: slide-4-node-135-Text-31
+    elementType: text
+    bounds:
+      - 723.6
+      - 385.2
+      - 187.2
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">像素级精修</span></p>
+    sourceLayout: 7604be7b5b91523d97ae74268fbb381c8fadedfaf7cda9d3f02c4864b95afcc2
+  - elementId: slide-4-node-136-Text-32
+    elementType: text
+    bounds:
+      - 723.6
+      - 417.6
+      - 187.2
+      - 72
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:11px">ResidualRefinementHead 做 ±0.15 微调</span></p>
+    sourceLayout: 91c454534793002437d585749a333ea77a323e72346b3eea7c1808143bcdef53
+  - elementId: slide-4-node-137-Text-33
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: cea0db459f2a9d2945679568448688c0ee37665ef85dd5a2722b88ecfffaec63

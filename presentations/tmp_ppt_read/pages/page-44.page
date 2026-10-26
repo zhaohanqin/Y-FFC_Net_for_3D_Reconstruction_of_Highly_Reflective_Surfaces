@@ -1,0 +1,237 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-44-node-952-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: a3edde1a97b84948d31f89d17f570a2c47d161a63e049e00249b867d6c701e5c
+  - elementId: slide-44-node-953-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">10 · INFERENCE</span></p>
+    sourceLayout: eca04a943e54a69639a097eef556fea44a4e41efae308390af968ff7aee148bb
+  - elementId: slide-44-node-954-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">推理流程 · 模型加载 → 滑窗 + Tukey 融合 → 可选 TTA → 保存</span></p>
+    sourceLayout: 7a7cece644a4edabcaaf16715bdcfb149a58d6f6dcd0faaf1c0465950f8666e0
+  - elementId: slide-44-node-955-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">44 / 50</span></p>
+    sourceLayout: 48720d6e941e03121ab550ba1b8b55be8dff0bec63b6f4d88d2e4ba066a2f660
+  - elementId: slide-44-node-956-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: f2fad3248cdca7ad99ad4b78cb922c74c5c8d383e0387f05de34aab4a44a4cc9
+  - elementId: slide-44-node-957-Shape-5
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 432
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: c88b555e07a29fbab6bef527dbc1cd324c111f8b18e89b6373ee68eba93ab61c
+  - elementId: slide-44-node-958-Shape-6
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 5.76
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F59E0B'
+    border:
+      style: solid
+      width: 1
+      color: '#F59E0B'
+    sourceLayout: e0ed82cfe496907dd49cd796675c358b1dc815c4487e9391d33f03fc1d9b31d9
+  - elementId: slide-44-node-959-Text-7
+    elementType: text
+    bounds:
+      - 50.4
+      - 115.2
+      - 410.4
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">模型加载与图像准备</span></p>
+    sourceLayout: d7c36bf31fa1cd905a1b7d9f0a20e66ad37d63d06ca00fa1bfc8a61f550920e2
+  - elementId: slide-44-node-960-Text-8
+    elementType: text
+    bounds:
+      - 50.4
+      - 144
+      - 410.4
+      - 349.2
+    content:
+      fontFamily: Consolas
+      fontSize: 12
+      color: '#F59E0B'
+      align:
+        - left
+        - top
+      wrap: true
+      text: '<p><span style="color:#F59E0B;font-size:12px;font-family:Consolas;font-weight:700">load_model(path, device, prefer_ema=True)</span><span style="color:#1F2937;font-size:10.5px;font-family:Calibri">  ① torch.load → 兼容完整 checkpoint 与纯 state_dict</span></p><p><span style="color:#1F2937;font-size:10.5px;font-family:Calibri">  ② 构建 YFFC(swin_pretrained=False)</span></p><p><span style="color:#1F2937;font-size:10.5px;font-family:Calibri">  ③ 检测 checkpoint 是否使用 GroupNorm → replace_bn_with_gn</span></p><p><span style="color:#1F2937;font-size:10.5px;font-family:Calibri">  ④ 若存在 EMA 且 prefer_ema=True → 合并 EMA 权重</span></p><p><span style="color:#1F2937;font-size:10.5px;font-family:Calibri">  ⑤ _load_state_dict_flexible: 优先 strict, 失败时筛选兼容张量按 strict=False 加载</span></p><p><span style="color:#000000;font-size:5px;font-family:Calibri"> </span></p><p><span style="color:#F59E0B;font-size:12px;font-family:Consolas;font-weight:700">load_image(path, target_size=None)</span><span style="color:#1F2937;font-size:10.5px;font-family:Calibri">  PIL.open → 转灰度 L → 可选 resize → numpy float32 / 255 → torch [1,1,H,W]</span></p><p><span style="color:#000000;font-size:5px;font-family:Calibri"> </span></p><p><span style="color:#F59E0B;font-size:12px;font-family:Consolas;font-weight:700">resolve_patch_size_from_checkpoint</span><span style="color:#1F2937;font-size:10.5px;font-family:Calibri">  优先读取 checkpoint[''image_size'']; 若与脚本配置不一致, 使用 checkpoint 中的尺寸滑窗</span></p>'
+    sourceLayout: 0b89bad55049d2f9bbb138a48f6d3a38f4a143ffe00a5176179b8f6bd23b7581
+  - elementId: slide-44-node-961-Shape-9
+    elementType: shape
+    bounds:
+      - 489.6
+      - 108
+      - 435.6
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: e66eabb19ba3a917a6dba47ff9f3cb75d7c42a65a8337e8a93ea82ff57592551
+  - elementId: slide-44-node-962-Shape-10
+    elementType: shape
+    bounds:
+      - 489.6
+      - 108
+      - 5.76
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#7C3AED'
+    border:
+      style: solid
+      width: 1
+      color: '#7C3AED'
+    sourceLayout: 8845ed6de4ea227a0a464a4a6d0b18cbf2fff0207c961ac1b05934273d534094
+  - elementId: slide-44-node-963-Text-11
+    elementType: text
+    bounds:
+      - 504
+      - 115.2
+      - 410.4
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">滑窗推理 + Tukey 融合 + 4 翻转 TTA</span></p>
+    sourceLayout: dbdd0869cccaeb6104cc7b9efd2733405cd8e233a4813754e0ab5e5620f8fceb
+  - elementId: slide-44-node-964-Text-12
+    elementType: text
+    bounds:
+      - 504
+      - 144
+      - 410.4
+      - 349.2
+    content:
+      fontFamily: Consolas
+      fontSize: 12
+      color: '#7C3AED'
+      align:
+        - left
+        - top
+      wrap: true
+      text: '<p><span style="color:#7C3AED;font-size:12px;font-family:Consolas;font-weight:700">sliding_window_inference</span><span style="color:#1F2937;font-size:10.5px;font-family:Calibri">  ① 标准化 patch_size = (Ph, Pw); ② 根据 overlap 计算 stride</span></p><p><span style="color:#1F2937;font-size:10.5px;font-family:Calibri">  ③ 只在右/下侧 padding, 使图落入滑窗网格</span></p><p><span style="color:#1F2937;font-size:10.5px;font-family:Calibri">  ④ 生成所有 patch 起点, 每个 patch 独立 forward</span></p><p><span style="color:#1F2937;font-size:10.5px;font-family:Calibri">  ⑤ 对 r / b / g / s / r_direct 用 Tukey 二维窗加权累加</span></p><p><span style="color:#1F2937;font-size:10.5px;font-family:Calibri">  ⑥ 除以 weight_sum → 裁回原尺寸</span></p><p><span style="color:#000000;font-size:5px;font-family:Calibri"> </span></p><p><span style="color:#7C3AED;font-size:12px;font-family:Consolas;font-weight:700">_tta_forward (可选)</span><span style="color:#1F2937;font-size:10.5px;font-family:Calibri">  4 种变换: 原图 / 水平翻 / 垂直翻 / 双向翻</span></p><p><span style="color:#1F2937;font-size:10.5px;font-family:Calibri">  每次输出翻转回原方向后, 对 b / r_direct / g / s 取平均</span></p><p><span style="color:#1F2937;font-size:10.5px;font-family:Calibri">  重算 r_sub = clamp(x - avg_b); r_fused = α·avg_r_direct + (1-α)·r_sub</span></p><p><span style="color:#1F2937;font-size:10.5px;font-family:Calibri">  最终 r = clamp(r_fused + 0.15·refinement_head(...))</span></p><p><span style="color:#000000;font-size:5px;font-family:Calibri"> </span></p><p><span style="color:#7C3AED;font-size:12px;font-family:Calibri;font-weight:700">保存输出 (单图)</span><span style="color:#1F2937;font-size:10.5px;font-family:Calibri">  *_diffuse.png · *_specular.png · *_gradient.png · *_spec_likelihood.png · *_visualization.png + 可选 16-bit 版本</span></p>'
+    sourceLayout: a581b7dfe967625fa883ece7ea05c5eb2e8c67e93e3cf46fa8813d5cf732f949
+  - elementId: slide-44-node-965-Text-13
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: abd704612e7e8fcde73d4b449d51e5a8da04f899d355a7d8e110489ef32797a8

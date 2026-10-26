@@ -1,0 +1,237 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-35-node-810-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 1736bee88f88d99fc00ae0960607d041f655d7c0c6d87bc84fcc7cd52da50cbd
+  - elementId: slide-35-node-811-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">07 · MAIN DECODER · ATTENTION</span></p>
+    sourceLayout: 68fff760a05a497cd56b0c5984bdc0b8bbc8190f93e7c695272f9ea0f6a2f50a
+  - elementId: slide-35-node-812-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">SpecularAwareAttention 与 Attention_block · 两类注意力机制</span></p>
+    sourceLayout: ba432cd0783619e16c4e5cb20261cac11669fd3b0f4531eda1573dc8e7aa1758
+  - elementId: slide-35-node-813-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">35 / 50</span></p>
+    sourceLayout: ed4567902488f106e8f1fe742596d5ad500ad2cdb7bf27dd91cb5da8f3af3718
+  - elementId: slide-35-node-814-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: 91889cfeb3ed0eecc4714e1fcfcaddf3342a6d2c11419a90f65dcb839e68cd3d
+  - elementId: slide-35-node-815-Shape-5
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 432
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 1afeaa2ee202bcc7cb9692a9a03d9d0e14b4323c859c7f97247ddcceecbddb7a
+  - elementId: slide-35-node-816-Shape-6
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 5.76
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#7C3AED'
+    border:
+      style: solid
+      width: 1
+      color: '#7C3AED'
+    sourceLayout: 829f5963317acad1b5b72e4bfda747c5551310ecf24a9f25b47c1afc6ba9a71d
+  - elementId: slide-35-node-817-Text-7
+    elementType: text
+    bounds:
+      - 50.4
+      - 115.2
+      - 410.4
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 15
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:15px;font-weight:700">SpecularAwareAttention (sa1~sa4)</span></p>
+    sourceLayout: 6cef8d68dbe41098936af288b7f63321436d5056f5a58a234b9a96a6aac507f4
+  - elementId: slide-35-node-818-Text-8
+    elementType: text
+    bounds:
+      - 50.4
+      - 147.6
+      - 410.4
+      - 345.6
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#7C3AED'
+      align:
+        - left
+        - top
+      wrap: true
+      text: '<p><span style="color:#7C3AED;font-size:12px;font-family:Calibri;font-weight:700">位置</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">    主解码器 4 个 level 各一份: sa1 (H/16)、sa2 (H/8)、sa3 (H/4)、sa4 (H/2)。</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#7C3AED;font-size:12px;font-family:Calibri;font-weight:700">输入</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">    features (当前级解码特征) + original_input (原图)。</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#7C3AED;font-size:12px;font-family:Calibri;font-weight:700">计算流程</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">    1. 将原图插值到当前特征分辨率</span></p><p><span style="color:#1F2937;font-size:11px;font-family:Calibri">    2. 计算局部均值与局部对比度 (sliding pool)</span></p><p><span style="color:#1F2937;font-size:11px;font-family:Consolas">    3. spec_prior = clamp(0.75·input + 0.25·local_contrast, 0, 1)</span></p><p><span style="color:#1F2937;font-size:11px;font-family:Calibri">    4. 用多个阈值生成多级软 mask (高光→中亮→暗部)</span></p><p><span style="color:#1F2937;font-size:11px;font-family:Calibri">    5. cat(features, masks) → Conv → attention map</span></p><p><span style="color:#1F2937;font-size:11px;font-family:Consolas">    6. output = features · (1 + scale · attention)</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#7C3AED;font-size:12px;font-family:Calibri;font-weight:700">作用</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">    使主解码器在每一级都能参考原图亮度与局部对比度, 显式知道“当前像素是否处于潜在高光区域”。</span></p>'
+    sourceLayout: 4450735fabc995c85834634db6d8395551c3cc55989e638a50a996e7a46ad496
+  - elementId: slide-35-node-819-Shape-9
+    elementType: shape
+    bounds:
+      - 489.6
+      - 108
+      - 435.6
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 89c1a2c3761b09542d859fe62d8da831b7e3ed8107d3fbc04bd32c1c637f535e
+  - elementId: slide-35-node-820-Shape-10
+    elementType: shape
+    bounds:
+      - 489.6
+      - 108
+      - 5.76
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0D9488'
+    border:
+      style: solid
+      width: 1
+      color: '#0D9488'
+    sourceLayout: c88e1a049e5c194ec2d873f5491b61285aecf79b7bfa0353ac5f4d8565cdac6a
+  - elementId: slide-35-node-821-Text-11
+    elementType: text
+    bounds:
+      - 504
+      - 115.2
+      - 410.4
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 15
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:15px;font-weight:700">Attention_block (att1~att4) · skip 门控</span></p>
+    sourceLayout: 5d0781e1dd99e80198496207f3eb250a660d5d1889d882d5f61312038ea54a59
+  - elementId: slide-35-node-822-Text-12
+    elementType: text
+    bounds:
+      - 504
+      - 147.6
+      - 410.4
+      - 345.6
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#0D9488'
+      align:
+        - left
+        - top
+      wrap: true
+      text: '<p><span style="color:#0D9488;font-size:12px;font-family:Calibri;font-weight:700">位置</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">    主解码器各级的 Encoder skip 注入前: att1 门控 x_bb_4、att2 门控 x_bb_3、att3 门控 x_bb_2、att4 门控 x_bb_1。</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#0D9488;font-size:12px;font-family:Calibri;font-weight:700">输入</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">    g = 当前解码特征 (Gate Signal); x = 来自 Encoder 的 skip 特征。</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#0D9488;font-size:12px;font-family:Calibri;font-weight:700">计算流程</span><span style="color:#1F2937;font-size:11px;font-family:Consolas">    g_proj = BN(Conv 1×1 (g))</span></p><p><span style="color:#1F2937;font-size:11px;font-family:Consolas">    x_proj = BN(Conv 1×1 (x))</span></p><p><span style="color:#1F2937;font-size:11px;font-family:Consolas">    psi = sigmoid(BN(Conv 1×1 (ReLU(g_proj + x_proj))))</span></p><p><span style="color:#1F2937;font-size:11px;font-family:Consolas">    output = x · psi   (逐通道独立)</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#0D9488;font-size:12px;font-family:Calibri;font-weight:700">关键设计</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">    与单通道注意力不同, psi 是 F_l 通道, 每个 skip 通道都有独立权重, 可以选择性放大/抑制不同特征。例如在高光区抑制条纹边缘 skip, 在条纹清晰区强化结构 skip。</span></p>'
+    sourceLayout: 4d5a846bbb3e85dcd7d63997719985421eb672725dc34cecf091a4a728cae4e8
+  - elementId: slide-35-node-823-Text-13
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: 5dfd4953ce9f8a48876711102c85e084a1e4685cd74c500abf54f077138b84cd

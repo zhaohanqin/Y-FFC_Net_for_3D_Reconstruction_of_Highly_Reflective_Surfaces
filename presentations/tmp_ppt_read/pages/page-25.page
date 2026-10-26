@@ -1,0 +1,1133 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-25-node-551-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 3f3c66307f5ff61b53e55af808283d2664a234a277278d80aab2b6ae4a1826b1
+  - elementId: slide-25-node-552-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">06 · ENHANCEMENT · I/O</span></p>
+    sourceLayout: c4fde6dd0f7417b8e22c26126ae782d9dd17d44e9070abad058537969a9a2f52
+  - elementId: slide-25-node-553-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">EnhancementLayers · 输入与输出完整说明 (重点)</span></p>
+    sourceLayout: 43a1f997bec38e057bdbc2166222f12fc8ad39d356ec78fcb3a62e4865a7cc27
+  - elementId: slide-25-node-554-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">25 / 50</span></p>
+    sourceLayout: f355e64cff96204215bf292b2363dba3f116835f2fc1df66b6677bc42e4b28b9
+  - elementId: slide-25-node-555-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: 025c9625ef034b341c67448acd523e5a2f7440f2df06ddd767ce2666d1ac9754
+  - elementId: slide-25-node-556-Text-5
+    elementType: text
+    bounds:
+      - 36
+      - 100.8
+      - 885.6
+      - 28.8
+    content:
+      fontFamily: Consolas
+      fontSize: 11.5
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:11.5px;font-family:Consolas;font-style:italic">forward(to_be_enhanced_features = (xe1..xe4),  g_map,  original_input,  s_map)  →  (enh1..enh4)</span></p>
+    sourceLayout: 5d08669308e1f113dce662981c9b1f10c29930ba5795402814c7ee846f317af9
+  - elementId: slide-25-node-557-Shape-6
+    elementType: shape
+    bounds:
+      - 36
+      - 140.4
+      - 432
+      - 356.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: aa132541f9ce83d14b75259ea90fe90f1d70aad5afee68b5e818c803cfada7a0
+  - elementId: slide-25-node-558-Shape-7
+    elementType: shape
+    bounds:
+      - 36
+      - 140.4
+      - 5.76
+      - 356.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#10B981'
+    border:
+      style: solid
+      width: 1
+      color: '#10B981'
+    sourceLayout: a06749c71bb02d79dd6fddb01d3709465f0ee824cd58be332d48419fc4bded60
+  - elementId: slide-25-node-559-Text-8
+    elementType: text
+    bounds:
+      - 50.4
+      - 147.6
+      - 410.4
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 15
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:15px;font-weight:700">输入 · 4 个 xe 特征 + 3 个共享信号</span></p>
+    sourceLayout: a34fcd3eaa13e34245adb1633a79c6f47d497768315f2852b7dae353af77520c
+  - elementId: slide-25-node-560-Shape-9
+    elementType: shape
+    bounds:
+      - 50.4
+      - 183.6
+      - 410.4
+      - 39.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.5
+      color: '#E2E8F0'
+    sourceLayout: aefe3dbd7cd73dfea0c7416378cdfa3d6091076a7c028a9f818546b7d02e9ea1
+  - elementId: slide-25-node-561-Shape-10
+    elementType: shape
+    bounds:
+      - 50.4
+      - 183.6
+      - 4.32
+      - 39.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#DB2777'
+    border:
+      style: solid
+      width: 1
+      color: '#DB2777'
+    sourceLayout: 18991d06f075cbb1df7d35ebb4088ea0115d237613a19949c50cffe4f3b92791
+  - elementId: slide-25-node-562-Text-11
+    elementType: text
+    bounds:
+      - 59.04
+      - 183.6
+      - 72
+      - 39.6
+    content:
+      fontFamily: Consolas
+      fontSize: 11
+      color: '#DB2777'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#DB2777;font-size:11px;font-family:Consolas;font-weight:700">xe1</span></p>
+    sourceLayout: 0068d9bccb2679b9c3ae6e6d179e6fc0170785c5bfd2668f23b0c849e5ff9e8b
+  - elementId: slide-25-node-563-Text-12
+    elementType: text
+    bounds:
+      - 133.2
+      - 183.6
+      - 133.2
+      - 39.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas">[B, 256, H/16, W/16]</span></p>
+    sourceLayout: f8d4c3c67a01f9ee3288a8b6386f83fe1bc27493017d4ed2dbb79dfb8a2fc546
+  - elementId: slide-25-node-564-Text-13
+    elementType: text
+    bounds:
+      - 270
+      - 183.6
+      - 187.2
+      - 39.6
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9.5px">GradientDecoder Block 1 输出 (H/16 深层共享)</span></p>
+    sourceLayout: 0c307a3ad081d89816ed6c992b2300147cb6e969281bf5ed69ff7d97eef8567a
+  - elementId: slide-25-node-565-Shape-14
+    elementType: shape
+    bounds:
+      - 50.4
+      - 226.8
+      - 410.4
+      - 39.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.5
+      color: '#E2E8F0'
+    sourceLayout: 65db643afb9defe9f04a732f6e773dbc5093f688bf577828dc426caa240fcc5d
+  - elementId: slide-25-node-566-Shape-15
+    elementType: shape
+    bounds:
+      - 50.4
+      - 226.8
+      - 4.32
+      - 39.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#DB2777'
+    border:
+      style: solid
+      width: 1
+      color: '#DB2777'
+    sourceLayout: bdbcdb34cb7c68be42a619fc93c03816fe56577291c2c79b50dfca108de9d9e2
+  - elementId: slide-25-node-567-Text-16
+    elementType: text
+    bounds:
+      - 59.04
+      - 226.8
+      - 72
+      - 39.6
+    content:
+      fontFamily: Consolas
+      fontSize: 11
+      color: '#DB2777'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#DB2777;font-size:11px;font-family:Consolas;font-weight:700">xe2</span></p>
+    sourceLayout: c192e66f22bbb8018d77d4c1f4d7f14e630bab740fec8f5cf7ffcd8317904d78
+  - elementId: slide-25-node-568-Text-17
+    elementType: text
+    bounds:
+      - 133.2
+      - 226.8
+      - 133.2
+      - 39.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas">[B, 128, H/8, W/8]</span></p>
+    sourceLayout: b57c58da57b9dd7f9d14c70d0f306475bf0810d144f7956c5a09f7955baede10
+  - elementId: slide-25-node-569-Text-18
+    elementType: text
+    bounds:
+      - 270
+      - 226.8
+      - 187.2
+      - 39.6
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9.5px">GradientDecoder Block 2 输出 (H/8 中层)</span></p>
+    sourceLayout: f5ec561783fbaa65c1976dcf7d4777d9c27fabc0be28fa5621fa396317b27380
+  - elementId: slide-25-node-570-Shape-19
+    elementType: shape
+    bounds:
+      - 50.4
+      - 270
+      - 410.4
+      - 39.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.5
+      color: '#E2E8F0'
+    sourceLayout: 96323095db96b8e761d790e2b67116f7c7e053259c9585e3e83f361cadb6a2af
+  - elementId: slide-25-node-571-Shape-20
+    elementType: shape
+    bounds:
+      - 50.4
+      - 270
+      - 4.32
+      - 39.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#DB2777'
+    border:
+      style: solid
+      width: 1
+      color: '#DB2777'
+    sourceLayout: 5634798e8e903233e8b7b97dc21415d5be5a25c5ec60110c4315d6cbd5cd8392
+  - elementId: slide-25-node-572-Text-21
+    elementType: text
+    bounds:
+      - 59.04
+      - 270
+      - 72
+      - 39.6
+    content:
+      fontFamily: Consolas
+      fontSize: 11
+      color: '#DB2777'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#DB2777;font-size:11px;font-family:Consolas;font-weight:700">xe3</span></p>
+    sourceLayout: e21ae29a07309a3315011d268d3c207976263989c28ca618d85e11f924c7c5e6
+  - elementId: slide-25-node-573-Text-22
+    elementType: text
+    bounds:
+      - 133.2
+      - 270
+      - 133.2
+      - 39.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas">[B, 64, H/4, W/4]</span></p>
+    sourceLayout: e5b4d3af389025fd1f8aa8ff0d75cd133a3b3b95f97887c293b5584e01fd7137
+  - elementId: slide-25-node-574-Text-23
+    elementType: text
+    bounds:
+      - 270
+      - 270
+      - 187.2
+      - 39.6
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9.5px">GradientDecoder Block 3 输出 (H/4 浅层)</span></p>
+    sourceLayout: 5b23544c03934baac3d41377453c4c070218535b29d39a43fafd03a349432edc
+  - elementId: slide-25-node-575-Shape-24
+    elementType: shape
+    bounds:
+      - 50.4
+      - 313.2
+      - 410.4
+      - 39.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.5
+      color: '#E2E8F0'
+    sourceLayout: c1c348f8973dca1915458b1369fbdd56150dbc3c18b51c13fc50c9917abfd549
+  - elementId: slide-25-node-576-Shape-25
+    elementType: shape
+    bounds:
+      - 50.4
+      - 313.2
+      - 4.32
+      - 39.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#DB2777'
+    border:
+      style: solid
+      width: 1
+      color: '#DB2777'
+    sourceLayout: 072988ffaedf913760286beec9192e769af72d5edb4e7569913f033f46d46acc
+  - elementId: slide-25-node-577-Text-26
+    elementType: text
+    bounds:
+      - 59.04
+      - 313.2
+      - 72
+      - 39.6
+    content:
+      fontFamily: Consolas
+      fontSize: 11
+      color: '#DB2777'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#DB2777;font-size:11px;font-family:Consolas;font-weight:700">xe4</span></p>
+    sourceLayout: bb9aff6895355f76dd2ab2a05657a765a42fcc9186f57dbd0bdcadb0d1d29fb4
+  - elementId: slide-25-node-578-Text-27
+    elementType: text
+    bounds:
+      - 133.2
+      - 313.2
+      - 133.2
+      - 39.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas">[B, 32, H/2, W/2]</span></p>
+    sourceLayout: 80cac3e8fdace0ebdfe8f8a33c54aeef5031b0902fbdd57d3264b63a54a9b1d4
+  - elementId: slide-25-node-579-Text-28
+    elementType: text
+    bounds:
+      - 270
+      - 313.2
+      - 187.2
+      - 39.6
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9.5px">GradientDecoder Block 4 输出 (H/2 近全分辨率)</span></p>
+    sourceLayout: e82c915c0822c9d652b05ada211bf1e16600c7102c8caf1cad10aa3e32498c2d
+  - elementId: slide-25-node-580-Shape-29
+    elementType: shape
+    bounds:
+      - 50.4
+      - 356.4
+      - 410.4
+      - 39.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.5
+      color: '#E2E8F0'
+    sourceLayout: f021908f47cb54b56e69919af4c43a5c939ec4142d889437fb709a1cfb0f4b00
+  - elementId: slide-25-node-581-Shape-30
+    elementType: shape
+    bounds:
+      - 50.4
+      - 356.4
+      - 4.32
+      - 39.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F59E0B'
+    border:
+      style: solid
+      width: 1
+      color: '#F59E0B'
+    sourceLayout: 2ef2cb4dd03100e8e7cced68bc5b48d0cddb4a965ccb3a96630f24e53e7eddcc
+  - elementId: slide-25-node-582-Text-31
+    elementType: text
+    bounds:
+      - 59.04
+      - 356.4
+      - 72
+      - 39.6
+    content:
+      fontFamily: Consolas
+      fontSize: 11
+      color: '#F59E0B'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#F59E0B;font-size:11px;font-family:Consolas;font-weight:700">g_map</span></p>
+    sourceLayout: ac4ebdb4976545be15bc2da71626c54344dc2e9f515b1a56002dd84a22fce6b4
+  - elementId: slide-25-node-583-Text-32
+    elementType: text
+    bounds:
+      - 133.2
+      - 356.4
+      - 133.2
+      - 39.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas">[B, 1, H, W]</span></p>
+    sourceLayout: be5ba84fc5a61eaf4d42ddf996d3c2eef678d8e4aa594af7c0320818bbe27ac2
+  - elementId: slide-25-node-584-Text-33
+    elementType: text
+    bounds:
+      - 270
+      - 356.4
+      - 187.2
+      - 39.6
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9.5px">梯度头输出 x_g (输入图 Sobel 幅值预测)</span></p>
+    sourceLayout: 0dab6c2ddd920c5c99b6b18fdbe445fdfdae4b145c0ef1a53bd0b314473401d4
+  - elementId: slide-25-node-585-Shape-34
+    elementType: shape
+    bounds:
+      - 50.4
+      - 399.6
+      - 410.4
+      - 39.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.5
+      color: '#E2E8F0'
+    sourceLayout: 2eb3880274599c6ac550792bf9ada7e1ee25e0f61e67e40f96fe03d6f046c79b
+  - elementId: slide-25-node-586-Shape-35
+    elementType: shape
+    bounds:
+      - 50.4
+      - 399.6
+      - 4.32
+      - 39.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0D9488'
+    border:
+      style: solid
+      width: 1
+      color: '#0D9488'
+    sourceLayout: c069d68d386e02b8ddd2b1044e49fd9337cbe7c27859fec4e4a4ae0dbb664bb6
+  - elementId: slide-25-node-587-Text-36
+    elementType: text
+    bounds:
+      - 59.04
+      - 399.6
+      - 72
+      - 39.6
+    content:
+      fontFamily: Consolas
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Consolas;font-weight:700">original_input</span></p>
+    sourceLayout: 58c19d35774eae8976383a8665da4e54df9d2e395d7c5cf0271c84e04ca91a32
+  - elementId: slide-25-node-588-Text-37
+    elementType: text
+    bounds:
+      - 133.2
+      - 399.6
+      - 133.2
+      - 39.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas">[B, 1, H, W]</span></p>
+    sourceLayout: 1b9069dcd539433ee2bb5ddc3bf4e8114d0bc482e5e9743b1490c220d67d56cd
+  - elementId: slide-25-node-589-Text-38
+    elementType: text
+    bounds:
+      - 270
+      - 399.6
+      - 187.2
+      - 39.6
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9.5px">原始灰度输入 x, 提供亮度先验</span></p>
+    sourceLayout: cd4432e12cca745b454c90ad4b281f13fd50651cf91e2f9785f420efb849e445
+  - elementId: slide-25-node-590-Shape-39
+    elementType: shape
+    bounds:
+      - 50.4
+      - 442.8
+      - 410.4
+      - 39.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.5
+      color: '#E2E8F0'
+    sourceLayout: 46e45bc9731838ab1491b4952f7c56aa7e9288451c561b722b7219d5fc1a54ab
+  - elementId: slide-25-node-591-Shape-40
+    elementType: shape
+    bounds:
+      - 50.4
+      - 442.8
+      - 4.32
+      - 39.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#7C3AED'
+    border:
+      style: solid
+      width: 1
+      color: '#7C3AED'
+    sourceLayout: d013b065fc006a0a27aab0b023ee695a1f7ec6290c082535eac2923454219624
+  - elementId: slide-25-node-592-Text-41
+    elementType: text
+    bounds:
+      - 59.04
+      - 442.8
+      - 72
+      - 39.6
+    content:
+      fontFamily: Consolas
+      fontSize: 11
+      color: '#7C3AED'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#7C3AED;font-size:11px;font-family:Consolas;font-weight:700">s_map</span></p>
+    sourceLayout: 16ab161c6bc60ac1414191753460f29921d1cd5754c9721dad9b05524c94b658
+  - elementId: slide-25-node-593-Text-42
+    elementType: text
+    bounds:
+      - 133.2
+      - 442.8
+      - 133.2
+      - 39.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas">[B, 1, H, W]</span></p>
+    sourceLayout: e34f0e8bd295edf424c2f04a4112ee166e5a7b6c5003251cc88096acf4901c5f
+  - elementId: slide-25-node-594-Text-43
+    elementType: text
+    bounds:
+      - 270
+      - 442.8
+      - 187.2
+      - 39.6
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9.5px">高反光概率头输出 x_s</span></p>
+    sourceLayout: 05cc5a38a673140852ed819d7fb64eda498487733ca4fba89c043be6099e80b2
+  - elementId: slide-25-node-595-Shape-44
+    elementType: shape
+    bounds:
+      - 489.6
+      - 140.4
+      - 435.6
+      - 356.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: fa89ddc8d98dda789c4293c20375449ba87f7c34ac82ca5b0ff13cec7dc51488
+  - elementId: slide-25-node-596-Shape-45
+    elementType: shape
+    bounds:
+      - 489.6
+      - 140.4
+      - 5.76
+      - 356.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#7C3AED'
+    border:
+      style: solid
+      width: 1
+      color: '#7C3AED'
+    sourceLayout: aa7be74a25954f66bf0f0995fd3eb20dc395600537c1169cb9b36c9b66539aea
+  - elementId: slide-25-node-597-Text-46
+    elementType: text
+    bounds:
+      - 504
+      - 147.6
+      - 410.4
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 15
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:15px;font-weight:700">输出 · 4 级增强特征 → MainDecoder</span></p>
+    sourceLayout: 1fd1a221fd1706ddab87913b8d30fda29047c7222644653513a23bf383a5d201
+  - elementId: slide-25-node-598-Shape-47
+    elementType: shape
+    bounds:
+      - 504
+      - 187.2
+      - 410.4
+      - 57.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.5
+      color: '#E2E8F0'
+    sourceLayout: 3092fb6d50d6f35e11ff1cdf6644b26ca9d150c098ff7035f70cbc6b68dd4735
+  - elementId: slide-25-node-599-Shape-48
+    elementType: shape
+    bounds:
+      - 504
+      - 187.2
+      - 4.32
+      - 57.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#7C3AED'
+    border:
+      style: solid
+      width: 1
+      color: '#7C3AED'
+    sourceLayout: 2059ea337143bf72e697d8cc5552b85428502dae418fe65a5757b5c13431741b
+  - elementId: slide-25-node-600-Text-49
+    elementType: text
+    bounds:
+      - 514.8
+      - 187.2
+      - 64.8
+      - 57.6
+    content:
+      fontFamily: Consolas
+      fontSize: 12
+      color: '#7C3AED'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#7C3AED;font-size:12px;font-family:Consolas;font-weight:700">enh1</span></p>
+    sourceLayout: eca12dfa94af4eae818dfe2d683b322141fce0bc61fa9fbe7e30b54b8517124b
+  - elementId: slide-25-node-601-Text-50
+    elementType: text
+    bounds:
+      - 583.2
+      - 187.2
+      - 133.2
+      - 57.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px;font-family:Consolas">[B, 128, H/16, W/16]</span></p>
+    sourceLayout: 8f8249919ca50717a508de60dc8a592ea1fe7b958c13f9e65363f830082cb838
+  - elementId: slide-25-node-602-Text-51
+    elementType: text
+    bounds:
+      - 720
+      - 187.2
+      - 194.4
+      - 57.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">→ MainDecoder Level 1 · cat(dec, gated_x_bb_4, enh1)</span></p>
+    sourceLayout: aa2466970138f08630fed270c2948fe90877806a1b9ce7c242a60dfc2a6285cf
+  - elementId: slide-25-node-603-Shape-52
+    elementType: shape
+    bounds:
+      - 504
+      - 248.4
+      - 410.4
+      - 57.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.5
+      color: '#E2E8F0'
+    sourceLayout: aad5b6a029d3743556ba417aeb1eddbab9c324f58fbe36626946d05f3d374c82
+  - elementId: slide-25-node-604-Shape-53
+    elementType: shape
+    bounds:
+      - 504
+      - 248.4
+      - 4.32
+      - 57.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#7C3AED'
+    border:
+      style: solid
+      width: 1
+      color: '#7C3AED'
+    sourceLayout: e3749eeec406ee2dbd287a460195549aa56c4ad5acb49aa7a20f6d3480db6d2f
+  - elementId: slide-25-node-605-Text-54
+    elementType: text
+    bounds:
+      - 514.8
+      - 248.4
+      - 64.8
+      - 57.6
+    content:
+      fontFamily: Consolas
+      fontSize: 12
+      color: '#7C3AED'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#7C3AED;font-size:12px;font-family:Consolas;font-weight:700">enh2</span></p>
+    sourceLayout: b2855df16b422e410f524afd51cd7ac40bbbc65315881de86259d0503de29ced
+  - elementId: slide-25-node-606-Text-55
+    elementType: text
+    bounds:
+      - 583.2
+      - 248.4
+      - 133.2
+      - 57.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px;font-family:Consolas">[B, 64, H/8, W/8]</span></p>
+    sourceLayout: b41bdc6fdb6d7ddf00f0c858bdafffae79e6fdf646a2adae6c465afdb7a318b5
+  - elementId: slide-25-node-607-Text-56
+    elementType: text
+    bounds:
+      - 720
+      - 248.4
+      - 194.4
+      - 57.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">→ MainDecoder Level 2 · cat(dec, gated_x_bb_3, enh2)</span></p>
+    sourceLayout: 2489924c4f9080b12b034de8b8b75c24c9c6dd1a75c3d4fbced9328502c065c2
+  - elementId: slide-25-node-608-Shape-57
+    elementType: shape
+    bounds:
+      - 504
+      - 309.6
+      - 410.4
+      - 57.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.5
+      color: '#E2E8F0'
+    sourceLayout: 1b6e661ffa3386e5503a9e024fec9e4b21aaca500a77a47cac2a1ea150b6272c
+  - elementId: slide-25-node-609-Shape-58
+    elementType: shape
+    bounds:
+      - 504
+      - 309.6
+      - 4.32
+      - 57.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#7C3AED'
+    border:
+      style: solid
+      width: 1
+      color: '#7C3AED'
+    sourceLayout: 2dba06afb4a5b553b0284291f6077c8b14b28e401a575ca3da4d26939d1a716c
+  - elementId: slide-25-node-610-Text-59
+    elementType: text
+    bounds:
+      - 514.8
+      - 309.6
+      - 64.8
+      - 57.6
+    content:
+      fontFamily: Consolas
+      fontSize: 12
+      color: '#7C3AED'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#7C3AED;font-size:12px;font-family:Consolas;font-weight:700">enh3</span></p>
+    sourceLayout: d27edcd41f9272430ce3c67f97c50e67cb1caed8b51e551889f4dcaf40f81caf
+  - elementId: slide-25-node-611-Text-60
+    elementType: text
+    bounds:
+      - 583.2
+      - 309.6
+      - 133.2
+      - 57.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px;font-family:Consolas">[B, 32, H/4, W/4]</span></p>
+    sourceLayout: d175906bd55a8def71e3914e0d70f2a9b3fdee49d24786a1061b7512484cf0e0
+  - elementId: slide-25-node-612-Text-61
+    elementType: text
+    bounds:
+      - 720
+      - 309.6
+      - 194.4
+      - 57.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">→ MainDecoder Level 3 · cat(dec, gated_x_bb_2, enh3)</span></p>
+    sourceLayout: e98c719931c7479b9a8f5f4864be38f613788cb7c8d2c90958218e64a6c6aa67
+  - elementId: slide-25-node-613-Shape-62
+    elementType: shape
+    bounds:
+      - 504
+      - 370.8
+      - 410.4
+      - 57.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.5
+      color: '#E2E8F0'
+    sourceLayout: d32b91b58264f0e0542e89df2e47f20d0a0254660d955107fcf0d79eb05a3ac0
+  - elementId: slide-25-node-614-Shape-63
+    elementType: shape
+    bounds:
+      - 504
+      - 370.8
+      - 4.32
+      - 57.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#7C3AED'
+    border:
+      style: solid
+      width: 1
+      color: '#7C3AED'
+    sourceLayout: 67147a1a7743d2b3db9bf42b4425484f10cb48a190116f04e45b3b47c38ffca5
+  - elementId: slide-25-node-615-Text-64
+    elementType: text
+    bounds:
+      - 514.8
+      - 370.8
+      - 64.8
+      - 57.6
+    content:
+      fontFamily: Consolas
+      fontSize: 12
+      color: '#7C3AED'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#7C3AED;font-size:12px;font-family:Consolas;font-weight:700">enh4</span></p>
+    sourceLayout: f7457b7c2427f53bbba425552051fbf7237740b4a0fa801916437af7d2e9cc43
+  - elementId: slide-25-node-616-Text-65
+    elementType: text
+    bounds:
+      - 583.2
+      - 370.8
+      - 133.2
+      - 57.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px;font-family:Consolas">[B, 16, H/2, W/2]</span></p>
+    sourceLayout: 474a7d55a69837a81fab8ad48057f639450ceb749ebb08a40ccdbc7518c6edac
+  - elementId: slide-25-node-617-Text-66
+    elementType: text
+    bounds:
+      - 720
+      - 370.8
+      - 194.4
+      - 57.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">→ MainDecoder Level 4 · cat(dec, gated_x_bb_1, enh4)</span></p>
+    sourceLayout: 87ca4dd94be18e0b015dc56c481e18a1f87d6fe6a5822c5164434e76e9ba1270
+  - elementId: slide-25-node-618-Text-67
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: 43ab6606e5154a783ed7a81b99fcab9564a9b43e11fdd09eed8a8e172e53c0e8

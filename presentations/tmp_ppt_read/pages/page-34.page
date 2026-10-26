@@ -1,0 +1,319 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-34-node-791-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: c514c04b576b036ecb7417b919ec5f6b405398f7967bc43bda9ef9cccb6968be
+  - elementId: slide-34-node-792-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">07 · MAIN DECODER · LEVEL 5 OUTPUT</span></p>
+    sourceLayout: cef1262b53f6888f48eafeeb0400fa0397fe9b259522e3ccf56d52861a7ca8b8
+  - elementId: slide-34-node-793-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">MainDecoder Level 5 (H) · 双头输出 (重点)</span></p>
+    sourceLayout: 6a045d501d7d28431ce60beab6ce6f06d2a6e9b48509cf340c495f6c56148a9f
+  - elementId: slide-34-node-794-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">34 / 50</span></p>
+    sourceLayout: 148b637a8d4b1ed8b6acf397e605531a54a33b6aaa6e66e2aae5bb480a14c5da
+  - elementId: slide-34-node-795-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: 77f3650a78acb8663008eb6de8f95d0d162fbd7534a896359de4fa5a76342e88
+  - elementId: slide-34-node-796-Shape-5
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 288
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 2100ee3e9672963383b68a845ad3935eb81d12569de19367012b513ee2de3dc5
+  - elementId: slide-34-node-797-Shape-6
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 5.76
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#7C3AED'
+    border:
+      style: solid
+      width: 1
+      color: '#7C3AED'
+    sourceLayout: 8c311ab51fabca7e50eb87c4c6b481c255fbb14b057d503670abb5aeac99bc44
+  - elementId: slide-34-node-798-Text-7
+    elementType: text
+    bounds:
+      - 50.4
+      - 115.2
+      - 266.4
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">输入</span></p>
+    sourceLayout: 7e04fcca3e6fd5bdaf15fe15cd76dcc9f7709c564eb97a9d608b51063a28f394
+  - elementId: slide-34-node-799-Text-8
+    elementType: text
+    bounds:
+      - 50.4
+      - 140.4
+      - 266.4
+      - 352.8
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#0D9488'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:12px;font-family:Calibri;font-weight:700">L4 输出</span><span style="color:#1F2937;font-size:11px;font-family:Consolas">  [B, ~176, H/2, W/2]</span></p><p><span style="color:#000000;font-size:5px;font-family:Calibri"> </span></p><p><span style="color:#F59E0B;font-size:12px;font-family:Calibri;font-weight:700">x_g (梯度图)</span><span style="color:#1F2937;font-size:11px;font-family:Consolas">  [B, 1, H, W]</span></p><p><span style="color:#475569;font-size:10px;font-family:Calibri">    与上采后的 48ch 特征 cat 形成 49ch</span></p>
+    sourceLayout: 304f31a93df7ec75c2a5b0bdc6d52ddc74ae130cc635dfe6c7441b83b9a109ad
+  - elementId: slide-34-node-800-Shape-9
+    elementType: shape
+    bounds:
+      - 338.4
+      - 108
+      - 324
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 94041269f67b1f7efa28196e13828901c8332964c1a94bb85c3cee86453c9fe6
+  - elementId: slide-34-node-801-Shape-10
+    elementType: shape
+    bounds:
+      - 338.4
+      - 108
+      - 5.76
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 241a90013d52ac1320a148a9fd8868d62bdd42469954da91f3d4a5e77df32695
+  - elementId: slide-34-node-802-Text-11
+    elementType: text
+    bounds:
+      - 352.8
+      - 115.2
+      - 302.4
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">内部数据流</span></p>
+    sourceLayout: 47b83b9d99808fdd993035538d319b2969b13873e7b3cabc318f47eeca7a1ca5
+  - elementId: slide-34-node-803-Shape-12
+    elementType: shape
+    bounds:
+      - 352.8
+      - 144
+      - 302.4
+      - 349.2
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0F172A'
+    border:
+      style: solid
+      width: 1
+      color: '#0F172A'
+    sourceLayout: 69e1b7e53bb027517ab90e524b6296c88134bdb06a4897cc7425b041cc9ff832
+  - elementId: slide-34-node-804-Text-13
+    elementType: text
+    bounds:
+      - 363.6
+      - 151.2
+      - 280.8
+      - 334.8
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#E2E8F0'
+      align:
+        - left
+        - top
+      wrap: true
+      text: '<p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas"># 空间上采到全分辨率</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">x = TransposedConvBlock(L4_out)</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">#   -&gt; 48 通道, H, W</span></p><p></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas"># 拼接梯度图作为额外通道</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">x = cat([x, g_full_res], dim=1)</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">#   -&gt; 49 通道</span></p><p></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas"># 通道压缩</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">x = output_reduce(x)</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">#   -&gt; 32 通道</span></p><p></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas"># 空洞卷积扩感受野</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">x_d = output_dilated(x)</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">x = x + x_d              # 残差</span></p><p></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas"># 进一步压缩</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">x = output_conv3(x)</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">#   -&gt; 16 通道</span></p><p></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas"># 三个并行输出头</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">b           = sigmoid(b_head(x))</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">r_direct    = sigmoid(r_direct_head(x))</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">alpha_logit = alpha_head(x)  # 不经 sigmoid</span></p><p></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">return (b, r_direct, alpha_logit)</span></p>'
+    sourceLayout: 6c92a0611439a814d01c2cac5deb65e939a99199d06ba3e0d5ed1c34db3f1c77
+  - elementId: slide-34-node-805-Shape-14
+    elementType: shape
+    bounds:
+      - 676.8
+      - 108
+      - 248.4
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: e34fb85b8dc07e85a56ef0d9e8c9bfbd44e8d30082e9bac4c3c501c5565fd161
+  - elementId: slide-34-node-806-Shape-15
+    elementType: shape
+    bounds:
+      - 676.8
+      - 108
+      - 5.76
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0D9488'
+    border:
+      style: solid
+      width: 1
+      color: '#0D9488'
+    sourceLayout: c578126ec2b993038cd90a90f30eba34d34f0c7cd0fdcca7eb57e8a831d58812
+  - elementId: slide-34-node-807-Text-16
+    elementType: text
+    bounds:
+      - 691.2
+      - 115.2
+      - 223.2
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 13
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:13px;font-weight:700">输出 · 主解码器的三个最终量</span></p>
+    sourceLayout: dda6fe86c82f182ad50d85626b299a1f0612f8ecc498c91401906724609835e2
+  - elementId: slide-34-node-808-Text-17
+    elementType: text
+    bounds:
+      - 691.2
+      - 140.4
+      - 223.2
+      - 352.8
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#DB2777'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#DB2777;font-size:12px;font-family:Calibri;font-weight:700">b · 镜面/高反光</span><span style="color:#1F2937;font-size:11px;font-family:Consolas">  [B, 1, H, W]  ∈ [0,1]</span></p><p><span style="color:#475569;font-size:10px;font-family:Calibri">  网络估计的“被叠加上去的高光”</span></p><p><span style="color:#000000;font-size:5px;font-family:Calibri"> </span></p><p><span style="color:#1E2761;font-size:12px;font-family:Calibri;font-weight:700">r_direct · 直接漫反射</span><span style="color:#1F2937;font-size:11px;font-family:Consolas">  [B, 1, H, W]  ∈ [0,1]</span></p><p><span style="color:#475569;font-size:10px;font-family:Calibri">  解码器直接预测的去高光图</span></p><p><span style="color:#000000;font-size:5px;font-family:Calibri"> </span></p><p><span style="color:#F59E0B;font-size:12px;font-family:Calibri;font-weight:700">alpha_logit</span><span style="color:#1F2937;font-size:11px;font-family:Consolas">  标量或可广播张量 (未 sigmoid)</span></p><p><span style="color:#475569;font-size:10px;font-family:Calibri">  下一步 α = sigmoid(alpha_logit) ∈ [0,1] 作融合系数</span></p>
+    sourceLayout: cd2c55cef098d5dc840d1ff6ab7f45c29c6e9fa55e1d28ccc8dc837089756b97
+  - elementId: slide-34-node-809-Text-18
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: 24c654aa48a707011fbd143145a1159b3c1fc8c4e223e2261565c7cd398263bf

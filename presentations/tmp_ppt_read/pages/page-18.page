@@ -1,0 +1,1239 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-18-node-395-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 3a6c17bf2f91aeb82141d708a07319885c8856507f6c9fdf83bfebe29ed894e6
+  - elementId: slide-18-node-396-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">04 · FFC · CONTAINMENT HIERARCHY</span></p>
+    sourceLayout: 45880797eb1cecf8dba68c938b5d2fdd3dde253b402630daac71d3e862eeab7d
+  - elementId: slide-18-node-397-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">FFC 模块在整个模型中的包含关系与位置 (重点)</span></p>
+    sourceLayout: 5e6b4d9a9377a2abb6acff2924290a216cdbf7074514eededd0ffd154c83dda9
+  - elementId: slide-18-node-398-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">18 / 50</span></p>
+    sourceLayout: 23c90e20c1343221070e8d9a691e4d3fda9e4cc40ca0b2d47e418fe8149e6722
+  - elementId: slide-18-node-399-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: c9065f314c6230e4c35ebe5e2d7c9fb3c834dd4702f8777d1d225c7d7ea1d504
+  - elementId: slide-18-node-400-Text-5
+    elementType: text
+    bounds:
+      - 36
+      - 100.8
+      - 885.6
+      - 32.4
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:12px;font-style:italic">注意 · 网络中实际被调用的是 FFC_BN_ACT 与 SpectralTransform, 并非直接调用 FourierUnit。三者构成自底向上的封装链。</span></p>
+    sourceLayout: 77b37ca410d9d8760834eb8f580aedfac1d44a912e409ac70eddb89dc0e346c9
+  - elementId: slide-18-node-401-Shape-6
+    elementType: shape
+    bounds:
+      - 36
+      - 144
+      - 288
+      - 75.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F59E0B'
+    border:
+      style: solid
+      width: 1
+      color: '#F59E0B'
+    sourceLayout: 80bfaa2d52b1ba7ebc98acbb11b9052a9dc683b0dcb1ac740e1b23437050e7d9
+  - elementId: slide-18-node-402-Text-7
+    elementType: text
+    bounds:
+      - 50.4
+      - 147.6
+      - 259.2
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:14px;font-weight:700">L1 · FourierUnit</span></p>
+    sourceLayout: d28c238475d99a4f1862ab4cf7d68976b2fca0ff292eeb61863f1fed58632224
+  - elementId: slide-18-node-403-Text-8
+    elementType: text
+    bounds:
+      - 50.4
+      - 176.4
+      - 259.2
+      - 39.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#FFFFFF'
+      align:
+        - left
+        - top
+      wrap: true
+      text: '<p><span style="color:#FFFFFF;font-size:11px">最底层 FFT 单元: rFFT + 1×1 Conv + SE + iRFFT</span></p>'
+    sourceLayout: b13ba9af86acbf1485f6082e889e65c0cfe692e98483378dbd64ac7e1034309e
+  - elementId: slide-18-node-404-Text-9
+    elementType: text
+    bounds:
+      - 324
+      - 144
+      - 18
+      - 75.6
+    content:
+      fontFamily: Calibri
+      fontSize: 22
+      color: '#475569'
+      align:
+        - center
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:22px;font-weight:700">▶</span></p>
+    sourceLayout: d7bf0922700ae3c8b2b22902fe721c8ee5fee578068d2f0479bf9742fa58f435
+  - elementId: slide-18-node-405-Shape-10
+    elementType: shape
+    bounds:
+      - 342
+      - 144
+      - 288
+      - 75.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0D9488'
+    border:
+      style: solid
+      width: 1
+      color: '#0D9488'
+    sourceLayout: 4179c78fd329778f4a7daad251c9a70616c74e7959d547530bee0e200cbd94ba
+  - elementId: slide-18-node-406-Text-11
+    elementType: text
+    bounds:
+      - 356.4
+      - 147.6
+      - 259.2
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:14px;font-weight:700">L2 · SpectralTransform</span></p>
+    sourceLayout: 970c7c05cba549da1dc5a608bdfa7aa5e887a2815b838feea5a891b49820dbfd
+  - elementId: slide-18-node-407-Text-12
+    elementType: text
+    bounds:
+      - 356.4
+      - 176.4
+      - 259.2
+      - 39.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#FFFFFF'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:11px">FU (整图) + LFU (上下半) + Gate Fusion</span></p>
+    sourceLayout: 5b7038f3f90a8ecd083696aa32d79f5d4022156b472a6870ae60c1c4814d9a41
+  - elementId: slide-18-node-408-Text-13
+    elementType: text
+    bounds:
+      - 630
+      - 144
+      - 18
+      - 75.6
+    content:
+      fontFamily: Calibri
+      fontSize: 22
+      color: '#475569'
+      align:
+        - center
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:22px;font-weight:700">▶</span></p>
+    sourceLayout: 3d1184705f8c0e493415ad86754503abafa6d39cf8823864b32d91b865529c42
+  - elementId: slide-18-node-409-Shape-14
+    elementType: shape
+    bounds:
+      - 648
+      - 144
+      - 288
+      - 75.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 4f6b23041c0572c4ec113e4d364c2ad62fc3bfd5525d1327ce0c34d98435fd03
+  - elementId: slide-18-node-410-Text-15
+    elementType: text
+    bounds:
+      - 662.4
+      - 147.6
+      - 259.2
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:14px;font-weight:700">L3 · FFC_BN_ACT</span></p>
+    sourceLayout: 2625f74f3e733b6d4e325397e044ebded884b8639779857f93c42c688a0fce1e
+  - elementId: slide-18-node-411-Text-16
+    elementType: text
+    bounds:
+      - 662.4
+      - 176.4
+      - 259.2
+      - 39.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#FFFFFF'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:11px">Local/Global 四路交互, 是网络中实际使用的层</span></p>
+    sourceLayout: 37cfed510ead83699704071240e14ed315e718416b5010093e5eb60ef1dc3b20
+  - elementId: slide-18-node-412-Shape-17
+    elementType: shape
+    bounds:
+      - 36
+      - 237.6
+      - 889.2
+      - 259.2
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: aa8e5fecdb5bec5af55dc5b745bd67e792f458848079f55ad584e40630a00a6d
+  - elementId: slide-18-node-413-Shape-18
+    elementType: shape
+    bounds:
+      - 36
+      - 237.6
+      - 5.76
+      - 259.2
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 23fa90332af4a0e8d88311996a12219558a2f573290c3e04ae2eb3d12728983b
+  - elementId: slide-18-node-414-Text-19
+    elementType: text
+    bounds:
+      - 50.4
+      - 244.8
+      - 864
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">FFC_BN_ACT 在整个 X-FFC 模型中的调用位置 (10+ 次出现)</span></p>
+    sourceLayout: 15ba62d331e6da5e209881fc7b2280c664eb34238611705dc0c7d5db467b1e6d
+  - elementId: slide-18-node-415-Shape-20
+    elementType: shape
+    bounds:
+      - 43.2
+      - 277.2
+      - 874.8
+      - 23.04
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: be3030126faad671e45395f9c530214b07576cf6e9f258aa8ac7799e9ac35e75
+  - elementId: slide-18-node-416-Text-21
+    elementType: text
+    bounds:
+      - 50.4
+      - 277.2
+      - 176.4
+      - 23.04
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:11px;font-weight:700">位置</span></p>
+    sourceLayout: 9d0d29da02b9aa33acee96c320223a82959890fd1063c299cb756673fa9a7e6f
+  - elementId: slide-18-node-417-Text-22
+    elementType: text
+    bounds:
+      - 237.6
+      - 277.2
+      - 162
+      - 23.04
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:11px;font-weight:700">调用形式</span></p>
+    sourceLayout: a22874494b7e90e5cafb96519617053ba899440b772ac7b13f61e75f1f451815
+  - elementId: slide-18-node-418-Text-23
+    elementType: text
+    bounds:
+      - 410.4
+      - 277.2
+      - 234
+      - 23.04
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:11px;font-weight:700">处理对象</span></p>
+    sourceLayout: 3189344629602b96c3e760ee5142579c7d22aaf9810aefbd268cf69d80541058
+  - elementId: slide-18-node-419-Text-24
+    elementType: text
+    bounds:
+      - 655.2
+      - 277.2
+      - 259.2
+      - 23.04
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:11px;font-weight:700">作用</span></p>
+    sourceLayout: a67a88d3f460681a228acf2472d5185982f1788ff5e0a44352296b55a98e452d
+  - elementId: slide-18-node-420-Shape-25
+    elementType: shape
+    bounds:
+      - 43.2
+      - 300.24
+      - 874.8
+      - 24.48
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.4
+      color: '#E2E8F0'
+    sourceLayout: 920f3c2afcc776c43fc1c21482cdd0903ff0147ee250116c21701b370cf94889
+  - elementId: slide-18-node-421-Shape-26
+    elementType: shape
+    bounds:
+      - 43.2
+      - 300.24
+      - 5.76
+      - 24.48
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0D9488'
+    border:
+      style: solid
+      width: 1
+      color: '#0D9488'
+    sourceLayout: ebe528aa19dba6d7914a3b0df7fcd4385216a20d93ebbf0101147ac0456414f5
+  - elementId: slide-18-node-422-Text-27
+    elementType: text
+    bounds:
+      - 54
+      - 300.24
+      - 172.8
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:10px;font-weight:700">Encoder 末端</span></p>
+    sourceLayout: c0b1380d4898f7464e1f5cb1030b2f89255378170c98d9bc20dcf1cb8bb8d455
+  - elementId: slide-18-node-423-Text-28
+    elementType: text
+    bounds:
+      - 237.6
+      - 300.24
+      - 162
+      - 24.48
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas">ffc_bottleneck</span></p>
+    sourceLayout: d9ac70b4e46a204cd9f6d7fedcaa969801736ed362c234edd9371fed9af095ce
+  - elementId: slide-18-node-424-Text-29
+    elementType: text
+    bounds:
+      - 410.4
+      - 300.24
+      - 234
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px">对 x_c 做 ratio=0.5 的频域全局建模</span></p>
+    sourceLayout: 0a0c6e3088ed40a08764ee68119d6e539ab25889769147656d2f247c0b77733a
+  - elementId: slide-18-node-425-Text-30
+    elementType: text
+    bounds:
+      - 655.2
+      - 300.24
+      - 259.2
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">提供瓶颈级全局上下文</span></p>
+    sourceLayout: 7a78c889f26484c22e0f9ba76be5ad1173402b1be4119049bc09fa6235fb2d02
+  - elementId: slide-18-node-426-Shape-31
+    elementType: shape
+    bounds:
+      - 43.2
+      - 324.72
+      - 874.8
+      - 24.48
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.4
+      color: '#E2E8F0'
+    sourceLayout: ed733f46e283f27b54ab65e1193a3b81ab812db64800a48547fb5e4b45b123f0
+  - elementId: slide-18-node-427-Shape-32
+    elementType: shape
+    bounds:
+      - 43.2
+      - 324.72
+      - 5.76
+      - 24.48
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#DB2777'
+    border:
+      style: solid
+      width: 1
+      color: '#DB2777'
+    sourceLayout: fbe23ac84e20831021103df5caba554497a267286d840dd3806a5dd1693f2b4b
+  - elementId: slide-18-node-428-Text-33
+    elementType: text
+    bounds:
+      - 54
+      - 324.72
+      - 172.8
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:10px;font-weight:700">GradientDecoder Block 1 (H/16)</span></p>
+    sourceLayout: 327eb42b63e54dfd58a41b0cd24d10ac56ba1beb2d880fd7103a48daad101af3
+  - elementId: slide-18-node-429-Text-34
+    elementType: text
+    bounds:
+      - 237.6
+      - 324.72
+      - 162
+      - 24.48
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas">FFC_BN_ACT(r=0.25)</span></p>
+    sourceLayout: 99854122fec64a029098da83dbd11f259bc6aa4d60a92148c119c8d0166bd046
+  - elementId: slide-18-node-430-Text-35
+    elementType: text
+    bounds:
+      - 410.4
+      - 324.72
+      - 234
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px">处理 cat(x_bb_4, x_c) 融合后的特征</span></p>
+    sourceLayout: ed892068041d6c7ad8112cd86df66df48c256d904710dde9317d372dbcceccc8
+  - elementId: slide-18-node-431-Text-36
+    elementType: text
+    bounds:
+      - 655.2
+      - 324.72
+      - 259.2
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">在 H/16 加入全局频域</span></p>
+    sourceLayout: 1a0dedd2e9c753fb71c967655423433cc44dc3d10737ffcc8527921b204032a3
+  - elementId: slide-18-node-432-Shape-37
+    elementType: shape
+    bounds:
+      - 43.2
+      - 349.2
+      - 874.8
+      - 24.48
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.4
+      color: '#E2E8F0'
+    sourceLayout: beb7f92ef98dcfb102b647505bba3d4103460d0459b5851cba8705e98091891a
+  - elementId: slide-18-node-433-Shape-38
+    elementType: shape
+    bounds:
+      - 43.2
+      - 349.2
+      - 5.76
+      - 24.48
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#DB2777'
+    border:
+      style: solid
+      width: 1
+      color: '#DB2777'
+    sourceLayout: 62323ef2d9619deac55d837e6712d232bedf1afc401eb5d69a9ade1924c57567
+  - elementId: slide-18-node-434-Text-39
+    elementType: text
+    bounds:
+      - 54
+      - 349.2
+      - 172.8
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:10px;font-weight:700">GradientDecoder Block 2 (H/8)</span></p>
+    sourceLayout: ae7a7e57f13996fc252fd3c8d84697d04f79454408c5a63f22b52a8248696194
+  - elementId: slide-18-node-435-Text-40
+    elementType: text
+    bounds:
+      - 237.6
+      - 349.2
+      - 162
+      - 24.48
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas">FFC_BN_ACT(r=0.25)</span></p>
+    sourceLayout: 17e898cad4abab565bf925b5d868cdb9643d41f36ce6d173825d58c190b0bee3
+  - elementId: slide-18-node-436-Text-41
+    elementType: text
+    bounds:
+      - 410.4
+      - 349.2
+      - 234
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px">处理 cat(xe1, x_bb_3)</span></p>
+    sourceLayout: adc220190299e4c34fc0c0799bc888d2ae7e05bb0c25890def034ffebb92e655
+  - elementId: slide-18-node-437-Text-42
+    elementType: text
+    bounds:
+      - 655.2
+      - 349.2
+      - 259.2
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">在 H/8 中层加入频域</span></p>
+    sourceLayout: 84c5146c19bb6287d174906f3f3131ee585752243f27a17d8789cf49b9801488
+  - elementId: slide-18-node-438-Shape-43
+    elementType: shape
+    bounds:
+      - 43.2
+      - 373.68
+      - 874.8
+      - 24.48
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.4
+      color: '#E2E8F0'
+    sourceLayout: 28d56fdaf2acdbd1772313e608a9dc9b80064e0d38ac1183bac78df8d02d35ac
+  - elementId: slide-18-node-439-Shape-44
+    elementType: shape
+    bounds:
+      - 43.2
+      - 373.68
+      - 5.76
+      - 24.48
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#DB2777'
+    border:
+      style: solid
+      width: 1
+      color: '#DB2777'
+    sourceLayout: 9b303789497f5f9dfab4d5aeb6fccf27f93335394951c6ec76bbcd3d0f9c7bcc
+  - elementId: slide-18-node-440-Text-45
+    elementType: text
+    bounds:
+      - 54
+      - 373.68
+      - 172.8
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:10px;font-weight:700">GradientDecoder Block 3 (H/4)</span></p>
+    sourceLayout: b2a6c10bd3ac80ba12f312f583036abf4b1fc87f89fc98d60a426d04466ed2ba
+  - elementId: slide-18-node-441-Text-46
+    elementType: text
+    bounds:
+      - 237.6
+      - 373.68
+      - 162
+      - 24.48
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas">FFC_BN_ACT(r=0.25)</span></p>
+    sourceLayout: 92155feb04fcfdabe22e2dc6f6372e5b093caf37c35c63e99e0de37166de0e8a
+  - elementId: slide-18-node-442-Text-47
+    elementType: text
+    bounds:
+      - 410.4
+      - 373.68
+      - 234
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px">处理 cat(xe2, x_bb_2)</span></p>
+    sourceLayout: d797ac3e39cd89f132ecb81fe6c8383c58e1476b7bab8e01b7faa32501f51bad
+  - elementId: slide-18-node-443-Text-48
+    elementType: text
+    bounds:
+      - 655.2
+      - 373.68
+      - 259.2
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">在 H/4 浅层加入频域</span></p>
+    sourceLayout: 1141d2d918099617e611f6c6127363885a981da1cda293f5ad4a09543548145d
+  - elementId: slide-18-node-444-Shape-49
+    elementType: shape
+    bounds:
+      - 43.2
+      - 398.16
+      - 874.8
+      - 24.48
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.4
+      color: '#E2E8F0'
+    sourceLayout: a79987d5b03e2731a017a9caac93f35d89cf8ae86896dde60192154cc9caa104
+  - elementId: slide-18-node-445-Shape-50
+    elementType: shape
+    bounds:
+      - 43.2
+      - 398.16
+      - 5.76
+      - 24.48
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#7C3AED'
+    border:
+      style: solid
+      width: 1
+      color: '#7C3AED'
+    sourceLayout: e07cb56721121985203e65b6e79bcfcc51bdfe899f05f8101666e4a1b359034a
+  - elementId: slide-18-node-446-Text-51
+    elementType: text
+    bounds:
+      - 54
+      - 398.16
+      - 172.8
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:10px;font-weight:700">MainDecoder L1 (H/16)</span></p>
+    sourceLayout: 697f80d0e10748345c7a91105f184585e451fc225b229c8063b51d43e356632c
+  - elementId: slide-18-node-447-Text-52
+    elementType: text
+    bounds:
+      - 237.6
+      - 398.16
+      - 162
+      - 24.48
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas">FFC1 + FFC2 + residual</span></p>
+    sourceLayout: 972e31342a93fc2317651352497982e5e82ea2d7a100ea36fbfdd213f5f1620d
+  - elementId: slide-18-node-448-Text-53
+    elementType: text
+    bounds:
+      - 410.4
+      - 398.16
+      - 234
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px">在 x_c 上做两次 FFC, 构成主解码起点</span></p>
+    sourceLayout: af8a98b048970295fdaa1b9dabfb5dcb66171bc7e01af1b18761ea36ea200b70
+  - elementId: slide-18-node-449-Text-54
+    elementType: text
+    bounds:
+      - 655.2
+      - 398.16
+      - 259.2
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">瓶颈频域提取</span></p>
+    sourceLayout: 7f960c8be8cad9b940122d144c912a16772e408c910529a70426c3f7a05c90dd
+  - elementId: slide-18-node-450-Shape-55
+    elementType: shape
+    bounds:
+      - 43.2
+      - 422.64
+      - 874.8
+      - 24.48
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.4
+      color: '#E2E8F0'
+    sourceLayout: d7249bc59b3bd693a2b8d33bf65d34b2554fad58e32a94c565a7bcc5cbb2d186
+  - elementId: slide-18-node-451-Shape-56
+    elementType: shape
+    bounds:
+      - 43.2
+      - 422.64
+      - 5.76
+      - 24.48
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#7C3AED'
+    border:
+      style: solid
+      width: 1
+      color: '#7C3AED'
+    sourceLayout: 9e96235d8ad270d2b6a23588999dba7048f25642e62de6f7ee898d513c740bcc
+  - elementId: slide-18-node-452-Text-57
+    elementType: text
+    bounds:
+      - 54
+      - 422.64
+      - 172.8
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:10px;font-weight:700">MainDecoder L2 (H/8)</span></p>
+    sourceLayout: 9d39ff40787d13c23d7a369e1407f2bce8b883f72fdafc9701fd21748645864c
+  - elementId: slide-18-node-453-Text-58
+    elementType: text
+    bounds:
+      - 237.6
+      - 422.64
+      - 162
+      - 24.48
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas">FFC_H8</span></p>
+    sourceLayout: c3427c1d0b0867e40ac526929dd6d6833bc33eb89cd810c352b1cc8d64bce208
+  - elementId: slide-18-node-454-Text-59
+    elementType: text
+    bounds:
+      - 410.4
+      - 422.64
+      - 234
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px">上采样后注入 H/8 频域</span></p>
+    sourceLayout: 6150ea3b6d78b41036c027209c2d653ea63417769ec9a3031e4369741860ec7f
+  - elementId: slide-18-node-455-Text-60
+    elementType: text
+    bounds:
+      - 655.2
+      - 422.64
+      - 259.2
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">中层频域</span></p>
+    sourceLayout: dba10e36efad1c04e8f053910b42f8c33cff26cab443fc25bd2f190937b836e6
+  - elementId: slide-18-node-456-Shape-61
+    elementType: shape
+    bounds:
+      - 43.2
+      - 447.12
+      - 874.8
+      - 24.48
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.4
+      color: '#E2E8F0'
+    sourceLayout: d576aedc016d4bc16cd73f6138effa1ac32f7426ae3bed1d13cb2b16e210ff12
+  - elementId: slide-18-node-457-Shape-62
+    elementType: shape
+    bounds:
+      - 43.2
+      - 447.12
+      - 5.76
+      - 24.48
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#7C3AED'
+    border:
+      style: solid
+      width: 1
+      color: '#7C3AED'
+    sourceLayout: 0f936aff003c7e6728cf50310e416b404145f514755292bb9ac0530b07c0c313
+  - elementId: slide-18-node-458-Text-63
+    elementType: text
+    bounds:
+      - 54
+      - 447.12
+      - 172.8
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:10px;font-weight:700">MainDecoder L3 (H/4)</span></p>
+    sourceLayout: 58fdbbfe8268a7c0977a575cce055daaf0c2ccabf48f1e5eea99b4996a39a60b
+  - elementId: slide-18-node-459-Text-64
+    elementType: text
+    bounds:
+      - 237.6
+      - 447.12
+      - 162
+      - 24.48
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas">FFC_H4</span></p>
+    sourceLayout: 22ef6bc02f8d23986067b05be517375c164bdce1ff4d31678e6f634e6aa577f8
+  - elementId: slide-18-node-460-Text-65
+    elementType: text
+    bounds:
+      - 410.4
+      - 447.12
+      - 234
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px">上采样后注入 H/4 频域</span></p>
+    sourceLayout: d477171556f9a1d1f9c79fe4ab84090442423cff4ef85e5d0220ff849620387a
+  - elementId: slide-18-node-461-Text-66
+    elementType: text
+    bounds:
+      - 655.2
+      - 447.12
+      - 259.2
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">浅层频域</span></p>
+    sourceLayout: 4a339e7d8cc70b2b5029192f7f4ceab3b0bef2c8d4e33d192ee6b8df8e812b73
+  - elementId: slide-18-node-462-Shape-67
+    elementType: shape
+    bounds:
+      - 43.2
+      - 471.6
+      - 874.8
+      - 24.48
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.4
+      color: '#E2E8F0'
+    sourceLayout: 4200af21fd1e5ade0ef33ed24009ea1ff061e98b5f27fb0e5a835410f509491f
+  - elementId: slide-18-node-463-Shape-68
+    elementType: shape
+    bounds:
+      - 43.2
+      - 471.6
+      - 5.76
+      - 24.48
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#10B981'
+    border:
+      style: solid
+      width: 1
+      color: '#10B981'
+    sourceLayout: 54ffc65396b88809c0ea69d4d808a5804d63ed6f8982ea11021a43cf60008bab
+  - elementId: slide-18-node-464-Text-69
+    elementType: text
+    bounds:
+      - 54
+      - 471.6
+      - 172.8
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:10px;font-weight:700">EnhancementLayers (×4)</span></p>
+    sourceLayout: 6e9d0124bb2458531ad88a20718595fab302dd36bc9dd54ca3754e5dd30ea980
+  - elementId: slide-18-node-465-Text-70
+    elementType: text
+    bounds:
+      - 237.6
+      - 471.6
+      - 162
+      - 24.48
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas">specular_branch + FFC</span></p>
+    sourceLayout: a9d78f533e55f37fd786efbf954fb93a26b22271a99dd2a91ce7b6c14ca3083e
+  - elementId: slide-18-node-466-Text-71
+    elementType: text
+    bounds:
+      - 410.4
+      - 471.6
+      - 234
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px">对 specular 分支做频域精炼</span></p>
+    sourceLayout: f54f36e3527e05126b25ae64eeeab9ea7c4d64e43a620eaa40e7aa6c84b89c71
+  - elementId: slide-18-node-467-Text-72
+    elementType: text
+    bounds:
+      - 655.2
+      - 471.6
+      - 259.2
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">高光分支频域强化</span></p>
+    sourceLayout: d234d1f0b517b2dd90ec0dc905bf394c3f03c73baf5e90c953d72ac669dc0a81
+  - elementId: slide-18-node-468-Text-73
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: ccf84be55740cec701f261c2c5ef91c11c0186b4f7b931c427df220aaec8ae46

@@ -44,9 +44,9 @@ import matplotlib.pyplot as plt
 
 # ── 从统一文件导入所有模型相关模块 ──
 # 原分散在 Y_FFC_v2.py / Y_FFC.py / specular_modules.py 中，
-# 现已整合到 Y_FFC_unified.py 单文件。
-from Y_FFC_unified import (
-    YFFC,
+# 现已整合到 X_FFC_unified.py 单文件。
+from X_FFC_unified import (
+    XFFC,
     build_scheduler,
     EMA,
     replace_bn_with_gn,
@@ -659,7 +659,7 @@ def _tta_forward(model, inp):
     avg_g = torch.stack(preds_g, dim=0).mean(0) if preds_g else out.get('g')
     avg_s = torch.stack(preds_s, dim=0).mean(0) if preds_s else None
 
-    # 复刻 YFFC.forward 末尾的双路融合 + 精修，保证 TTA 输出 r 与正常 forward 路径一致
+    # 复刻 XFFC.forward 末尾的双路融合 + 精修，保证 TTA 输出 r 与正常 forward 路径一致
     r_sub = torch.clamp(inp - avg_b, 0.0, 1.0)
     if avg_r_direct is not None:
         # 用最后一次 forward 的 alpha（与训练保持一致；推理时 alpha 已稳定）
@@ -1378,7 +1378,7 @@ def train_model(cfg):
         os.makedirs(os.path.join(output_folder, 'checkpoints'), exist_ok=True)
 
     # ══════════ 1. 模型 ══════════
-    model = YFFC()
+    model = XFFC()
     if cfg['USE_GN']:
         print("[GN] BN -> GN 替换")
         replace_bn_with_gn(model, 8)

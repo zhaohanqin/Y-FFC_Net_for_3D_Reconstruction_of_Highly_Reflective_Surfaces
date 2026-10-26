@@ -1,0 +1,652 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-29-node-676-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 95676c43c329a9f22722c57c0af785e5ae79eed79dac09a457e94ba3869c624b
+  - elementId: slide-29-node-677-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">07 · MAIN DECODER · OVERVIEW</span></p>
+    sourceLayout: f088415bde9cde969cb69fe73484f326b11f782f49283665641e18269c53010e
+  - elementId: slide-29-node-678-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">MainDecoder · 总体结构与输入流</span></p>
+    sourceLayout: 9de99ce006166b6cdb46cd91487d499aab20345f59a9d4b0eab92572f86ba077
+  - elementId: slide-29-node-679-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">29 / 50</span></p>
+    sourceLayout: 4bc57e32c64e47d8efa72d2e6ccd73ca5cc1869c7e690ceae409bbb8bdb39087
+  - elementId: slide-29-node-680-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: 15e7e19ad58c32f1db8154020af5432e4ab4e0c24da46352af641930b18c1621
+  - elementId: slide-29-node-681-Text-5
+    elementType: text
+    bounds:
+      - 36
+      - 100.8
+      - 885.6
+      - 30.24
+    content:
+      fontFamily: Consolas
+      fontSize: 10.5
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10.5px;font-family:Consolas;font-style:italic">forward(c_features = (x_bb_1..4, x_c),  enhanced_features = (enh1..4),  x_g,  x_s,  original_input)  →  (b, r_direct, alpha_logit)</span></p>
+    sourceLayout: 24493aa1410ef213680a4cf2461741ed0f188b73bf3a126fc10db7305285b3cd
+  - elementId: slide-29-node-682-Shape-6
+    elementType: shape
+    bounds:
+      - 36
+      - 136.8
+      - 432
+      - 360
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 14e1680866e3f8cf0d59f167bd574fb81a1ccf3b41838ff07e7ea234a347a4f8
+  - elementId: slide-29-node-683-Shape-7
+    elementType: shape
+    bounds:
+      - 36
+      - 136.8
+      - 5.76
+      - 360
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 41b1153605fb28abd4d69ea1f0ddee9a839253000516b563e90c0968d5f2749f
+  - elementId: slide-29-node-684-Text-8
+    elementType: text
+    bounds:
+      - 50.4
+      - 144
+      - 410.4
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">输入 · 主解码器需要的所有信息</span></p>
+    sourceLayout: 63396dd906a31515f311360ab221e3b3941633fdaf80384e9a66cc40c6f19999
+  - elementId: slide-29-node-685-Shape-9
+    elementType: shape
+    bounds:
+      - 50.4
+      - 180
+      - 410.4
+      - 57.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.5
+      color: '#E2E8F0'
+    sourceLayout: 6ffe3f6405375304e5e63dea219c119aabf72151644643463a87ec7fa16b5d29
+  - elementId: slide-29-node-686-Shape-10
+    elementType: shape
+    bounds:
+      - 50.4
+      - 180
+      - 4.32
+      - 57.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0D9488'
+    border:
+      style: solid
+      width: 1
+      color: '#0D9488'
+    sourceLayout: 4cd41aa283a8211a5f32321b5d470d031aa2efdfe7eaa767aec0406509eacbca
+  - elementId: slide-29-node-687-Text-11
+    elementType: text
+    bounds:
+      - 59.76
+      - 180
+      - 144
+      - 57.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11.5
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11.5px;font-weight:700">c_features (5 路)</span></p>
+    sourceLayout: 59a734a21ac288716eb764e37e49e8591bc8ee4b1c5e2b1ad9c40fedd1a8ef4c
+  - elementId: slide-29-node-688-Text-12
+    elementType: text
+    bounds:
+      - 205.2
+      - 183.6
+      - 252
+      - 23.04
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas">(x_bb_1, x_bb_2, x_bb_3, x_bb_4, x_c)</span></p>
+    sourceLayout: 724f62376a5093e6d2fc0b2758dce671f8f0108790b73e11bea9592da4d7b148
+  - elementId: slide-29-node-689-Text-13
+    elementType: text
+    bounds:
+      - 205.2
+      - 208.8
+      - 252
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#475569'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9.5px">Encoder 提供的多尺度 skip 与瓶颈</span></p>
+    sourceLayout: 6b10b1b040b557101301fb0513879e5f07e6e29b7ae9b65bb116aa03c8e333e7
+  - elementId: slide-29-node-690-Shape-14
+    elementType: shape
+    bounds:
+      - 50.4
+      - 241.2
+      - 410.4
+      - 57.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.5
+      color: '#E2E8F0'
+    sourceLayout: 1e9a14af58c4cf4a14efc78e47f7de7eaecb0f0327e51e7d9df11e40e6979030
+  - elementId: slide-29-node-691-Shape-15
+    elementType: shape
+    bounds:
+      - 50.4
+      - 241.2
+      - 4.32
+      - 57.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#10B981'
+    border:
+      style: solid
+      width: 1
+      color: '#10B981'
+    sourceLayout: 0fb67ef4304db2395126eacfd61d30b13acb27b71ee9c2ef9d23040a4414df38
+  - elementId: slide-29-node-692-Text-16
+    elementType: text
+    bounds:
+      - 59.76
+      - 241.2
+      - 144
+      - 57.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11.5
+      color: '#10B981'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#10B981;font-size:11.5px;font-weight:700">enhanced_features</span></p>
+    sourceLayout: ada8c75dd347bce91ed22fa32aa79e543f1b97eb64d689856d0a1f38b8bd988b
+  - elementId: slide-29-node-693-Text-17
+    elementType: text
+    bounds:
+      - 205.2
+      - 244.8
+      - 252
+      - 23.04
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas">(enh1, enh2, enh3, enh4)</span></p>
+    sourceLayout: aae7655286e89023a9bdda16de1ed8bbf82c6cfff3b1b3b24e5989eabd8add9c
+  - elementId: slide-29-node-694-Text-18
+    elementType: text
+    bounds:
+      - 205.2
+      - 270
+      - 252
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#475569'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9.5px">EnhancementLayers 输出的高光增强特征</span></p>
+    sourceLayout: 64e25fe1599641ddbb87e5eb0d9b5747d95f02d20aec683c8157f00dbe12e48d
+  - elementId: slide-29-node-695-Shape-19
+    elementType: shape
+    bounds:
+      - 50.4
+      - 302.4
+      - 410.4
+      - 57.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.5
+      color: '#E2E8F0'
+    sourceLayout: dc8ef05c286b51c2d4a1220c665684d0fcc33d94a5da56ad46db581f2294bcb3
+  - elementId: slide-29-node-696-Shape-20
+    elementType: shape
+    bounds:
+      - 50.4
+      - 302.4
+      - 4.32
+      - 57.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F59E0B'
+    border:
+      style: solid
+      width: 1
+      color: '#F59E0B'
+    sourceLayout: 954ae4c5a331bd32d7ce5d9a659b68b339bbf2f52d2e85d552227540e79b93fa
+  - elementId: slide-29-node-697-Text-21
+    elementType: text
+    bounds:
+      - 59.76
+      - 302.4
+      - 144
+      - 57.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11.5
+      color: '#F59E0B'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#F59E0B;font-size:11.5px;font-weight:700">x_g · 梯度图</span></p>
+    sourceLayout: a31b56f651fa62d13e2c2cce836e801c3ce2f4d95d9b77c29ca9ff4b7112274b
+  - elementId: slide-29-node-698-Text-22
+    elementType: text
+    bounds:
+      - 205.2
+      - 306
+      - 252
+      - 23.04
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas">[B, 1, H, W]</span></p>
+    sourceLayout: 2123cd201d9980db59ee8bf801115fad1c03c9d74c9fa53fe8970a0cd9389a5c
+  - elementId: slide-29-node-699-Text-23
+    elementType: text
+    bounds:
+      - 205.2
+      - 331.2
+      - 252
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#475569'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9.5px">GradientDecoder 梯度头输出</span></p>
+    sourceLayout: 74f74a92a409965c19b4d7db039437b02cf7ca78241eecc48e4caab716eb9fc6
+  - elementId: slide-29-node-700-Shape-24
+    elementType: shape
+    bounds:
+      - 50.4
+      - 363.6
+      - 410.4
+      - 57.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.5
+      color: '#E2E8F0'
+    sourceLayout: 35bf844a492e59d04cccb114b5f51907115c901861fc9661142bc18660a6983c
+  - elementId: slide-29-node-701-Shape-25
+    elementType: shape
+    bounds:
+      - 50.4
+      - 363.6
+      - 4.32
+      - 57.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#7C3AED'
+    border:
+      style: solid
+      width: 1
+      color: '#7C3AED'
+    sourceLayout: 19edbb918bfd7175aa0722257f23bc9d49d3006330e1e14a6ad7910e9a5090f9
+  - elementId: slide-29-node-702-Text-26
+    elementType: text
+    bounds:
+      - 59.76
+      - 363.6
+      - 144
+      - 57.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11.5
+      color: '#7C3AED'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#7C3AED;font-size:11.5px;font-weight:700">x_s · 高光概率</span></p>
+    sourceLayout: 5be4fd7de6bca82ccce2c94366b512fa6f4433c2ba16fb31cadd78fc0fc9af49
+  - elementId: slide-29-node-703-Text-27
+    elementType: text
+    bounds:
+      - 205.2
+      - 367.2
+      - 252
+      - 23.04
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas">[B, 1, H, W]</span></p>
+    sourceLayout: 36a4880f47cc0364f77bf7b2804b5b3d28ae9e975ecab4eebbaaea973f2f8350
+  - elementId: slide-29-node-704-Text-28
+    elementType: text
+    bounds:
+      - 205.2
+      - 392.4
+      - 252
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#475569'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9.5px">GradientDecoder 高反光概率头输出</span></p>
+    sourceLayout: dd565c314187b4df2b2d55a36ceb0dd2fc00325858a5a9919c14a7640ef818d3
+  - elementId: slide-29-node-705-Shape-29
+    elementType: shape
+    bounds:
+      - 50.4
+      - 424.8
+      - 410.4
+      - 57.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.5
+      color: '#E2E8F0'
+    sourceLayout: d793d6e7c97ef7fb0f7c83467d7c44bd5f00d316c0f4688d279b16fdd49fc825
+  - elementId: slide-29-node-706-Shape-30
+    elementType: shape
+    bounds:
+      - 50.4
+      - 424.8
+      - 4.32
+      - 57.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#DB2777'
+    border:
+      style: solid
+      width: 1
+      color: '#DB2777'
+    sourceLayout: b6efe58c202a73ca626085e2e1b53ed74d11d794ed459678e5f8d6b4bdadc1d9
+  - elementId: slide-29-node-707-Text-31
+    elementType: text
+    bounds:
+      - 59.76
+      - 424.8
+      - 144
+      - 57.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11.5
+      color: '#DB2777'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#DB2777;font-size:11.5px;font-weight:700">original_input</span></p>
+    sourceLayout: 0b414a0de5255177e3d0917c053703b536d0a3e7ea584d72d664b9992946a1e2
+  - elementId: slide-29-node-708-Text-32
+    elementType: text
+    bounds:
+      - 205.2
+      - 428.4
+      - 252
+      - 23.04
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas">[B, 1, H, W]</span></p>
+    sourceLayout: d3f7e9d884be1868466e773804f4943ce99eb406234b1a976b16ded85078be91
+  - elementId: slide-29-node-709-Text-33
+    elementType: text
+    bounds:
+      - 205.2
+      - 453.6
+      - 252
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#475569'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9.5px">原始灰度输入, 参与 SpecAware 与门控</span></p>
+    sourceLayout: c8690c56c9a50a0955ac20af23ef394e9aab693892a307fe4a1089ddbd7ebfd0
+  - elementId: slide-29-node-710-Shape-34
+    elementType: shape
+    bounds:
+      - 489.6
+      - 136.8
+      - 435.6
+      - 360
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: a35f8c76573246e33c51f27744269d33bbae9c384613a4851b8e04341058164a
+  - elementId: slide-29-node-711-Shape-35
+    elementType: shape
+    bounds:
+      - 489.6
+      - 136.8
+      - 5.76
+      - 360
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#7C3AED'
+    border:
+      style: solid
+      width: 1
+      color: '#7C3AED'
+    sourceLayout: 41caec18c45905563ca99c9ec73196da06d63c7c219a20ea0dce4749332e27ee
+  - elementId: slide-29-node-712-Text-36
+    elementType: text
+    bounds:
+      - 504
+      - 144
+      - 410.4
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">5 级解码 · 每级通用 Pipeline</span></p>
+    sourceLayout: 8d0eb583e9ff0f49c296a8d9abf769a41b299830b0b411c0af50e72c89a2e2f2
+  - elementId: slide-29-node-713-Text-37
+    elementType: text
+    bounds:
+      - 504
+      - 172.8
+      - 410.4
+      - 316.8
+    content:
+      fontFamily: Consolas
+      fontSize: 11
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:11px;font-family:Consolas">[L1 起点] x_c → FFC1 + FFC2 + residual → MultiscaleConvBlock</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#7C3AED;font-size:12px;font-family:Calibri;font-weight:700">[每级通用模块 (L2~L4)]</span><span style="color:#1F2937;font-size:10.5px;font-family:Consolas">    ① TransposedConvBlock ↑×2 (resize-conv 多分支)</span></p><p><span style="color:#1F2937;font-size:10.5px;font-family:Consolas">    ② FFC_H8 / FFC_H4 (仅 L2、L3)</span></p><p><span style="color:#1F2937;font-size:10.5px;font-family:Consolas">    ③ 三路先验调制:</span></p><p><span style="color:#475569;font-size:9.5px;font-family:Consolas">      x = x · (1 + a·grad_gate(g)</span></p><p><span style="color:#475569;font-size:9.5px;font-family:Consolas">             + b·joint_gate([g,x,s])</span></p><p><span style="color:#475569;font-size:9.5px;font-family:Consolas">             + c·spec_lik_gate(s))</span></p><p><span style="color:#1F2937;font-size:10.5px;font-family:Consolas">    ④ SpecularAwareAttention (sa1..sa4)</span></p><p><span style="color:#1F2937;font-size:10.5px;font-family:Consolas">    ⑤ Attention_block (对 ResNet skip 做门控)</span></p><p><span style="color:#1F2937;font-size:10.5px;font-family:Consolas">    ⑥ cat(dec_feature, gated_skip, enh_i)</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#7C3AED;font-size:12px;font-family:Calibri;font-weight:700">[L5 输出头]</span><span style="color:#1F2937;font-size:10.5px;font-family:Consolas">    cat → output_reduce → output_dilated → residual → output_conv3</span></p><p><span style="color:#1F2937;font-size:10.5px;font-family:Consolas">    → b_head (sigmoid) / r_direct_head (sigmoid) / alpha_logit</span></p>
+    sourceLayout: e7b10d89a9f7aa97450f2aa8af1b49afa78d23bcbfb7795d680b9fa4218c8e43
+  - elementId: slide-29-node-714-Text-38
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: 7869ad94c4e77181927076d12e6a5fafa9feeb2a411fc319db98c27403d278d9

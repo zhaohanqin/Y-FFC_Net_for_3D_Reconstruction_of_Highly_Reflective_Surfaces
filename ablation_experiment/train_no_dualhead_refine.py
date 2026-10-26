@@ -5,7 +5,7 @@ train_no_dualhead_refine.py — 消融实验 D 训练入口（去除双头输出
 
 薄包装方式复用 train.py 全部流程，相对 train.py 的修改清单：
   - [新增] set_global_seed()：全局随机种子 42
-  - [修改] 模型类：YFFC → Y_FFC_no_dualhead_refine.YFFC_NoDualRefine
+  - [修改] 模型类：XFFC → X_FFC_no_dualhead_refine.YFFC_NoDualRefine
   - [修改] OUTPUT_FOLDER → experiments/ablation_no_dualhead_refine_<时间戳>
   - [修改] VIS_SAMPLE_SEED：None → 42
   - 损失函数、权重调度、优化器、LR 调度、数据管线全部零修改
@@ -37,12 +37,12 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 import train as base_train
-from Y_FFC_no_dualhead_refine import YFFC_NoDualRefine
+from X_FFC_no_dualhead_refine import YFFC_NoDualRefine
 
 # ════════════════════════════════════════════════════════════════════
 # ★ 核心修改：替换 train.train_model 内部实例化的模型类
 # ════════════════════════════════════════════════════════════════════
-base_train.YFFC = YFFC_NoDualRefine
+base_train.XFFC = YFFC_NoDualRefine
 
 GLOBAL_SEED = 42
 
@@ -58,7 +58,7 @@ def set_global_seed(seed=GLOBAL_SEED):
 def main():
     print("=" * 60)
     print("消融实验 D：去除双头输出 + 残差精修头 (输出端 → 纯减法链)")
-    print("模型类:", base_train.YFFC.__name__)
+    print("模型类:", base_train.XFFC.__name__)
     print("=" * 60)
     set_global_seed()
 

@@ -1,0 +1,791 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-12-node-259-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 39fff8c540d98d04b33792c177fa57763a4fd3dac86d5cafb5c1367a8eea1076
+  - elementId: slide-12-node-260-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">03 · ENCODER · SWIN + FUSION</span></p>
+    sourceLayout: 999d2f46cf9922f296f6443c0219d7d36e2eefde88ec491c9328fa66b2177a8e
+  - elementId: slide-12-node-261-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">Swin-Tiny 分支与多尺度跨模态融合</span></p>
+    sourceLayout: b17242e179b72528a0cebd7559f38727966c55d18484a341e72b28c6fe1a1e65
+  - elementId: slide-12-node-262-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">12 / 50</span></p>
+    sourceLayout: 710ae92902106ef6ef0caafb6566b4434af815de8760baea0b8c3a7af97df662
+  - elementId: slide-12-node-263-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: 70a62905af610be2bef82146293b94f39449ae3dd741b6964b65ca9c16418c38
+  - elementId: slide-12-node-264-Shape-5
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 432
+      - 201.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: a89e35383a0a5f3cff2073521215d75060ade3582efd3f2b3436957c82352c7d
+  - elementId: slide-12-node-265-Shape-6
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 5.76
+      - 201.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#7C3AED'
+    border:
+      style: solid
+      width: 1
+      color: '#7C3AED'
+    sourceLayout: fb850ae752d42fc33f03ae269ee41974282ad416d698679dd0cf2939f2474989
+  - elementId: slide-12-node-266-Text-7
+    elementType: text
+    bounds:
+      - 50.4
+      - 115.2
+      - 410.4
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">Swin-Tiny 窗口上下文分支</span></p>
+    sourceLayout: 7c5a10f3dadc2b782f17ad405e78615cc86657fe4af39c0367c28e8fe717ba2b
+  - elementId: slide-12-node-267-Text-8
+    elementType: text
+    bounds:
+      - 50.4
+      - 140.4
+      - 410.4
+      - 165.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11.5
+      color: '#7C3AED'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#7C3AED;font-size:11.5px;font-family:Calibri;font-weight:700">灰度 PatchEmbed</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">  Conv 4×4 stride 4, 1→96 通道; 权重 = 原 RGB PatchEmbed 通道均值</span></p><p><span style="color:#7C3AED;font-size:11.5px;font-family:Calibri;font-weight:700">尺寸处理</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">  不强制 resize 到 224; 输入若不能被 32 整除, 仅在右/下做 padding</span></p><p><span style="color:#7C3AED;font-size:11.5px;font-family:Calibri;font-weight:700">三尺度输出</span><span style="color:#1F2937;font-size:11px;font-family:Consolas">  swin_4 [96, H/4]   swin_8 [192, H/8]   swin_16 [384, H/16]</span></p><p><span style="color:#7C3AED;font-size:11.5px;font-family:Calibri;font-weight:700">Shifted-window 注意力</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">  跨窗口信息流动, 弥补 ResNet 感受野不足</span></p>
+    sourceLayout: 4760457c3b71e38292003d2c2f92213688e86dd4aa575101b9bd04a603dd66b3
+  - elementId: slide-12-node-268-Shape-9
+    elementType: shape
+    bounds:
+      - 489.6
+      - 108
+      - 435.6
+      - 201.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: c43a50912f87c3579f506bad0b11cec6d27e7c2b31ee34613123dea7c95d15b1
+  - elementId: slide-12-node-269-Shape-10
+    elementType: shape
+    bounds:
+      - 489.6
+      - 108
+      - 5.76
+      - 201.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F59E0B'
+    border:
+      style: solid
+      width: 1
+      color: '#F59E0B'
+    sourceLayout: e87c9b17bffdc7999c05cce353bb22569f19f291579986ed20cbe579130c7325
+  - elementId: slide-12-node-270-Text-11
+    elementType: text
+    bounds:
+      - 504
+      - 115.2
+      - 410.4
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">三种融合模块 (位置不同 · 强度不同)</span></p>
+    sourceLayout: d120b79c16e29e60d9803fc7315bda943a9869932acbb5713cef9d83d1c2b59f
+  - elementId: slide-12-node-271-Text-12
+    elementType: text
+    bounds:
+      - 504
+      - 141.84
+      - 410.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11.5
+      color: '#F59E0B'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#F59E0B;font-size:11.5px;font-weight:700">AdaptiveSkipFusion · H/4 + H/8</span></p>
+    sourceLayout: 71e9b53a2bb33113c56cc00cc3cea17a6ed4b016e282c54ae4e2eab6d68bdf87
+  - elementId: slide-12-node-272-Text-13
+    elementType: text
+    bounds:
+      - 504
+      - 162
+      - 410.4
+      - 39.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px">out = res + β·gate·swin_proj; 轻量门控、保持 ResNet 主导</span></p>
+    sourceLayout: c57662fc2591c323735d63c8932ea691cc7953ac749ae1e55a4a74b49f37dc9a
+  - elementId: slide-12-node-273-Text-14
+    elementType: text
+    bounds:
+      - 504
+      - 198
+      - 410.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11.5
+      color: '#F59E0B'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#F59E0B;font-size:11.5px;font-weight:700">CrossModalFusion · H/16</span></p>
+    sourceLayout: c9fb1c14f0f30c478012ad22df30d4d31f6d378d0eff12bf0a115d5ab3969cd2
+  - elementId: slide-12-node-274-Text-15
+    elementType: text
+    bounds:
+      - 504
+      - 218.16
+      - 410.4
+      - 39.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: '<p><span style="color:#1F2937;font-size:10.5px">双向 Cross-Attention: CNN→Swin 与 Swin→CNN; 最后门控融合 + Conv 3×3</span></p>'
+    sourceLayout: 93243e6043f9c710df83c7ca8327795eceb7b8571777301e2d0a3e49afd61252
+  - elementId: slide-12-node-275-Text-16
+    elementType: text
+    bounds:
+      - 504
+      - 254.16
+      - 410.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11.5
+      color: '#F59E0B'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#F59E0B;font-size:11.5px;font-weight:700">CrossScaleTopDownRefinement</span></p>
+    sourceLayout: e0b013257f1cf121483bdb41ad5c63634719a94109b39ecb5a1e41589011cea0
+  - elementId: slide-12-node-276-Text-17
+    elementType: text
+    bounds:
+      - 504
+      - 274.32
+      - 410.4
+      - 39.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px">把 H/16 上下文通过门控回流到 H/8 和 H/4; γ 控制注入强度</span></p>
+    sourceLayout: 45239a71a71b39798896abda2d516f67261ccd3adaf16f721bc17903fc4b6ede
+  - elementId: slide-12-node-277-Shape-18
+    elementType: shape
+    bounds:
+      - 36
+      - 320.4
+      - 889.2
+      - 176.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: a304569088b26a61c08937bf6b8ef9cb8c49149c3b49fe7f5183a6f91ec9a8fc
+  - elementId: slide-12-node-278-Shape-19
+    elementType: shape
+    bounds:
+      - 36
+      - 320.4
+      - 5.76
+      - 176.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: da3278d11423f6173812984c8453dc56bc7d980d7ced7f21d9eb8038b7bfaae5
+  - elementId: slide-12-node-279-Text-20
+    elementType: text
+    bounds:
+      - 50.4
+      - 327.6
+      - 864
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">融合模块输入输出形状</span></p>
+    sourceLayout: b17a4d1ae7b3fb0fce961fee6c4c8f12690be87b380a952d4ce79e251cb61862
+  - elementId: slide-12-node-280-Shape-21
+    elementType: shape
+    bounds:
+      - 43.2
+      - 356.4
+      - 878.4
+      - 25.92
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.4
+      color: '#E2E8F0'
+    sourceLayout: 29a86eb8e1315a18f6978c482c84c31d445cd30ac6645fecd66508f87788c078
+  - elementId: slide-12-node-281-Text-22
+    elementType: text
+    bounds:
+      - 50.4
+      - 356.4
+      - 133.2
+      - 25.92
+    content:
+      fontFamily: Consolas
+      fontSize: 10.5
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:10.5px;font-family:Consolas;font-weight:700">fuse_h4 (ASF)</span></p>
+    sourceLayout: 85e3684f8fcddbeba718e56ab5fd462f5834c89d409e6f7a76fb094677e06130
+  - elementId: slide-12-node-282-Text-23
+    elementType: text
+    bounds:
+      - 183.6
+      - 356.4
+      - 255.6
+      - 25.92
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas">x_bb_2 [128,H/4] + swin_4 [96,H/4]</span></p>
+    sourceLayout: eca4d54566d7fb531bed9b16054f5f06365d8444342d18c2fca96c53ac267ace
+  - elementId: slide-12-node-283-Text-24
+    elementType: text
+    bounds:
+      - 439.2
+      - 356.4
+      - 234
+      - 25.92
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:10px;font-family:Consolas">→ x_bb_2_new [128, H/4]</span></p>
+    sourceLayout: 038270ac8b8d35521a0a6a38d17dbab7210017520b3bfa723c323dc1ba968e6e
+  - elementId: slide-12-node-284-Text-25
+    elementType: text
+    bounds:
+      - 673.2
+      - 356.4
+      - 244.8
+      - 25.92
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">ResNet 浅层细节 + Swin 局部上下文</span></p>
+    sourceLayout: 8c024bf2dde3792ce12b65c24e98d07069bdd154574aaecf3f54592e5bbf8efb
+  - elementId: slide-12-node-285-Shape-26
+    elementType: shape
+    bounds:
+      - 43.2
+      - 383.76
+      - 878.4
+      - 25.92
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.4
+      color: '#E2E8F0'
+    sourceLayout: e7fdc21afd95a20db91af50a5be39b31d92cdd91c05cdeb6ee44e0695effbbbe
+  - elementId: slide-12-node-286-Text-27
+    elementType: text
+    bounds:
+      - 50.4
+      - 383.76
+      - 133.2
+      - 25.92
+    content:
+      fontFamily: Consolas
+      fontSize: 10.5
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:10.5px;font-family:Consolas;font-weight:700">fuse_h8 (ASF)</span></p>
+    sourceLayout: 090368c65d5f7185077d0700a785d6b240a32cb3dbe12ba2aa95ddecd848271a
+  - elementId: slide-12-node-287-Text-28
+    elementType: text
+    bounds:
+      - 183.6
+      - 383.76
+      - 255.6
+      - 25.92
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas">x_bb_3 [256,H/8] + swin_8 [192,H/8]</span></p>
+    sourceLayout: b59378e9bfc44eed0a5d71d09c1d18a485c2c20be5c7f0707be271fe5f2e05b3
+  - elementId: slide-12-node-288-Text-29
+    elementType: text
+    bounds:
+      - 439.2
+      - 383.76
+      - 234
+      - 25.92
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:10px;font-family:Consolas">→ x_bb_3_new [256, H/8]</span></p>
+    sourceLayout: ed9bfcc1ec77f7c90a7b38f8cb071e84c5dc7b4ae04352bebf0332ad2ed18020
+  - elementId: slide-12-node-289-Text-30
+    elementType: text
+    bounds:
+      - 673.2
+      - 383.76
+      - 244.8
+      - 25.92
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">中层结构 + Swin 中尺度上下文</span></p>
+    sourceLayout: 1c3861b45319ba94b5bf0d3ed0e8cb7a55775edea281414125269b25584d19b4
+  - elementId: slide-12-node-290-Shape-31
+    elementType: shape
+    bounds:
+      - 43.2
+      - 411.12
+      - 878.4
+      - 25.92
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.4
+      color: '#E2E8F0'
+    sourceLayout: 7ced93b0d53d7d78197ac4f84619fce8b52fddaf2f515d5594dc02b3c2654e2d
+  - elementId: slide-12-node-291-Text-32
+    elementType: text
+    bounds:
+      - 50.4
+      - 411.12
+      - 133.2
+      - 25.92
+    content:
+      fontFamily: Consolas
+      fontSize: 10.5
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:10.5px;font-family:Consolas;font-weight:700">swin16_proj</span></p>
+    sourceLayout: 63c039e18e99e9fe2697347dafd4204716633ac49ad658121d03fd250267f589
+  - elementId: slide-12-node-292-Text-33
+    elementType: text
+    bounds:
+      - 183.6
+      - 411.12
+      - 255.6
+      - 25.92
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas">swin_16 [384, H/16]</span></p>
+    sourceLayout: c4574ea17359424c3b4ea3081254e5eb3f574c6a05e76381cebe53264897ee2a
+  - elementId: slide-12-node-293-Text-34
+    elementType: text
+    bounds:
+      - 439.2
+      - 411.12
+      - 234
+      - 25.92
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:10px;font-family:Consolas">→ 投影到 512 通道, 与 CNN 对齐</span></p>
+    sourceLayout: 7f439a5602181f76cd2fccc1a538979e14a33ade980e8ba9c2533f9d04ab0df1
+  - elementId: slide-12-node-294-Text-35
+    elementType: text
+    bounds:
+      - 673.2
+      - 411.12
+      - 244.8
+      - 25.92
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">为 CrossModalFusion 提供 Swin 端 Q/K/V</span></p>
+    sourceLayout: 40c9041f378263f11916e67476d7eba51be4026dee6429bbce7eac0668a0a53e
+  - elementId: slide-12-node-295-Shape-36
+    elementType: shape
+    bounds:
+      - 43.2
+      - 438.48
+      - 878.4
+      - 25.92
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.4
+      color: '#E2E8F0'
+    sourceLayout: c72fea636c479a5c72cfb56e55e2ce34d378956a4272345a71b93ac5b0fa63eb
+  - elementId: slide-12-node-296-Text-37
+    elementType: text
+    bounds:
+      - 50.4
+      - 438.48
+      - 133.2
+      - 25.92
+    content:
+      fontFamily: Consolas
+      fontSize: 10.5
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:10.5px;font-family:Consolas;font-weight:700">CrossModalFusion</span></p>
+    sourceLayout: 524d6cccbc5121e03f184c03012e22c0b34e4b101a4b4833e593b28f996a51cf
+  - elementId: slide-12-node-297-Text-38
+    elementType: text
+    bounds:
+      - 183.6
+      - 438.48
+      - 255.6
+      - 25.92
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas">cnn_feat [512,H/16] + ctx [512,H/16]</span></p>
+    sourceLayout: 794cfc3156ce000e3dd722e67d50a3c2513ddcd6962daff23ae275b4fc49b4d2
+  - elementId: slide-12-node-298-Text-39
+    elementType: text
+    bounds:
+      - 439.2
+      - 438.48
+      - 234
+      - 25.92
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:10px;font-family:Consolas">→ fused [512, H/16]</span></p>
+    sourceLayout: 8e1c39b6080332242311e6e7abc83ac9d0fbc0e6e54e1eaecdf38fb4517ff61f
+  - elementId: slide-12-node-299-Text-40
+    elementType: text
+    bounds:
+      - 673.2
+      - 438.48
+      - 244.8
+      - 25.92
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">双向 CA + gate 融合</span></p>
+    sourceLayout: 8ad6e30308461bb9598cffb9ed29957d23118956d1b6f78b7980efb12aee0393
+  - elementId: slide-12-node-300-Shape-41
+    elementType: shape
+    bounds:
+      - 43.2
+      - 465.84
+      - 878.4
+      - 25.92
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.4
+      color: '#E2E8F0'
+    sourceLayout: 18e2c6d6a03349e614e1d327be02bec4bce7cf6c7fbcfaf1fd825b2c75712a80
+  - elementId: slide-12-node-301-Text-42
+    elementType: text
+    bounds:
+      - 50.4
+      - 465.84
+      - 133.2
+      - 25.92
+    content:
+      fontFamily: Consolas
+      fontSize: 10.5
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:10.5px;font-family:Consolas;font-weight:700">TopDownRefine</span></p>
+    sourceLayout: e51af43d57c33f69991e9cf87ccd9c26fdbea17a23146ab6fcca9c479eb03112
+  - elementId: slide-12-node-302-Text-43
+    elementType: text
+    bounds:
+      - 183.6
+      - 465.84
+      - 255.6
+      - 25.92
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10px;font-family:Consolas">(h4_new, h8_new, fused)</span></p>
+    sourceLayout: 096a9b9f0b6eef5c7a85817e40f2d68174850cb47d29ad45ef17f5acdefe2c24
+  - elementId: slide-12-node-303-Text-44
+    elementType: text
+    bounds:
+      - 439.2
+      - 465.84
+      - 234
+      - 25.92
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:10px;font-family:Consolas">→ (h4', h8', h16')</span></p>
+    sourceLayout: 5dbfab41b60d17f61f5e5775bcd7e6b2c68b5a6d0cfbb0bfac265e62c21fa23d
+  - elementId: slide-12-node-304-Text-45
+    elementType: text
+    bounds:
+      - 673.2
+      - 465.84
+      - 244.8
+      - 25.92
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">γ-控制的语义回流</span></p>
+    sourceLayout: a5e393b03c78f88fcbaf53fa98d1eabd758625e1dc151b44842a7eb86b7bf550
+  - elementId: slide-12-node-305-Text-46
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: f556698188e5db762b11ef13bf8141405dabd8c06b53f0a991d26d64c710eda4

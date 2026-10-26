@@ -1,6 +1,6 @@
 # 消融实验 C：去除 Swin 编码分支（ABLATION_single_encoder）
 
-**文件**：`Y_FFC_single_encoder.py` / `train_single_encoder.py`
+**文件**：`X_FFC_single_encoder.py` / `train_single_encoder.py`
 **对照**：完整 YFFC（baseline `train.py`，建议加同种子 42 重跑）
 
 ## 为什么这么做

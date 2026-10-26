@@ -1,0 +1,133 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-9-node-177-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: d54144e45ea951e56b53293aa8fc6a7a2f3ee1585fbff32c6348f8b0020254da
+  - elementId: slide-9-node-178-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">03 · ENCODER</span></p>
+    sourceLayout: 12f74e3f31732dbed38173cf92eb869458bdd6cb11353e23815aa82a688ac4fe
+  - elementId: slide-9-node-179-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">Encoder · 双分支多尺度融合架构图</span></p>
+    sourceLayout: 896f3777628e19b616da909f799a7cec1a9b474239e4130e1b903ea8ad18d7e1
+  - elementId: slide-9-node-180-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">9 / 50</span></p>
+    sourceLayout: 2fcd5eeb7957bfcf9d96db485fdd0a7b1ce1b82abe56ee97f75cafbcb4cf7e14
+  - elementId: slide-9-node-181-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: 16e5583df05d7de948c6125db65010d006a70ce37cc60a8b76ccb158c848450a
+  - elementId: slide-9-node-182-Image-0
+    elementType: image
+    bounds:
+      - 161.793
+      - 104.4
+      - 636.174
+      - 356.4
+    src: media/2e4ac9d343e507424ef14836.png
+    fit:
+      mode: fill
+    sourceLayout: 124833887e06e939b53cfa55cafab7dcb4608470cd3b8041db0631971a56f835
+  - elementId: slide-9-node-183-Text-5
+    elementType: text
+    bounds:
+      - 36
+      - 471.6
+      - 885.6
+      - 39.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11.5
+      color: '#475569'
+      align:
+        - center
+        - top
+      wrap: true
+      text: <p><span style="color:#475569;font-size:11.5px;font-style:italic">ResNet50 提供局部纹理; Swin-Tiny 提供窗口上下文。H/4、H/8 用 AdaptiveSkipFusion 轻量融合; H/16 用 CrossModalFusion 双向 CA; TopDownRefinement 把语义回灌到浅层; 最后 FFC_BN_ACT 与 HighFrequencyEnhancement 形成瓶颈 x_c。</span></p>
+    sourceLayout: 2db47bdf75b5b06c225fe20ce2b30244b91cb0e7efa8ba953ef82dddd36adabc
+  - elementId: slide-9-node-184-Text-6
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: 4e90bc29dd1724d484ed70dcbb2c4669f0f048bef3db30b75ba233f19ffdda47

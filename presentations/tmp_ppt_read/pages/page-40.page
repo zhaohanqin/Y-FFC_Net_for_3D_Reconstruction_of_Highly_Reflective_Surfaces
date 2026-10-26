@@ -1,0 +1,1044 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-40-node-861-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 79bc9a8c5f4b466b97c172abb4c09ddf1db9eafdbc803ea3bb8ac332886fe7f0
+  - elementId: slide-40-node-862-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">09 · LOSS · DETAILS</span></p>
+    sourceLayout: 64aae9dc1b5d25ee479a81014b9faf86a6b550102d5e05a1b700e7bdc3a4d484
+  - elementId: slide-40-node-863-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">EnhancedCompositeLoss · 六组子损失详细分解</span></p>
+    sourceLayout: 8b65701e472f8388e06a139a75e4345908b9c2b449c49815cd00684da6eedff1
+  - elementId: slide-40-node-864-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">40 / 50</span></p>
+    sourceLayout: 4c920341f382ba8b119cbafd5151834ef199f897272bdfe987f29a4c0ba65c16
+  - elementId: slide-40-node-865-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: 247f0192a10437d6fe67800cb71d436d5fa39406c35ae17becd9d003f92283c8
+  - elementId: slide-40-node-866-Shape-5
+    elementType: shape
+    bounds:
+      - 36
+      - 100.8
+      - 889.2
+      - 34.56
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: a33ab0f480976aa8d33db91cf3473e8aff6808cd9515d8b84197f351f6417f81
+  - elementId: slide-40-node-867-Text-6
+    elementType: text
+    bounds:
+      - 50.4
+      - 100.8
+      - 864
+      - 34.56
+    content:
+      fontFamily: Consolas
+      fontSize: 13
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:13px;font-family:Consolas;font-weight:700">L_total  =  Σ λ_i · L_i      (λ_i 由 ImprovedWeightScheduler 按 epoch / total_epochs 动态调整)</span></p>
+    sourceLayout: ea5354df5e446e2f1b6238f87d31d1195b008e29e6a6e907470ad7c0013c7cee
+  - elementId: slide-40-node-868-Shape-7
+    elementType: shape
+    bounds:
+      - 36
+      - 144
+      - 295.2
+      - 187.2
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: cc7d728cc4501d586fb1ac5cd76035575c66d5d43735daa41ffa5fe3447b983b
+  - elementId: slide-40-node-869-Shape-8
+    elementType: shape
+    bounds:
+      - 36
+      - 144
+      - 5.76
+      - 187.2
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0D9488'
+    border:
+      style: solid
+      width: 1
+      color: '#0D9488'
+    sourceLayout: 0a48f6c1f4bd0d50bd6df03dc2d099c38fc31adaaf707cd1882ecafe8a737299
+  - elementId: slide-40-node-870-Text-9
+    elementType: text
+    bounds:
+      - 50.4
+      - 149.76
+      - 273.6
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 11.5
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:11.5px;font-weight:700">A · 漫反射主损失 (r vs target)</span></p>
+    sourceLayout: 541a15620f1a5b2ed7219c425298321996d7dbcca8ea5fa5ed4519adf42b13e4
+  - elementId: slide-40-node-871-Text-10
+    elementType: text
+    bounds:
+      - 51.84
+      - 176.4
+      - 108
+      - 27.36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#0D9488'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:10px;font-family:Consolas;font-weight:700">l_ssim_mixed</span></p>
+    sourceLayout: 00d96f49076fc718b52f25f04bff46a20fd80bbef3f4270f4d4d02cd08ffc90b
+  - elementId: slide-40-node-872-Text-11
+    elementType: text
+    bounds:
+      - 159.84
+      - 176.4
+      - 162
+      - 27.36
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px">0.8·MS-SSIM + 0.2·SSIM, 主结构相似度</span></p>
+    sourceLayout: af5c2d8da23c018e252a54eeb1a1cdf03b1f13d6a693f6faeac206b1e79ae656
+  - elementId: slide-40-node-873-Text-12
+    elementType: text
+    bounds:
+      - 51.84
+      - 205.2
+      - 108
+      - 27.36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#0D9488'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:10px;font-family:Consolas;font-weight:700">l_l1</span></p>
+    sourceLayout: ebe9ecd60a819660c3b313c4294e304b09aa5ffb1249048dc819cf8e9a0fe08c
+  - elementId: slide-40-node-874-Text-13
+    elementType: text
+    bounds:
+      - 159.84
+      - 205.2
+      - 162
+      - 27.36
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px">边缘加权 Charbonnier, 像素级</span></p>
+    sourceLayout: 4c58645d49df5e0702f5180fd8ebaab93781c4a6b16d43785625778db5859bc9
+  - elementId: slide-40-node-875-Text-14
+    elementType: text
+    bounds:
+      - 51.84
+      - 234
+      - 108
+      - 27.36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#0D9488'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:10px;font-family:Consolas;font-weight:700">l_freq</span></p>
+    sourceLayout: 8689f6951477e3061b254cae825a989bb6fb4ecebdc2e1998af6bd162cceebeb
+  - elementId: slide-40-node-876-Text-15
+    elementType: text
+    bounds:
+      - 159.84
+      - 234
+      - 162
+      - 27.36
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px">幅度谱差异 + 能量加权相位一致性</span></p>
+    sourceLayout: 06074ddc697527c46827d4410b77fd6c1312777b81fa0b1ba6e5ce8160b6bacc
+  - elementId: slide-40-node-877-Text-16
+    elementType: text
+    bounds:
+      - 51.84
+      - 262.8
+      - 108
+      - 27.36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#0D9488'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:10px;font-family:Consolas;font-weight:700">l_perceptual</span></p>
+    sourceLayout: ac2751864d684d4c421d29cc6ae47691a02711ade07900cbf32ffdc340769411
+  - elementId: slide-40-node-878-Text-17
+    elementType: text
+    bounds:
+      - 159.84
+      - 262.8
+      - 162
+      - 27.36
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px">VGG 感知损失 (预训练权重不可用时跳过)</span></p>
+    sourceLayout: c7cd028f42e5113c32d471d031634fc853144adcffe469b1e913a7c08cc7f1cd
+  - elementId: slide-40-node-879-Shape-18
+    elementType: shape
+    bounds:
+      - 334.8
+      - 144
+      - 295.2
+      - 187.2
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: f564974dc7d35b35deef75785e1431fa9e674c51b5ce017cfade8be2aa1c15ad
+  - elementId: slide-40-node-880-Shape-19
+    elementType: shape
+    bounds:
+      - 334.8
+      - 144
+      - 5.76
+      - 187.2
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#DB2777'
+    border:
+      style: solid
+      width: 1
+      color: '#DB2777'
+    sourceLayout: aca13a63d0823cff66a0433d08e84e09002a755d5628000c465c45ba1f16e498
+  - elementId: slide-40-node-881-Text-20
+    elementType: text
+    bounds:
+      - 349.2
+      - 149.76
+      - 273.6
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 11.5
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:11.5px;font-weight:700">B · 镜面 / 高反光区域 (b vs gt_specular)</span></p>
+    sourceLayout: 25f45792d6294d016658a30cd70ebbbae84660a819bac113a4543f2a9a4e7a04
+  - elementId: slide-40-node-882-Text-21
+    elementType: text
+    bounds:
+      - 350.64
+      - 176.4
+      - 108
+      - 27.36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#DB2777'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#DB2777;font-size:10px;font-family:Consolas;font-weight:700">l_spec</span></p>
+    sourceLayout: d99fc244213508672503006b55c3a0757e0d4d1d164cf0edee73e3f5a052f8ca
+  - elementId: slide-40-node-883-Text-22
+    elementType: text
+    bounds:
+      - 458.64
+      - 176.4
+      - 162
+      - 27.36
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px">Charbonnier + SSIM, 镜面主监督</span></p>
+    sourceLayout: 2b71fe71ec84e04ff3b202eb5104a25d7bf4f54fe117a5174920d407cefd132a
+  - elementId: slide-40-node-884-Text-23
+    elementType: text
+    bounds:
+      - 350.64
+      - 205.2
+      - 108
+      - 27.36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#DB2777'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#DB2777;font-size:10px;font-family:Consolas;font-weight:700">l_focal/OHEM</span></p>
+    sourceLayout: fea4d59a6d136faf8ec79a00761cfaca93febed5a218a1f2ceb6d119ee0f3ffb
+  - elementId: slide-40-node-885-Text-24
+    elementType: text
+    bounds:
+      - 458.64
+      - 205.2
+      - 162
+      - 27.36
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px">高反光区域 focal / 难样本挖掘</span></p>
+    sourceLayout: 878068c38597fd94b725ae1912bd6221a173a38e92710e52ec2b305ce0a8c4c1
+  - elementId: slide-40-node-886-Text-25
+    elementType: text
+    bounds:
+      - 350.64
+      - 234
+      - 108
+      - 27.36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#DB2777'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#DB2777;font-size:10px;font-family:Consolas;font-weight:700">l_dice</span></p>
+    sourceLayout: 30d9e0bdefb130d82bc4095d388807662d1d5b5ba4d81d95793a76950c4d75b2
+  - elementId: slide-40-node-887-Text-26
+    elementType: text
+    bounds:
+      - 458.64
+      - 234
+      - 162
+      - 27.36
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px">高反光区域 Dice 损失</span></p>
+    sourceLayout: 179ffd8169ef999bdddeee0f8cba53707ea70462e1972c9b71f95902d688fd2a
+  - elementId: slide-40-node-888-Text-27
+    elementType: text
+    bounds:
+      - 350.64
+      - 262.8
+      - 108
+      - 27.36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#DB2777'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#DB2777;font-size:10px;font-family:Consolas;font-weight:700">l_gc</span></p>
+    sourceLayout: 24fcba081a26498d1cded62af3a17023e1e23a2cdf0598c327dc746677b81dec
+  - elementId: slide-40-node-889-Text-28
+    elementType: text
+    bounds:
+      - 458.64
+      - 262.8
+      - 162
+      - 27.36
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px">镜面分量梯度一致性</span></p>
+    sourceLayout: 49458a1e277be91ef8e9a805dd6183421464af6d2c7c49462723dba3a95122e6
+  - elementId: slide-40-node-890-Text-29
+    elementType: text
+    bounds:
+      - 350.64
+      - 291.6
+      - 108
+      - 27.36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#DB2777'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#DB2777;font-size:10px;font-family:Consolas;font-weight:700">l_spec_peak</span></p>
+    sourceLayout: 658456aed8950cdbdbeb9af18e1202a6190571b782b940660fa7988a7c147388
+  - elementId: slide-40-node-891-Text-30
+    elementType: text
+    bounds:
+      - 458.64
+      - 291.6
+      - 162
+      - 27.36
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px">强高光区域峰值欠预测惩罚</span></p>
+    sourceLayout: 31b4f1368b03daad587f1a59157b0e8485b40769f030e85ae367fbadbb0e6351
+  - elementId: slide-40-node-892-Shape-31
+    elementType: shape
+    bounds:
+      - 633.6
+      - 144
+      - 295.2
+      - 187.2
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: bab2d7e16d06b7084896aca7cf55e1f21f435796dc60bae53ce60288948dd129
+  - elementId: slide-40-node-893-Shape-32
+    elementType: shape
+    bounds:
+      - 633.6
+      - 144
+      - 5.76
+      - 187.2
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F59E0B'
+    border:
+      style: solid
+      width: 1
+      color: '#F59E0B'
+    sourceLayout: be7631186d9a46bd36cbead7245df2161222d8cc0de40ecc683549651afb71ae
+  - elementId: slide-40-node-894-Text-33
+    elementType: text
+    bounds:
+      - 648
+      - 149.76
+      - 273.6
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 11.5
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:11.5px;font-weight:700">C · 梯度分支 (g vs gt_grad)</span></p>
+    sourceLayout: f9a89afbecf3c95875f39eba4aa1c44f031cd95afee3d02deae8dff61e0967ca
+  - elementId: slide-40-node-895-Text-34
+    elementType: text
+    bounds:
+      - 649.44
+      - 176.4
+      - 108
+      - 27.36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#F59E0B'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#F59E0B;font-size:10px;font-family:Consolas;font-weight:700">l_grad</span></p>
+    sourceLayout: ea94e9d52d028dc09df2c57aea2aae2db35a35aa66186213570ab4ecf4fbf20f
+  - elementId: slide-40-node-896-Text-35
+    elementType: text
+    bounds:
+      - 757.44
+      - 176.4
+      - 162
+      - 27.36
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px">g 与 Sobel(input) 的 SSIM</span></p>
+    sourceLayout: aa448dd92462da2e65075b21421e146b5bcefe1988179d6df382c709e37d3397
+  - elementId: slide-40-node-897-Text-36
+    elementType: text
+    bounds:
+      - 649.44
+      - 205.2
+      - 108
+      - 27.36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#F59E0B'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#F59E0B;font-size:10px;font-family:Consolas;font-weight:700">l_grad_edge</span></p>
+    sourceLayout: 6c84162c6bf53f75803b40e9332c43aa1a8d80bff1db6742cf15514ac115cefe
+  - elementId: slide-40-node-898-Text-37
+    elementType: text
+    bounds:
+      - 757.44
+      - 205.2
+      - 162
+      - 27.36
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px">边缘加权 Charbonnier</span></p>
+    sourceLayout: 78181818b15a56f0d035250c2de4541f9c29d8bad5cc86b079d029cbfdcd1e78
+  - elementId: slide-40-node-899-Text-38
+    elementType: text
+    bounds:
+      - 649.44
+      - 234
+      - 108
+      - 27.36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#F59E0B'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#F59E0B;font-size:10px;font-family:Consolas;font-weight:700">l_grad_spec</span></p>
+    sourceLayout: 6476df4f3322316f86768914e0f7d8a336bbdfb46349efe9b7ba0794e63d51fe
+  - elementId: slide-40-node-900-Text-39
+    elementType: text
+    bounds:
+      - 757.44
+      - 234
+      - 162
+      - 27.36
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px">g 与 b 在高光边界关系的约束</span></p>
+    sourceLayout: 44603263aab3ab8d87bd0df1a13ae4e247af5546fe6ba50892e4b085e9d442fc
+  - elementId: slide-40-node-901-Shape-40
+    elementType: shape
+    bounds:
+      - 36
+      - 344.16
+      - 295.2
+      - 187.2
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 572901d4f0c5f9d924202bd75828a8a240c36e61aa7fbd81a96126c6ae6490e5
+  - elementId: slide-40-node-902-Shape-41
+    elementType: shape
+    bounds:
+      - 36
+      - 344.16
+      - 5.76
+      - 187.2
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#7C3AED'
+    border:
+      style: solid
+      width: 1
+      color: '#7C3AED'
+    sourceLayout: 34a2e93756c5b48d1f9a6d6850c1c2461d4a991f4379ceb1a6c6947bff23722b
+  - elementId: slide-40-node-903-Text-42
+    elementType: text
+    bounds:
+      - 50.4
+      - 349.92
+      - 273.6
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 11.5
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:11.5px;font-weight:700">D · 高光概率头 (s vs gt_specular)</span></p>
+    sourceLayout: eefe23148a37293fe6f6eebc32bb30c55b97d1650f3f79a158af39facbcf0810
+  - elementId: slide-40-node-904-Text-43
+    elementType: text
+    bounds:
+      - 51.84
+      - 376.56
+      - 108
+      - 27.36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#7C3AED'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#7C3AED;font-size:10px;font-family:Consolas;font-weight:700">l_s_lik</span></p>
+    sourceLayout: 30fecf0720b6fc02215b3f76432fbc35203d2d553e5d3f1aed0b3f3e1cca32ad
+  - elementId: slide-40-node-905-Text-44
+    elementType: text
+    bounds:
+      - 159.84
+      - 376.56
+      - 162
+      - 27.36
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px">BCE + SSIM</span></p>
+    sourceLayout: 9604402b6185fdce4c82eab0e9f020ba73bc25788f77d3623a34fe23bd3dcef0
+  - elementId: slide-40-node-906-Text-45
+    elementType: text
+    bounds:
+      - 51.84
+      - 405.36
+      - 108
+      - 27.36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#7C3AED'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#7C3AED;font-size:10px;font-family:Consolas;font-weight:700">l_s_cons</span></p>
+    sourceLayout: dc1e1c7e17e2e939514eb4d28768d701691e5508d10a6deebaee4128430ea786
+  - elementId: slide-40-node-907-Text-46
+    elementType: text
+    bounds:
+      - 159.84
+      - 405.36
+      - 162
+      - 27.36
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px">s 与 b 在高反光区双向一致性</span></p>
+    sourceLayout: d08358eff45e560739da6ea9e581b36e149ae7fee38a125e8703c092bf4cc86e
+  - elementId: slide-40-node-908-Shape-47
+    elementType: shape
+    bounds:
+      - 334.8
+      - 344.16
+      - 295.2
+      - 187.2
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: fd1c06de229c58a4c5b5506be3c88b9e8be50f23405ff5b8a47ffcd9afc8a82a
+  - elementId: slide-40-node-909-Shape-48
+    elementType: shape
+    bounds:
+      - 334.8
+      - 344.16
+      - 5.76
+      - 187.2
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#10B981'
+    border:
+      style: solid
+      width: 1
+      color: '#10B981'
+    sourceLayout: 21e0b6b9eb65342c6a72c5e5b24425d97e86ed3f1a4f5b5220c48f0c169baed7
+  - elementId: slide-40-node-910-Text-49
+    elementType: text
+    bounds:
+      - 349.2
+      - 349.92
+      - 273.6
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 11.5
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:11.5px;font-weight:700">E · 直接 / 双路漫反射</span></p>
+    sourceLayout: 2e0cec748e812ef5f25e78f86ef5f2b4bf68f3db383d14f3873038ed647f450c
+  - elementId: slide-40-node-911-Text-50
+    elementType: text
+    bounds:
+      - 350.64
+      - 376.56
+      - 108
+      - 27.36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#10B981'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#10B981;font-size:10px;font-family:Consolas;font-weight:700">l_r_focal_hl</span></p>
+    sourceLayout: fa2860bc131aa8ab6183ef0929895f2e5c23e186b393af38e172e86428d3944b
+  - elementId: slide-40-node-912-Text-51
+    elementType: text
+    bounds:
+      - 458.64
+      - 376.56
+      - 162
+      - 27.36
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px">高光区重点约束 r vs target</span></p>
+    sourceLayout: 95f3a2794243ac4233a40f34174fec6b49c4f7290711783d2fb2cc287a5e64f3
+  - elementId: slide-40-node-913-Text-52
+    elementType: text
+    bounds:
+      - 350.64
+      - 405.36
+      - 108
+      - 27.36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#10B981'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#10B981;font-size:10px;font-family:Consolas;font-weight:700">l_r_dual_cons</span></p>
+    sourceLayout: cc2781fdb2fc20bc23b14e572f04d0767047c7a06486810380a240b2a79e508d
+  - elementId: slide-40-node-914-Text-53
+    elementType: text
+    bounds:
+      - 458.64
+      - 405.36
+      - 162
+      - 27.36
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px">约束 r_direct 与最终 r 的一致性</span></p>
+    sourceLayout: 05f5199a374dd7cebbef779e81a39508841a1a6161887f29d4850544d64cd631
+  - elementId: slide-40-node-915-Text-54
+    elementType: text
+    bounds:
+      - 350.64
+      - 434.16
+      - 108
+      - 27.36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#10B981'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#10B981;font-size:10px;font-family:Consolas;font-weight:700">l_r_smooth</span></p>
+    sourceLayout: 12780fa08701b514cb470661e25168c3e9bb1d55aebac46ebf4e0d340cb33a3c
+  - elementId: slide-40-node-916-Text-55
+    elementType: text
+    bounds:
+      - 458.64
+      - 434.16
+      - 162
+      - 27.36
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px">高光区域 r 的局部平滑先验</span></p>
+    sourceLayout: 9daee27ab797eb1d9dde6403c4caad3248624adf93ae3564329d8e76ff7b653e
+  - elementId: slide-40-node-917-Shape-56
+    elementType: shape
+    bounds:
+      - 633.6
+      - 344.16
+      - 295.2
+      - 187.2
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 3ee637c5126397e41f0c7b39f23dc7152ee5dd7f2e539a6870da7bc7e6bb046f
+  - elementId: slide-40-node-918-Shape-57
+    elementType: shape
+    bounds:
+      - 633.6
+      - 344.16
+      - 5.76
+      - 187.2
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#2A3B7E'
+    border:
+      style: solid
+      width: 1
+      color: '#2A3B7E'
+    sourceLayout: a164f296852d687c9c70eed4426239262fa5203b208833bdc045d10338f452a0
+  - elementId: slide-40-node-919-Text-58
+    elementType: text
+    bounds:
+      - 648
+      - 349.92
+      - 273.6
+      - 24.48
+    content:
+      fontFamily: Calibri
+      fontSize: 11.5
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:11.5px;font-weight:700">F · 跨尺度一致性</span></p>
+    sourceLayout: 2f1912acb5a3c0bf90a0782439c11581dd3b5ac0bd902de70cfde1808053302b
+  - elementId: slide-40-node-920-Text-59
+    elementType: text
+    bounds:
+      - 649.44
+      - 376.56
+      - 108
+      - 27.36
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#2A3B7E'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#2A3B7E;font-size:10px;font-family:Consolas;font-weight:700">l_cs</span></p>
+    sourceLayout: ab9536cd5fe72895bbcff27914d538252165b5873c042af9c9637ee587d4890d
+  - elementId: slide-40-node-921-Text-60
+    elementType: text
+    bounds:
+      - 757.44
+      - 376.56
+      - 162
+      - 27.36
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:9.5px">H/4 / H/8 / H/16 融合响应图 L1 一致</span></p>
+    sourceLayout: 1b410d0bcb3cf159b0008b5205172d8d8974d94863f377166e3d8fb1ac9f5226
+  - elementId: slide-40-node-922-Text-61
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: 1c3306ce995057aa44b1d31502cda4d1f7e3a471fa3fbc2981b35ebc48df9607

@@ -1,0 +1,771 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-16-node-335-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 037b5e93b0478f9ff96f9d2404b7319f1ce6aa484928ad5e2254322ea8b52f00
+  - elementId: slide-16-node-336-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">04 · FFC · FOURIER UNIT</span></p>
+    sourceLayout: 9b910494033cc9810adb35418e068c589468b2f23bafe7357be13909ab3d69e5
+  - elementId: slide-16-node-337-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">FourierUnit · 最底层频域单元的 7 步流水线</span></p>
+    sourceLayout: f1c05d0747b3ebe89be0907155f70e1ff09c6131ff1aaf81a0b8461eff61388d
+  - elementId: slide-16-node-338-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">16 / 50</span></p>
+    sourceLayout: c25e3b14741442557783f5f337c9fb7c02ced736f0bfa230ef500e837cefb184
+  - elementId: slide-16-node-339-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: bc6c04f45a2e7b408b9e9ca33f9a25d956f3c20b22e0c1d5176024dce4a083dc
+  - elementId: slide-16-node-340-Shape-5
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 432
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 5be67e252593bf0bd67eedf3b514ee1937c70fcce9476f8c7743682cb90f37b1
+  - elementId: slide-16-node-341-Shape-6
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 5.76
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F59E0B'
+    border:
+      style: solid
+      width: 1
+      color: '#F59E0B'
+    sourceLayout: b6097426abd3d49eb542f0d59cef6c0596f26e2e12f04fb31fd3214f646f39a1
+  - elementId: slide-16-node-342-Text-7
+    elementType: text
+    bounds:
+      - 50.4
+      - 115.2
+      - 410.4
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">数据流 (输入 → 输出)</span></p>
+    sourceLayout: 976c88170d07274d05846fd67c61a3fd50c406842436087347341a19d065e7bd
+  - elementId: slide-16-node-343-Shape-8
+    elementType: shape
+    bounds:
+      - 50.4
+      - 147.6
+      - 25.2
+      - 25.2
+    shapeName: ellipse
+    fill:
+      type: solid
+      color: '#F59E0B'
+    border:
+      style: solid
+      width: 1
+      color: '#F59E0B'
+    sourceLayout: 83f7e111bd6162e2a3b731993c6a7bec0312c9d55ffb3ba913c195629ce765de
+  - elementId: slide-16-node-344-Text-9
+    elementType: text
+    bounds:
+      - 50.4
+      - 147.6
+      - 25.2
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 13
+      color: '#FFFFFF'
+      align:
+        - center
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:13px;font-weight:700">1</span></p>
+    sourceLayout: a7d0d51d452fd7e866a1f28c4369366c00041c85f1d5b7c86dc6494407ebdb16
+  - elementId: slide-16-node-345-Text-10
+    elementType: text
+    bounds:
+      - 82.8
+      - 144
+      - 378
+      - 23.04
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:12px;font-weight:700">可选 spatial scale</span></p>
+    sourceLayout: 5a88d9e9c11c6b7017977c5b5a3d313201808b9d4548ef35a60f868a69e5fb11
+  - elementId: slide-16-node-346-Text-11
+    elementType: text
+    bounds:
+      - 82.8
+      - 165.6
+      - 378
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px">用 F.interpolate 把输入下采到更小尺度做 FFT, 进一步减少计算量 (默认关闭)</span></p>
+    sourceLayout: 4954001b8ab2853997805e99cd3365fc340ebce1cfb63ef15a533b7a40a92ca5
+  - elementId: slide-16-node-347-Shape-12
+    elementType: shape
+    bounds:
+      - 50.4
+      - 197.28
+      - 25.2
+      - 25.2
+    shapeName: ellipse
+    fill:
+      type: solid
+      color: '#F59E0B'
+    border:
+      style: solid
+      width: 1
+      color: '#F59E0B'
+    sourceLayout: ae1404f0c0c59f7e224eede99ee8eb09d3c03f28a98e5f74606e587a4a835c93
+  - elementId: slide-16-node-348-Text-13
+    elementType: text
+    bounds:
+      - 50.4
+      - 197.28
+      - 25.2
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 13
+      color: '#FFFFFF'
+      align:
+        - center
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:13px;font-weight:700">2</span></p>
+    sourceLayout: 5c276a484e0a35dafdb531d401c54a8d7fdb2066b44dbb21eb8cafaeb09ea0d8
+  - elementId: slide-16-node-349-Text-14
+    elementType: text
+    bounds:
+      - 82.8
+      - 193.68
+      - 378
+      - 23.04
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:12px;font-weight:700">Tukey 二维窗</span></p>
+    sourceLayout: a1914278c812981a4159212f1ce2dfca98c4f98f43e7254e8b3cff85b315a8a4
+  - elementId: slide-16-node-350-Text-15
+    elementType: text
+    bounds:
+      - 82.8
+      - 215.28
+      - 378
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px">对输入乘 2D Tukey (cosine taper) 窗, 平滑边缘衰减、抑制 FFT 谱泄漏</span></p>
+    sourceLayout: b44ce5865e36cdbe00eee5e8a0cb93fecca4c550d947ff89783a82f8ecdc274d
+  - elementId: slide-16-node-351-Shape-16
+    elementType: shape
+    bounds:
+      - 50.4
+      - 246.96
+      - 25.2
+      - 25.2
+    shapeName: ellipse
+    fill:
+      type: solid
+      color: '#F59E0B'
+    border:
+      style: solid
+      width: 1
+      color: '#F59E0B'
+    sourceLayout: 2e65b6cd44076f7bf51a5c468ed92a609bead6ac055b52bb97d0da7e6566df74
+  - elementId: slide-16-node-352-Text-17
+    elementType: text
+    bounds:
+      - 50.4
+      - 246.96
+      - 25.2
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 13
+      color: '#FFFFFF'
+      align:
+        - center
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:13px;font-weight:700">3</span></p>
+    sourceLayout: ee80f13515b7a31bd4d4b04ca44c82b9608aa5239d29d5b4e118ad998f43f7cb
+  - elementId: slide-16-node-353-Text-18
+    elementType: text
+    bounds:
+      - 82.8
+      - 243.36
+      - 378
+      - 23.04
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:12px;font-weight:700">rFFT → real/imag → 通道拼接</span></p>
+    sourceLayout: 12edd5f358a4d1f990e81c78ebdd3f983938d078793147ea02f84cee19e9f6fd
+  - elementId: slide-16-node-354-Text-19
+    elementType: text
+    bounds:
+      - 82.8
+      - 264.96
+      - 378
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px">torch.fft.rfftn 计算实数 FFT, 复数张量拆分 real/imag 并沿通道维拼接 [B, 2C, H, W/2+1]</span></p>
+    sourceLayout: 90bd3404758aa99e5fb494e9fbca4968e8146be015d622cdfca6af3a6161a149
+  - elementId: slide-16-node-355-Shape-20
+    elementType: shape
+    bounds:
+      - 50.4
+      - 296.64
+      - 25.2
+      - 25.2
+    shapeName: ellipse
+    fill:
+      type: solid
+      color: '#F59E0B'
+    border:
+      style: solid
+      width: 1
+      color: '#F59E0B'
+    sourceLayout: 1fb0742cb8d4b319b4bc7a950a325711c98e39d5afd29a1d5d362453e00dfd9b
+  - elementId: slide-16-node-356-Text-21
+    elementType: text
+    bounds:
+      - 50.4
+      - 296.64
+      - 25.2
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 13
+      color: '#FFFFFF'
+      align:
+        - center
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:13px;font-weight:700">4</span></p>
+    sourceLayout: 1f47b089d7374461ac6ff8a28ace890e2f727f1f895f2c3b64ad43d0503ffa79
+  - elementId: slide-16-node-357-Text-22
+    elementType: text
+    bounds:
+      - 82.8
+      - 293.04
+      - 378
+      - 23.04
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:12px;font-weight:700">1×1 Conv → BN → GELU</span></p>
+    sourceLayout: 367ac2d30b1dbaaaa06fc3874d72122d07c88ac4bb004fbed9a44d2e014bde36
+  - elementId: slide-16-node-358-Text-23
+    elementType: text
+    bounds:
+      - 82.8
+      - 314.64
+      - 378
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px">频域 1×1 卷积, 等价于空间域全局加权; BN 在频域稳定训练, GELU 提供非线性</span></p>
+    sourceLayout: 79f810172a24cd87c6db47f6fd9872f23e2cc82f9ae16d533ef23aca3e4e73cd
+  - elementId: slide-16-node-359-Shape-24
+    elementType: shape
+    bounds:
+      - 50.4
+      - 346.32
+      - 25.2
+      - 25.2
+    shapeName: ellipse
+    fill:
+      type: solid
+      color: '#F59E0B'
+    border:
+      style: solid
+      width: 1
+      color: '#F59E0B'
+    sourceLayout: 78e6f131e8ce468758d4c5b403741cd164b1f2e7820ef5ac9929b0d752c9343f
+  - elementId: slide-16-node-360-Text-25
+    elementType: text
+    bounds:
+      - 50.4
+      - 346.32
+      - 25.2
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 13
+      color: '#FFFFFF'
+      align:
+        - center
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:13px;font-weight:700">5</span></p>
+    sourceLayout: 14a72ca1c7ee452beaa9c7dfb30f95bb94d72c5f575b5af5fc9838889152e340
+  - elementId: slide-16-node-361-Text-26
+    elementType: text
+    bounds:
+      - 82.8
+      - 342.72
+      - 378
+      - 23.04
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:12px;font-weight:700">频域 SE 通道注意力</span></p>
+    sourceLayout: 22885054de6231db22e145b2750007f455a1472e1534037a35922cc98e054888
+  - elementId: slide-16-node-362-Text-27
+    elementType: text
+    bounds:
+      - 82.8
+      - 364.32
+      - 378
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px">全局 avg pool → MLP → sigmoid, 对频域通道做再加权, 相当于自适应频段选择</span></p>
+    sourceLayout: f57bc2f4451f36ed8e6f3da03c88c17dbd7d4f4adc2553282473f7307dd6a6af
+  - elementId: slide-16-node-363-Shape-28
+    elementType: shape
+    bounds:
+      - 50.4
+      - 396
+      - 25.2
+      - 25.2
+    shapeName: ellipse
+    fill:
+      type: solid
+      color: '#F59E0B'
+    border:
+      style: solid
+      width: 1
+      color: '#F59E0B'
+    sourceLayout: 14823c72624b2b900205e1826fa0f9ab3eb0acfcab33945e587e826abf6e06bc
+  - elementId: slide-16-node-364-Text-29
+    elementType: text
+    bounds:
+      - 50.4
+      - 396
+      - 25.2
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 13
+      color: '#FFFFFF'
+      align:
+        - center
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:13px;font-weight:700">6</span></p>
+    sourceLayout: cbac11c86f12f9415fa3a5d468d08539e7d8d7a1fbafbdab1017c76465e8b751
+  - elementId: slide-16-node-365-Text-30
+    elementType: text
+    bounds:
+      - 82.8
+      - 392.4
+      - 378
+      - 23.04
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:12px;font-weight:700">real/imag → 复数 → iRFFT</span></p>
+    sourceLayout: 13b687aff5b08c0367478b907029ff5cae40a8d7403a99d4e13fb2346df1cd2f
+  - elementId: slide-16-node-366-Text-31
+    elementType: text
+    bounds:
+      - 82.8
+      - 414
+      - 378
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px">torch.fft.irfftn 反变换回空间域, 输出 [B, C, H, W]</span></p>
+    sourceLayout: 65f330fd8bf8852fd882de752f1a6d1b1c46232015dc91b20f2d3e3994057cb1
+  - elementId: slide-16-node-367-Shape-32
+    elementType: shape
+    bounds:
+      - 50.4
+      - 445.68
+      - 25.2
+      - 25.2
+    shapeName: ellipse
+    fill:
+      type: solid
+      color: '#F59E0B'
+    border:
+      style: solid
+      width: 1
+      color: '#F59E0B'
+    sourceLayout: a9d8bc48fba76f921a72c2d54308d12a1401444810505bdbbb7364523030dc74
+  - elementId: slide-16-node-368-Text-33
+    elementType: text
+    bounds:
+      - 50.4
+      - 445.68
+      - 25.2
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 13
+      color: '#FFFFFF'
+      align:
+        - center
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:13px;font-weight:700">7</span></p>
+    sourceLayout: d8e6e0c02edb9961fe4af6a88319d6671255a1be36e1b7b6be3dd0c7608eab48
+  - elementId: slide-16-node-369-Text-34
+    elementType: text
+    bounds:
+      - 82.8
+      - 442.08
+      - 378
+      - 23.04
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:12px;font-weight:700">_safe_tensor 数值保护</span></p>
+    sourceLayout: 5f0a045a8226152e92318bc0ded9a4339021273ddd778eefb8fa256cca5bb3c7
+  - elementId: slide-16-node-370-Text-35
+    elementType: text
+    bounds:
+      - 82.8
+      - 463.68
+      - 378
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px">对 NaN/+Inf/-Inf 进行截断; AMP 训练中 FFT 偶尔会数值溢出, 必须显式保护</span></p>
+    sourceLayout: aaaaf610952da6d12a8123490658bd7d8892d640eed8896fd8267ba1349ae126
+  - elementId: slide-16-node-371-Shape-36
+    elementType: shape
+    bounds:
+      - 489.6
+      - 108
+      - 435.6
+      - 183.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 2ba98f7923426c0fe427d104773274a76015b2f9005b2ec9f9598802d784d05c
+  - elementId: slide-16-node-372-Shape-37
+    elementType: shape
+    bounds:
+      - 489.6
+      - 108
+      - 5.76
+      - 183.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0D9488'
+    border:
+      style: solid
+      width: 1
+      color: '#0D9488'
+    sourceLayout: 2ccefea1e7f5a82207312d3f059be85591cc6960503360de8d14c4bdfadd650e
+  - elementId: slide-16-node-373-Text-38
+    elementType: text
+    bounds:
+      - 504
+      - 115.2
+      - 410.4
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">FourierUnit 的结构意义</span></p>
+    sourceLayout: a0722e4f0ab7794eb25a8221e9e967882ea50c0160068966625eda71c9802ff1
+  - elementId: slide-16-node-374-Text-39
+    elementType: text
+    bounds:
+      - 504
+      - 140.4
+      - 410.4
+      - 144
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri">·  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">在频域做 1×1 Conv 等价于空间域全局加权, O(N·log N) 即可获得全局感受野</span></p><p><span style="color:#0D9488;font-size:11px;font-family:Calibri">·  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">条纹图像是强周期信号, 高光常对应特定频率簇; 频域建模直接命中目标</span></p><p><span style="color:#0D9488;font-size:11px;font-family:Calibri">·  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">频域 SE 让网络自适应选择需要保留/抑制的频段</span></p><p><span style="color:#0D9488;font-size:11px;font-family:Calibri">·  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">_safe_tensor 是工程上必需的保护, 否则极端样本会引发 FFT 数值崩溃</span></p>
+    sourceLayout: 10aab3ef9dcc59326d44bb745a1ed83c6b7ae57441155013b5ee715043c1aace
+  - elementId: slide-16-node-375-Shape-40
+    elementType: shape
+    bounds:
+      - 489.6
+      - 298.8
+      - 435.6
+      - 198
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: e7549e0d5b8cfca4fbe65894c20bb930c1e6d9865fce8deba9d28c21f0f155d3
+  - elementId: slide-16-node-376-Shape-41
+    elementType: shape
+    bounds:
+      - 489.6
+      - 298.8
+      - 5.76
+      - 198
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#7C3AED'
+    border:
+      style: solid
+      width: 1
+      color: '#7C3AED'
+    sourceLayout: 114cb95cd7cd32bcf5c610edcc4e59ba5a8f9e28b09dabbdc60a93af229c8e3b
+  - elementId: slide-16-node-377-Text-42
+    elementType: text
+    bounds:
+      - 504
+      - 306
+      - 410.4
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">输入 / 输出张量形状</span></p>
+    sourceLayout: b19dbd83c2b16b927bfd27d8f89f01e06989d10e8fb2fec5c2985675bca4b7aa
+  - elementId: slide-16-node-378-Shape-43
+    elementType: shape
+    bounds:
+      - 504
+      - 338.4
+      - 410.4
+      - 144
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0F172A'
+    border:
+      style: solid
+      width: 1
+      color: '#0F172A'
+    sourceLayout: 2b8052efdd3f07d11cdf7cdc36163d515ed8cf19b271ac1f925c56bbeab45188
+  - elementId: slide-16-node-379-Text-44
+    elementType: text
+    bounds:
+      - 514.8
+      - 345.6
+      - 388.8
+      - 129.6
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#E2E8F0'
+      align:
+        - left
+        - top
+      wrap: true
+      text: '<p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas"># 接口签名</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">FourierUnit(in_channels, out_channels,</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">            spatial_scale_factor=None,</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">            spectral_pos_encoding=False)</span></p><p></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas"># 张量流</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">x         : [B, C_in,  H, W]</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">ffted     : [B, 2*C_in, H, W//2 + 1]  # 频域</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">conv1x1   : [B, 2*C_out, ...]</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">iRFFT     : [B, C_out, H, W]          # 回空间</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">output    : [B, C_out, H, W]</span></p>'
+    sourceLayout: bff69498534cbbf944c3a4e996bd5fb741f4581cacaf8eae872e629bb95aaf2e
+  - elementId: slide-16-node-380-Text-45
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: d873ff3c5ceae2fa8ddb291f10e1ea848be131d8c97b4ed529ce2eff5e83f964

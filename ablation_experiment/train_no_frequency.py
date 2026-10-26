@@ -5,8 +5,8 @@ train_no_frequency.py — 消融实验 A 训练入口（去除频域模块）
 
 设计原则：不复制 train.py 的任何训练逻辑，采用"薄包装"方式：
   1. `import train as base_train` 复用其全部训练 / 验证 / 日志 / 保存流程；
-  2. 把 base_train.YFFC 替换为 YFFC_NoFrequency
-     （train_model 内部 `model = YFFC()` 按模块全局名解析，替换即生效）；
+  2. 把 base_train.XFFC 替换为 YFFC_NoFrequency
+     （train_model 内部 `model = XFFC()` 按模块全局名解析，替换即生效）；
   3. 配置字典与 baseline train.py 的 main() 逐项相同，
      仅 OUTPUT_FOLDER 与 VIS_SAMPLE_SEED 不同；
   4. 设置全局随机种子 42。
@@ -15,7 +15,7 @@ train_no_frequency.py — 消融实验 A 训练入口（去除频域模块）
 
 相对 train.py 的修改清单：
   - [新增] set_global_seed()：random / numpy / torch / cuda 全局种子
-  - [修改] 模型类：YFFC → Y_FFC_no_frequency.YFFC_NoFrequency
+  - [修改] 模型类：XFFC → X_FFC_no_frequency.YFFC_NoFrequency
   - [修改] OUTPUT_FOLDER → experiments/ablation_no_frequency_<时间戳>
   - [修改] VIS_SAMPLE_SEED：None → 42（固定可视化抽样，跨实验对比同一批图）
   - 其余（数据、增强、损失、权重调度、优化器、LR 调度、指标、保存）零修改
@@ -34,12 +34,12 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 import train as base_train
-from Y_FFC_no_frequency import YFFC_NoFrequency
+from X_FFC_no_frequency import YFFC_NoFrequency
 
 # ════════════════════════════════════════════════════════════════════
 # ★ 核心修改：替换 train.train_model 内部实例化的模型类
 # ════════════════════════════════════════════════════════════════════
-base_train.YFFC = YFFC_NoFrequency
+base_train.XFFC = YFFC_NoFrequency
 
 GLOBAL_SEED = 42
 
@@ -55,7 +55,7 @@ def set_global_seed(seed=GLOBAL_SEED):
 def main():
     print("=" * 60)
     print("消融实验 A：去除频域模块 (SpectralTransform → 纯空间卷积)")
-    print("模型类:", base_train.YFFC.__name__)
+    print("模型类:", base_train.XFFC.__name__)
     print("=" * 60)
     set_global_seed()
 

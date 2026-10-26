@@ -1,0 +1,237 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-6-node-146-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 95b6ad5fefba6ce8572e57e4b391623a81515c01223cc0661805262252806df2
+  - elementId: slide-6-node-147-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">02 · OVERALL ARCHITECTURE</span></p>
+    sourceLayout: 8a068d6c3a849f1a2c88ee0feac79adac3d5c3a894c95eeeba2f289e8a2560eb
+  - elementId: slide-6-node-148-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">总体架构 · 文字详细说明</span></p>
+    sourceLayout: 7bec96950ba9a019a7f652816abb9a924581ea70198350db628968e7e4b40c93
+  - elementId: slide-6-node-149-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">6 / 50</span></p>
+    sourceLayout: 138f06cbe019501af4e914ad356a46888e5a61017c1dcd24d23782d810c83cfa
+  - elementId: slide-6-node-150-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: 5ab8e2d89ad929fc9a1323b0bfc8d2e2e7b6e0f264848eed6604e34c6b49c013
+  - elementId: slide-6-node-151-Shape-5
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 432
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: bcb6fc9879827145d53600c41d9ada592a05c6825fa8f3f111dfe949dc682174
+  - elementId: slide-6-node-152-Shape-6
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 5.76
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 6cbbc43c58e2d7cfb7ef8b11bedfbfd17fc6d74226fd147c0cd8cfe01706d874
+  - elementId: slide-6-node-153-Text-7
+    elementType: text
+    bounds:
+      - 50.4
+      - 115.2
+      - 410.4
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 15
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:15px;font-weight:700">X 型双分支结构 · 五大组成部分</span></p>
+    sourceLayout: 3349bdb139cea88f77337c415d8c500389cfc6ba08ce3f22a030e2a3cad44f7f
+  - elementId: slide-6-node-154-Text-8
+    elementType: text
+    bounds:
+      - 50.4
+      - 147.6
+      - 410.4
+      - 345.6
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#0D9488'
+      align:
+        - left
+        - top
+      wrap: true
+      text: '<p><span style="color:#0D9488;font-size:12px;font-family:Calibri;font-weight:700">1) Encoder (双分支编码器)</span></p><p><span style="color:#1F2937;font-size:11px;font-family:Calibri">    ResNet50 提取局部纹理与条纹边缘; Swin-Tiny 提供窗口上下文与长程依赖。多尺度融合后经 FFC 瓶颈与 HighFrequencyEnhancement 输出 5 路特征 (x_bb_1..4 + x_c)。</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#DB2777;font-size:12px;font-family:Calibri;font-weight:700">2) GradientDecoder (梯度辅助解码器)</span></p><p><span style="color:#1F2937;font-size:11px;font-family:Calibri">    从编码特征解码 5 个 Block, 得到 4 个中间特征 xe1..xe4, 并通过两个独立输出头给出梯度图 g 与高反光软概率 s。</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#10B981;font-size:12px;font-family:Calibri;font-weight:700">3) EnhancementLayers (增强桥接)</span></p><p><span style="color:#1F2937;font-size:11px;font-family:Calibri">    把 xe1..xe4 与 g、原图 x 和 s 一起送入 4 个 _SpectralDecompositionUnit, 输出 4 级增强特征 enh1..enh4 给主解码器。</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#7C3AED;font-size:12px;font-family:Calibri;font-weight:700">4) MainDecoder (主解码器)</span></p><p><span style="color:#1F2937;font-size:11px;font-family:Calibri">    5 级解码: 编码 skip + 增强特征 + 三路先验门控 + SpecularAwareAttention。共享解码主体之后分成两个头: b (高反光) 与 r_direct (直接漫反射), 并预测 alpha_logit。</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#F59E0B;font-size:12px;font-family:Calibri;font-weight:700">5) 双路融合 + ResidualRefinementHead</span></p><p><span style="color:#1F2937;font-size:11px;font-family:Calibri">    r_sub = clamp(x − b); α = sigmoid(alpha_logit); r_fused = α·r_direct + (1−α)·r_sub; 最终 r = clamp(r_fused + 0.15·Δ)。</span></p>'
+    sourceLayout: afe927a0d4517cdb718c6bf4c04cfb2ed51f6b838ed010c68ddc27b598358793
+  - elementId: slide-6-node-155-Shape-9
+    elementType: shape
+    bounds:
+      - 489.6
+      - 108
+      - 435.6
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 1a6d26033db12e0a4e1162fbc448f5e007bb2585ea6e919af82645bc578e17f9
+  - elementId: slide-6-node-156-Shape-10
+    elementType: shape
+    bounds:
+      - 489.6
+      - 108
+      - 5.76
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0D9488'
+    border:
+      style: solid
+      width: 1
+      color: '#0D9488'
+    sourceLayout: fc63251c6a75c07ed9a2088e1d77bcbbc7d0e3d5ac4b32423c72354beb47b042
+  - elementId: slide-6-node-157-Text-11
+    elementType: text
+    bounds:
+      - 504
+      - 115.2
+      - 410.4
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 15
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:15px;font-weight:700">模型完整输出 · YFFC.forward 返回字典</span></p>
+    sourceLayout: 16cfea2935d8696d02a4022c1308b182f842b946d2c0210a1106464c5e3592ee
+  - elementId: slide-6-node-158-Text-12
+    elementType: text
+    bounds:
+      - 504
+      - 147.6
+      - 414
+      - 345.6
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:12px;font-family:Calibri;font-weight:700">r · 最终漫反射</span></p><p><span style="color:#475569;font-size:10.5px;font-family:Calibri">    形状 [B,1,H,W], 推理主结果。</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#1E2761;font-size:12px;font-family:Calibri;font-weight:700">b · 镜面反射 / 高反光</span></p><p><span style="color:#475569;font-size:10.5px;font-family:Calibri">    形状 [B,1,H,W], 构成 r_sub 的依据。</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#1E2761;font-size:12px;font-family:Calibri;font-weight:700">g · 梯度图</span></p><p><span style="color:#475569;font-size:10.5px;font-family:Calibri">    形状 [B,1,H,W], 监督目标为 Sobel(input)。</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#1E2761;font-size:12px;font-family:Calibri;font-weight:700">s · 高光软概率</span></p><p><span style="color:#475569;font-size:10.5px;font-family:Calibri">    形状 [B,1,H,W], 监督目标 gt_specular。</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#1E2761;font-size:12px;font-family:Calibri;font-weight:700">r_direct · 直接预测漫反射</span></p><p><span style="color:#475569;font-size:10.5px;font-family:Calibri">    形状 [B,1,H,W], 参与训练损失与最终融合。</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#1E2761;font-size:12px;font-family:Calibri;font-weight:700">alpha · 双路融合系数</span></p><p><span style="color:#475569;font-size:10.5px;font-family:Calibri">    可学习标量/广播张量, 控制 r_direct 与 r_sub 比例。</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#1E2761;font-size:12px;font-family:Calibri;font-weight:700">cs · 跨尺度一致性</span></p><p><span style="color:#475569;font-size:10.5px;font-family:Calibri">    标量, 作用于 H/4、H/8、H/16 融合特征响应图, 仅参与训练损失。</span></p>
+    sourceLayout: e93ccf40571dfbb4f56a9a894d67a6709ae7acf5d1a68e59dc22057268e0762a
+  - elementId: slide-6-node-159-Text-13
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: 79f60cfd4902f2de2b682499f6d4345c62dd53a764d374f5db5cba9b9d54a380

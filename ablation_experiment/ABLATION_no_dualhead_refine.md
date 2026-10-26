@@ -1,6 +1,6 @@
 # 消融实验 D：去除双头输出 + 残差精修头（ABLATION_no_dualhead_refine）
 
-**文件**：`Y_FFC_no_dualhead_refine.py` / `train_no_dualhead_refine.py`
+**文件**：`X_FFC_no_dualhead_refine.py` / `train_no_dualhead_refine.py`
 **对照**：完整 YFFC（baseline `train.py`，建议加同种子 42 重跑）
 
 ## 为什么这么做

@@ -1,0 +1,204 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-7-node-160-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 90ce3fff45024535c9a61228e50ea205ace869957492bab5b72902315a949523
+  - elementId: slide-7-node-161-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">02 · DATA FLOW</span></p>
+    sourceLayout: 9eb2931f19e2fb500241fc878fa5783faec526a0fe96b76e7c94185833afd07d
+  - elementId: slide-7-node-162-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">端到端数据流 · YFFC.forward 伪代码</span></p>
+    sourceLayout: 88e0957cb19555de35eaa6ee024a860287fe5fcd739aa438b096c470fe7bc974
+  - elementId: slide-7-node-163-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">7 / 50</span></p>
+    sourceLayout: 25e0ebae26e7c83cecaf619855a61bbb9d511a7e9c2f9c475275f1fa023eefa0
+  - elementId: slide-7-node-164-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: caf0a3eed445a7b60c679e011aee63ae65b2e7590df273735b1083fdf74131be
+  - elementId: slide-7-node-165-Shape-5
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 540
+      - 396
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0F172A'
+    border:
+      style: solid
+      width: 1
+      color: '#0F172A'
+    sourceLayout: 3b0cb3e6b2711b7e7ade5e709cdbfd4b864c800fab5681bd627ef5d3e0d49b6d
+  - elementId: slide-7-node-166-Text-6
+    elementType: text
+    bounds:
+      - 46.8
+      - 115.2
+      - 518.4
+      - 381.6
+    content:
+      fontFamily: Consolas
+      fontSize: 9.5
+      color: '#E2E8F0'
+      align:
+        - left
+        - top
+      wrap: true
+      text: '<p><span style="color:#E2E8F0;font-size:9.5px;font-family:Consolas"># YFFC.forward(x)  ----  x in [B, 1, H, W]</span></p><p><span style="color:#E2E8F0;font-size:9.5px;font-family:Consolas"># (1) Encoder: 5 路特征</span></p><p><span style="color:#E2E8F0;font-size:9.5px;font-family:Consolas">x_bb_1, x_bb_2, x_bb_3, x_bb_4, x_c = encoder(x)</span></p><p><span style="color:#E2E8F0;font-size:9.5px;font-family:Consolas">#   x_bb_1 [B, 64, H/2 , W/2 ]</span></p><p><span style="color:#E2E8F0;font-size:9.5px;font-family:Consolas">#   x_bb_2 [B,128, H/4 , W/4 ]</span></p><p><span style="color:#E2E8F0;font-size:9.5px;font-family:Consolas">#   x_bb_3 [B,256, H/8 , W/8 ]</span></p><p><span style="color:#E2E8F0;font-size:9.5px;font-family:Consolas">#   x_bb_4 [B,512, H/16, W/16]</span></p><p><span style="color:#E2E8F0;font-size:9.5px;font-family:Consolas">#   x_c    [B,256, H/16, W/16]</span></p><p></p><p><span style="color:#E2E8F0;font-size:9.5px;font-family:Consolas"># (2) GradientDecoder: 辅助分支输出</span></p><p><span style="color:#E2E8F0;font-size:9.5px;font-family:Consolas">xe1, xe2, xe3, xe4, g, s = \</span></p><p><span style="color:#E2E8F0;font-size:9.5px;font-family:Consolas">    gradient_decoder((x_bb_1..4), x_c, x)</span></p><p></p><p><span style="color:#E2E8F0;font-size:9.5px;font-family:Consolas"># (3) EnhancementLayers: 增强桥接</span></p><p><span style="color:#E2E8F0;font-size:9.5px;font-family:Consolas">enh1, enh2, enh3, enh4 = \</span></p><p><span style="color:#E2E8F0;font-size:9.5px;font-family:Consolas">    enhancement_layers((xe1..4), g, x, s)</span></p><p></p><p><span style="color:#E2E8F0;font-size:9.5px;font-family:Consolas"># (4) MainDecoder: 双头输出</span></p><p><span style="color:#E2E8F0;font-size:9.5px;font-family:Consolas">b, r_direct, alpha_logit = main_decoder(</span></p><p><span style="color:#E2E8F0;font-size:9.5px;font-family:Consolas">    (x_bb_1..4, x_c), (enh1..4), g, s, x)</span></p><p></p><p><span style="color:#E2E8F0;font-size:9.5px;font-family:Consolas"># (5) 双路融合 + 残差精修</span></p><p><span style="color:#E2E8F0;font-size:9.5px;font-family:Consolas">r_sub   = clamp(x - b, 0, 1)</span></p><p><span style="color:#E2E8F0;font-size:9.5px;font-family:Consolas">alpha   = sigmoid(alpha_logit)</span></p><p><span style="color:#E2E8F0;font-size:9.5px;font-family:Consolas">r_fused = alpha * r_direct + (1 - alpha) * r_sub</span></p><p><span style="color:#E2E8F0;font-size:9.5px;font-family:Consolas">delta   = refinement_head(r_fused, x, r_direct)</span></p><p><span style="color:#E2E8F0;font-size:9.5px;font-family:Consolas">r       = clamp(r_fused + 0.15 * delta, 0, 1)</span></p><p></p><p><span style="color:#E2E8F0;font-size:9.5px;font-family:Consolas"># (6) 跨尺度一致性 (仅训练)</span></p><p><span style="color:#E2E8F0;font-size:9.5px;font-family:Consolas">cs = cross_scale_consistency(x_bb_2, x_bb_3, x_bb_4)</span></p><p></p><p><span style="color:#E2E8F0;font-size:9.5px;font-family:Consolas">return {&quot;r&quot;: r, &quot;b&quot;: b, &quot;g&quot;: g, &quot;s&quot;: s,</span></p><p><span style="color:#E2E8F0;font-size:9.5px;font-family:Consolas">        &quot;r_direct&quot;: r_direct,</span></p><p><span style="color:#E2E8F0;font-size:9.5px;font-family:Consolas">        &quot;alpha&quot;: alpha, &quot;cs&quot;: cs}</span></p>'
+    sourceLayout: c3f200a10616adfac35481ee62670550c00cffed231cfdb8fb7971c683dff456
+  - elementId: slide-7-node-167-Shape-7
+    elementType: shape
+    bounds:
+      - 590.4
+      - 108
+      - 334.8
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 2f660991da4e5b739d60c8e2265dc786c402a79f551a3571e1b16d679621ef73
+  - elementId: slide-7-node-168-Shape-8
+    elementType: shape
+    bounds:
+      - 590.4
+      - 108
+      - 5.76
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0D9488'
+    border:
+      style: solid
+      width: 1
+      color: '#0D9488'
+    sourceLayout: bc7a469d6778d084ba7f86f137c7a66ddc20789c797901b1b9dd8ca6638dcb02
+  - elementId: slide-7-node-169-Text-9
+    elementType: text
+    bounds:
+      - 604.8
+      - 115.2
+      - 309.6
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">数据流 · 关键节点解读</span></p>
+    sourceLayout: 05ab0f59a3f4db59ba89fa5c3c8aaca6af39ea22951ecdef5cdfae527464f793
+  - elementId: slide-7-node-170-Text-10
+    elementType: text
+    bounds:
+      - 604.8
+      - 147.6
+      - 309.6
+      - 345.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - top
+      wrap: true
+      text: '<p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">Step (1) </span><span style="color:#1F2937;font-size:10.5px;font-family:Calibri">编码器输出 4 路 skip 特征 + 1 路瓶颈 x_c。skip 服务解码器各级; x_c 是经过 CNN-Swin 融合、跨尺度回流、FFC 与高频增强的瓶颈特征。</span></p><p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">Step (2) </span><span style="color:#1F2937;font-size:10.5px;font-family:Calibri">GradientDecoder 同时产出: 梯度图 g (监督 Sobel(x))、高光概率 s (监督 gt_specular)、4 个中间特征 xe1..xe4。</span></p><p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">Step (3) </span><span style="color:#1F2937;font-size:10.5px;font-family:Calibri">EnhancementLayers 把 xe1..xe4 转换为高光重建相关的 enh1..enh4, 并通过 g/x/s 的双层门控聚焦在“高光相关结构突变”区域。</span></p><p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">Step (4) </span><span style="color:#1F2937;font-size:10.5px;font-family:Calibri">主解码器汇聚 c_features + enh + 三路先验 + SpecAware; 分出两个输出头: b (高光) 与 r_direct (直接漫反射)。</span></p><p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">Step (5) </span><span style="color:#1F2937;font-size:10.5px;font-family:Calibri">α 决定信任 r_direct 还是 r_sub; 融合后再用 RefinementHead 做受限残差精修 (系数 0.15)。</span></p><p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">Step (6) </span><span style="color:#1F2937;font-size:10.5px;font-family:Calibri">cs 仅参与训练损失, 约束 H/4、H/8、H/16 融合特征响应保持一致, 提升跨尺度泛化。</span></p>'
+    sourceLayout: 238bed2bfb7f44c8bdd58efd3a48d993a9c39916b226932cdcce84a86a21c0c3
+  - elementId: slide-7-node-171-Text-11
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: 6a877a5999b4a28415f463b9a054c20d8626006e357ac57fc722ecdf6a7eb68a

@@ -1,0 +1,256 @@
+pageType: content
+background:
+  type: solid
+  color: '#1E2761'
+elements:
+  - elementId: slide-50-node-1151-Text-2
+    elementType: text
+    bounds:
+      - 57.6
+      - 57.6
+      - 792
+      - 36
+    content:
+      fontFamily: Calibri
+      fontSize: 16
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:16px;font-weight:700">THANK YOU</span></p>
+    sourceLayout: 523a7cfbeff9141b332fa4fa2da0ef4e553903e482294d58283a90188629bc28
+  - elementId: slide-50-node-1152-Text-3
+    elementType: text
+    bounds:
+      - 57.6
+      - 100.8
+      - 864
+      - 64.8
+    content:
+      fontFamily: Calibri
+      fontSize: 42
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:42px;font-weight:700">X-FFC V3.2 · 结构总结</span></p>
+    sourceLayout: 2505854d822dc3783ffa3a7ceb211b2dd6eed0d5aec3f6148add5804c46e0c52
+  - elementId: slide-50-node-1153-Shape-4
+    elementType: line
+    bounds:
+      - 57.6
+      - 180
+      - 180
+      - 0
+    viewBox:
+      - 180
+      - 0.001
+    points: 0,0 180,0.001
+    border:
+      style: solid
+      width: 3
+      color: '#0D9488'
+    sourceLayout: b0cb73f61fb226f1ce078d3c32302c99972e5eea965182c472778f870edefe58
+  - elementId: slide-50-node-1154-Text-5
+    elementType: text
+    bounds:
+      - 57.6
+      - 212.4
+      - 864
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 22
+      color: '#CADCFC'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#CADCFC;font-size:22px;font-weight:700">双编码</span><span style="color:#0D9488;font-size:22px;font-weight:700">  +  </span><span style="color:#CADCFC;font-size:22px;font-weight:700">双解码</span><span style="color:#0D9488;font-size:22px;font-weight:700">  +  </span><span style="color:#CADCFC;font-size:22px;font-weight:700">双路融合</span><span style="color:#0D9488;font-size:22px;font-weight:700">  +  </span><span style="color:#CADCFC;font-size:22px;font-weight:700">多任务监督</span><span style="color:#0D9488;font-size:22px;font-weight:700">  +  </span><span style="color:#CADCFC;font-size:22px;font-weight:700">频域全局</span></p>
+    sourceLayout: 633a630b7bdce176a696bb6742bf565b0c133215dfb0aacb1a70ff390ed911d3
+  - elementId: slide-50-node-1155-Text-6
+    elementType: text
+    bounds:
+      - 57.6
+      - 277.2
+      - 828
+      - 144
+    content:
+      fontFamily: Calibri
+      fontSize: 14.5
+      color: '#CADCFC'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#CADCFC;font-size:14.5px">X-FFC V3.2 通过 ResNet50 与 Swin-Tiny 的双分支编码、FFC 三层封装的频域全局建模、GradientDecoder 与 MainDecoder 的双任务解码协作、r_direct 与 r_sub 的可学习双路融合、以及围绕 r / b / g / s 的多任务联合监督, 在条纹图保真与高反光去除之间取得了较好的平衡。</span></p>
+    sourceLayout: 3b82554f5c705347f2d467c69d500eff66b04d6907eff7c557fa106250cc464a
+  - elementId: slide-50-node-1156-Shape-7
+    elementType: shape
+    bounds:
+      - 57.6
+      - 424.8
+      - 266.4
+      - 75.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#2A3B7E'
+    border:
+      style: solid
+      width: 1.2
+      color: '#0D9488'
+    sourceLayout: 1be0e248dacb951a60f0ed26aa930f8abce70427805278166d400167a82715be
+  - elementId: slide-50-node-1157-Text-8
+    elementType: text
+    bounds:
+      - 72
+      - 430.56
+      - 237.6
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 15
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:15px;font-weight:700">保留条纹连续性</span></p>
+    sourceLayout: 05d4903d956743dbd12b6e1525e8fdf10a5fcdb075362aa46438504b4e515543
+  - elementId: slide-50-node-1158-Text-9
+    elementType: text
+    bounds:
+      - 72
+      - 462.24
+      - 237.6
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#CADCFC'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#CADCFC;font-size:11px">结构光下游友好</span></p>
+    sourceLayout: e8d8acf2dba4bbeedcbf4dd8ec48775523f5b0593cbd8a69d3ff5f28ee6478cc
+  - elementId: slide-50-node-1159-Shape-10
+    elementType: shape
+    bounds:
+      - 342
+      - 424.8
+      - 266.4
+      - 75.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#2A3B7E'
+    border:
+      style: solid
+      width: 1.2
+      color: '#0D9488'
+    sourceLayout: 49ffa4a36ab563e28fee99ab5a2ceaac985c447dfe3c36c3396161c950e18800
+  - elementId: slide-50-node-1160-Text-11
+    elementType: text
+    bounds:
+      - 356.4
+      - 430.56
+      - 237.6
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 15
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:15px;font-weight:700">去除局部饱和</span></p>
+    sourceLayout: 7477d52007ce07ac63743998d30b679b7f70989f99bed1e27484dd46e9115d4f
+  - elementId: slide-50-node-1161-Text-12
+    elementType: text
+    bounds:
+      - 356.4
+      - 462.24
+      - 237.6
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#CADCFC'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#CADCFC;font-size:11px">高反光物理可解释</span></p>
+    sourceLayout: 69931e7a5b3703b465a999e03740f187ccf0f7a06d3eb8fa2393990be03784c5
+  - elementId: slide-50-node-1162-Shape-13
+    elementType: shape
+    bounds:
+      - 626.4
+      - 424.8
+      - 266.4
+      - 75.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#2A3B7E'
+    border:
+      style: solid
+      width: 1.2
+      color: '#0D9488'
+    sourceLayout: d685e239bdd9627ecb5d525872417def577314df3462b4a7cfb34e2cb40b624d
+  - elementId: slide-50-node-1163-Text-14
+    elementType: text
+    bounds:
+      - 640.8
+      - 430.56
+      - 237.6
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 15
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:15px;font-weight:700">完整多任务输出</span></p>
+    sourceLayout: 580d2ebff6416bd2d468134b53788c65143b3b735e946763d4d2a76eafb72abb
+  - elementId: slide-50-node-1164-Text-15
+    elementType: text
+    bounds:
+      - 640.8
+      - 462.24
+      - 237.6
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#CADCFC'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#CADCFC;font-size:11px">r / b / g / s / r_direct</span></p>
+    sourceLayout: 419db46e2d73354980ec1335183f38db9a8757a3cb9609620d0c70ceb2ae28d4
+  - elementId: slide-50-node-1165-Text-16
+    elementType: text
+    bounds:
+      - 57.6
+      - 511.2
+      - 864
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#CADCFC'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#CADCFC;font-size:10px;font-style:italic">END  ·  X-FFC V3.2 Detailed Technical Presentation</span></p>
+    sourceLayout: 5db24787e754fe90d055738e1b7b9ceec0e971051545bd27ddb29d661fa6d3d5

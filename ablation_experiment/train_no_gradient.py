@@ -5,7 +5,7 @@ train_no_gradient.py — 消融实验 B 训练入口（去除梯度辅助分支�
 
 薄包装方式复用 train.py 全部流程，相对 train.py 的修改清单：
   - [新增] set_global_seed()：全局随机种子 42
-  - [修改] 模型类：YFFC → Y_FFC_no_gradient.YFFC_NoGradient
+  - [修改] 模型类：XFFC → X_FFC_no_gradient.YFFC_NoGradient
   - [修改] 权重调度器：ImprovedWeightScheduler → NoGradientWeightScheduler
       把以下 5 个权重置 0（分支不存在则其监督必然移除，属于消融的一部分）：
         lambda_grad / lambda_grad_edge / lambda_grad_spec /
@@ -35,12 +35,12 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 import train as base_train
-from Y_FFC_no_gradient import YFFC_NoGradient
+from X_FFC_no_gradient import YFFC_NoGradient
 
 # ════════════════════════════════════════════════════════════════════
 # ★ 核心修改 1：替换模型类
 # ════════════════════════════════════════════════════════════════════
-base_train.YFFC = YFFC_NoGradient
+base_train.XFFC = YFFC_NoGradient
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -83,7 +83,7 @@ def set_global_seed(seed=GLOBAL_SEED):
 def main():
     print("=" * 60)
     print("消融实验 B：去除梯度辅助分支 (GradientDecoder + EnhancementLayers)")
-    print("模型类:", base_train.YFFC.__name__)
+    print("模型类:", base_train.XFFC.__name__)
     print("置零权重:", ", ".join(_ZEROED_KEYS))
     print("=" * 60)
     set_global_seed()

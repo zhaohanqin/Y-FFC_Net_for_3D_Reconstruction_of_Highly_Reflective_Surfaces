@@ -1,0 +1,732 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-26-node-619-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 5ce84fc7cb7262ffd64e3dde256f4b726c55d3e14c4cc2df72cd63215c0be020
+  - elementId: slide-26-node-620-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">06 · ENHANCEMENT · INTERNAL</span></p>
+    sourceLayout: b0466ff4ec65ac3dee64e7f2aadd46ed99c9bff9f7f47c761f1bea9a39c259f3
+  - elementId: slide-26-node-621-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">_SpectralDecompositionUnit · 单元内部 5 步流程</span></p>
+    sourceLayout: e378c3a3ff0344c24bb83e79eb1f24ba3bd915c320196ff8354073f7fd92d929
+  - elementId: slide-26-node-622-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">26 / 50</span></p>
+    sourceLayout: 412a9b6b2e87fa11db73d0c59ae5a214d9f5f8e7962fa566fb4ee95f1770d3a0
+  - elementId: slide-26-node-623-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: 392de0fa5300f49896c4f3bc1f0504983809057f0c15408f0a9e4c36b367804a
+  - elementId: slide-26-node-624-Shape-5
+    elementType: shape
+    bounds:
+      - 36
+      - 104.4
+      - 172.8
+      - 39.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#10B981'
+    border:
+      style: solid
+      width: 1
+      color: '#10B981'
+    sourceLayout: 07e058945785ca77404b289fce436dd13149d6be817fd4a27db98dbd661abaaa
+  - elementId: slide-26-node-625-Shape-6
+    elementType: shape
+    bounds:
+      - 41.76
+      - 111.6
+      - 25.2
+      - 25.2
+    shapeName: ellipse
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 1
+      color: '#FFFFFF'
+    sourceLayout: d465733b013b4c2427f30feafc900d407b9d84685f4b5b7b461b5507bb7a3442
+  - elementId: slide-26-node-626-Text-7
+    elementType: text
+    bounds:
+      - 41.76
+      - 111.6
+      - 25.2
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 13
+      color: '#10B981'
+      align:
+        - center
+        - middle
+      wrap: true
+      text: <p><span style="color:#10B981;font-size:13px;font-weight:700">1</span></p>
+    sourceLayout: d6a01f381c89a8b1319cbf984b358f5ec763e9bc5a9ff8c956dee00fbea7c4b6
+  - elementId: slide-26-node-627-Text-8
+    elementType: text
+    bounds:
+      - 72
+      - 104.4
+      - 133.2
+      - 39.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:10.5px;font-weight:700">双分支特征</span></p>
+    sourceLayout: dda82f9eecb743941b71942df08c901c27190583dbc800ea42e4f96aaa0beb6b
+  - elementId: slide-26-node-628-Shape-9
+    elementType: shape
+    bounds:
+      - 36
+      - 147.6
+      - 172.8
+      - 108
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0F172A'
+    border:
+      style: solid
+      width: 1
+      color: '#0F172A'
+    sourceLayout: d02f52e1cd98bac812ef3cc1b8f4283995afc010211eaa212bd9311627bb8fad
+  - elementId: slide-26-node-629-Text-10
+    elementType: text
+    bounds:
+      - 43.2
+      - 151.2
+      - 158.4
+      - 100.8
+    content:
+      fontFamily: Consolas
+      fontSize: 8
+      color: '#E2E8F0'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#E2E8F0;font-size:8px;font-family:Consolas">p = projection_branch(x)</span></p><p><span style="color:#E2E8F0;font-size:8px;font-family:Consolas"># 大核 7x7, 通用空间投影</span></p><p><span style="color:#E2E8F0;font-size:8px;font-family:Consolas">s = specular_branch(x)</span></p><p><span style="color:#E2E8F0;font-size:8px;font-family:Consolas"># 小核 3x3, 高光相关分支</span></p>
+    sourceLayout: 830a4a2cbdb707cb454ae9da611651f255998b6512429d5b4ab79cd256ade3b3
+  - elementId: slide-26-node-630-Shape-11
+    elementType: shape
+    bounds:
+      - 219.6
+      - 104.4
+      - 172.8
+      - 39.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#10B981'
+    border:
+      style: solid
+      width: 1
+      color: '#10B981'
+    sourceLayout: 3c57f2d779e1cc4e896228d615f04c905a4a8484b73493073a8c5275d3281140
+  - elementId: slide-26-node-631-Shape-12
+    elementType: shape
+    bounds:
+      - 225.36
+      - 111.6
+      - 25.2
+      - 25.2
+    shapeName: ellipse
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 1
+      color: '#FFFFFF'
+    sourceLayout: 84e9eded0bbb2db24039f81c9a4dc06ed95cd88b32e0b06c16e7169e0ad5d27a
+  - elementId: slide-26-node-632-Text-13
+    elementType: text
+    bounds:
+      - 225.36
+      - 111.6
+      - 25.2
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 13
+      color: '#10B981'
+      align:
+        - center
+        - middle
+      wrap: true
+      text: <p><span style="color:#10B981;font-size:13px;font-weight:700">2</span></p>
+    sourceLayout: 3f49ae9e32d9ab42e188bdbde29b50e5b8005ca1118a1decef472d44e6c454cf
+  - elementId: slide-26-node-633-Text-14
+    elementType: text
+    bounds:
+      - 255.6
+      - 104.4
+      - 133.2
+      - 39.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:10.5px;font-weight:700">FFC 频域精炼</span></p>
+    sourceLayout: 799133db1542ed54603c60a370af443ba354b8fd786c1502ffcaa19dec639fb0
+  - elementId: slide-26-node-634-Shape-15
+    elementType: shape
+    bounds:
+      - 219.6
+      - 147.6
+      - 172.8
+      - 108
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0F172A'
+    border:
+      style: solid
+      width: 1
+      color: '#0F172A'
+    sourceLayout: df3b6975410ddf3a80ea1f1c2c3f86903dc87664071de403eff20c46c7576c5c
+  - elementId: slide-26-node-635-Text-16
+    elementType: text
+    bounds:
+      - 226.8
+      - 151.2
+      - 158.4
+      - 100.8
+    content:
+      fontFamily: Consolas
+      fontSize: 8
+      color: '#E2E8F0'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#E2E8F0;font-size:8px;font-family:Consolas">s_ffc = FFC_BN_ACT(s, r=0.25)</span></p><p><span style="color:#E2E8F0;font-size:8px;font-family:Consolas">spec  = s + s_ffc + x</span></p><p><span style="color:#E2E8F0;font-size:8px;font-family:Consolas"># 残差混合</span></p>
+    sourceLayout: eda4dee812003274220aaf171fefddadcd3865e0b0cdb25e0ac674135e6cd5fe
+  - elementId: slide-26-node-636-Shape-17
+    elementType: shape
+    bounds:
+      - 403.2
+      - 104.4
+      - 172.8
+      - 39.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#10B981'
+    border:
+      style: solid
+      width: 1
+      color: '#10B981'
+    sourceLayout: fe9388f5c58a011bdb1ea2cbfd68f765e94978b5ebfad5b6363149845797e9d1
+  - elementId: slide-26-node-637-Shape-18
+    elementType: shape
+    bounds:
+      - 408.96
+      - 111.6
+      - 25.2
+      - 25.2
+    shapeName: ellipse
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 1
+      color: '#FFFFFF'
+    sourceLayout: 93e1a479e923c50175c9ed5f992cf4946e84eb81d6532bbc4a7e9b873ef34695
+  - elementId: slide-26-node-638-Text-19
+    elementType: text
+    bounds:
+      - 408.96
+      - 111.6
+      - 25.2
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 13
+      color: '#10B981'
+      align:
+        - center
+        - middle
+      wrap: true
+      text: <p><span style="color:#10B981;font-size:13px;font-weight:700">3</span></p>
+    sourceLayout: ac1d6228564dfbe7c29460a2e1379243520b82ad927113ce51e4e8f07050b685
+  - elementId: slide-26-node-639-Text-20
+    elementType: text
+    bounds:
+      - 439.2
+      - 104.4
+      - 133.2
+      - 39.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:10.5px;font-weight:700">Self-gate (内门控)</span></p>
+    sourceLayout: 45d6c59801f5011e30d3519a8d05a699885f74c67c8c63c6a4ff726663e7e5be
+  - elementId: slide-26-node-640-Shape-21
+    elementType: shape
+    bounds:
+      - 403.2
+      - 147.6
+      - 172.8
+      - 108
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0F172A'
+    border:
+      style: solid
+      width: 1
+      color: '#0F172A'
+    sourceLayout: 606d25802bb46f28050b4061ff6b63f4f18ee9579117dd032bbee64118ffaa48
+  - elementId: slide-26-node-641-Text-22
+    elementType: text
+    bounds:
+      - 410.4
+      - 151.2
+      - 158.4
+      - 100.8
+    content:
+      fontFamily: Consolas
+      fontSize: 8
+      color: '#E2E8F0'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#E2E8F0;font-size:8px;font-family:Consolas">gate = sigmoid(</span></p><p><span style="color:#E2E8F0;font-size:8px;font-family:Consolas">    Conv(cat(p, spec)))</span></p><p><span style="color:#E2E8F0;font-size:8px;font-family:Consolas">spec_refined = </span></p><p><span style="color:#E2E8F0;font-size:8px;font-family:Consolas">    spec + spec * gate</span></p>
+    sourceLayout: 83e58fc40083ce13a18a894ede0863dc5f78b094fce9d24eb2dadefd8afeaadc
+  - elementId: slide-26-node-642-Shape-23
+    elementType: shape
+    bounds:
+      - 586.8
+      - 104.4
+      - 172.8
+      - 39.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#10B981'
+    border:
+      style: solid
+      width: 1
+      color: '#10B981'
+    sourceLayout: 25b54fe336f6d6a738efd4545de15ee5b6f82fb130592d1a864f71e1f91251dc
+  - elementId: slide-26-node-643-Shape-24
+    elementType: shape
+    bounds:
+      - 592.56
+      - 111.6
+      - 25.2
+      - 25.2
+    shapeName: ellipse
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 1
+      color: '#FFFFFF'
+    sourceLayout: b102b6a21b341b5335f021971f8650bf8d0c8c90beb750e89abdb81285101c43
+  - elementId: slide-26-node-644-Text-25
+    elementType: text
+    bounds:
+      - 592.56
+      - 111.6
+      - 25.2
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 13
+      color: '#10B981'
+      align:
+        - center
+        - middle
+      wrap: true
+      text: <p><span style="color:#10B981;font-size:13px;font-weight:700">4</span></p>
+    sourceLayout: a6f5daa3e218c44c0848ac9deea246628c72d7fbea2a1b4e727f7dc865212efb
+  - elementId: slide-26-node-645-Text-26
+    elementType: text
+    bounds:
+      - 622.8
+      - 104.4
+      - 133.2
+      - 39.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:10.5px;font-weight:700">External-gate (外门控)</span></p>
+    sourceLayout: 1f8b99e08db1d98db4dfe66bd0117b34f1478965bb3f38726415a4cb8813e3ed
+  - elementId: slide-26-node-646-Shape-27
+    elementType: shape
+    bounds:
+      - 586.8
+      - 147.6
+      - 172.8
+      - 108
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0F172A'
+    border:
+      style: solid
+      width: 1
+      color: '#0F172A'
+    sourceLayout: ecb96938c8dd8e7c38f90c72601f1806b9874f5ff1737614a254ea156175d73e
+  - elementId: slide-26-node-647-Text-28
+    elementType: text
+    bounds:
+      - 594
+      - 151.2
+      - 158.4
+      - 100.8
+    content:
+      fontFamily: Consolas
+      fontSize: 8
+      color: '#E2E8F0'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#E2E8F0;font-size:8px;font-family:Consolas">edge_gate = sigmoid(</span></p><p><span style="color:#E2E8F0;font-size:8px;font-family:Consolas">    Conv(g_down))</span></p><p><span style="color:#E2E8F0;font-size:8px;font-family:Consolas">spec_gate = sigmoid(</span></p><p><span style="color:#E2E8F0;font-size:8px;font-family:Consolas">    Conv(cat(g,x,s)))</span></p><p><span style="color:#E2E8F0;font-size:8px;font-family:Consolas">final = edge * spec</span></p>
+    sourceLayout: 1057f6e7d4b10c03f67b213ef1a23c7f1741df7468f92eb907bc703e20ac2adb
+  - elementId: slide-26-node-648-Shape-29
+    elementType: shape
+    bounds:
+      - 770.4
+      - 104.4
+      - 172.8
+      - 39.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#10B981'
+    border:
+      style: solid
+      width: 1
+      color: '#10B981'
+    sourceLayout: 260e62a137b74bae780add52d0921721bde819d23cd38ed647f1ed392eaa8446
+  - elementId: slide-26-node-649-Shape-30
+    elementType: shape
+    bounds:
+      - 776.16
+      - 111.6
+      - 25.2
+      - 25.2
+    shapeName: ellipse
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 1
+      color: '#FFFFFF'
+    sourceLayout: a669c1ca9049097e30e85cc1e3ccc371a510d3fed48e64a18c43f9467fe20352
+  - elementId: slide-26-node-650-Text-31
+    elementType: text
+    bounds:
+      - 776.16
+      - 111.6
+      - 25.2
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 13
+      color: '#10B981'
+      align:
+        - center
+        - middle
+      wrap: true
+      text: <p><span style="color:#10B981;font-size:13px;font-weight:700">5</span></p>
+    sourceLayout: e1a0396f3a64bfd4831186e84553d415a4de8f0f498e1ec88f11dee5aba7286c
+  - elementId: slide-26-node-651-Text-32
+    elementType: text
+    bounds:
+      - 806.4
+      - 104.4
+      - 133.2
+      - 39.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:10.5px;font-weight:700">残差注入输出</span></p>
+    sourceLayout: 3e9970e56ee213fc30e5d25d49be444dfa779a473fc181b21fb72072140ce734
+  - elementId: slide-26-node-652-Shape-33
+    elementType: shape
+    bounds:
+      - 770.4
+      - 147.6
+      - 172.8
+      - 108
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0F172A'
+    border:
+      style: solid
+      width: 1
+      color: '#0F172A'
+    sourceLayout: 143c1172c0bac8ab36ce0ecd65e2046535adb970f122b10359d950a9b03c642c
+  - elementId: slide-26-node-653-Text-34
+    elementType: text
+    bounds:
+      - 777.6
+      - 151.2
+      - 158.4
+      - 100.8
+    content:
+      fontFamily: Consolas
+      fontSize: 8
+      color: '#E2E8F0'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#E2E8F0;font-size:8px;font-family:Consolas">output = spec_refined +</span></p><p><span style="color:#E2E8F0;font-size:8px;font-family:Consolas">  beta * spec_refined *</span></p><p><span style="color:#E2E8F0;font-size:8px;font-family:Consolas">  final_gate</span></p><p><span style="color:#E2E8F0;font-size:8px;font-family:Consolas"># beta 可学习强度</span></p>
+    sourceLayout: 05075e68c7730abd0fce3b65b7f6d7a63bb7743adaa01306151d5d69f3fa0100
+  - elementId: slide-26-node-654-Shape-35
+    elementType: shape
+    bounds:
+      - 36
+      - 266.4
+      - 439.2
+      - 230.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 4f8894291df132dbe1e8bb83673ce35d24eb62c3c78a4dcb03429d4f141bdbee
+  - elementId: slide-26-node-655-Shape-36
+    elementType: shape
+    bounds:
+      - 36
+      - 266.4
+      - 5.76
+      - 230.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0D9488'
+    border:
+      style: solid
+      width: 1
+      color: '#0D9488'
+    sourceLayout: 08815415a8dabb367a2a00300fbb9b69916bfce6679218641c92562832aa743f
+  - elementId: slide-26-node-656-Text-37
+    elementType: text
+    bounds:
+      - 50.4
+      - 273.6
+      - 417.6
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">两层门控的语义</span></p>
+    sourceLayout: e35961a0ad398aa1981434534ebb226e83c493bb77bd602ae2b2435a2feb414a
+  - elementId: slide-26-node-657-Text-38
+    elementType: text
+    bounds:
+      - 50.4
+      - 302.4
+      - 417.6
+      - 187.2
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#0D9488'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:12px;font-family:Calibri;font-weight:700">edge_gate (仅来自 g)</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">    关注 “哪里有结构突变” —— 条纹边缘、几何边界、亮暗跃迁。这是网络看到“有内容”的位置。</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#0D9488;font-size:12px;font-family:Calibri;font-weight:700">spec_gate (来自 g, x, s 三者)</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">    关注 “这些结构突变是否与高反光相关” —— 结合输入亮度与高光概率, 区分普通边缘与高光边缘。</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#0D9488;font-size:12px;font-family:Calibri;font-weight:700">final_gate = edge_gate · spec_gate</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">    两者相乘, 仅在“高光区且有结构”处注入增强; 在均匀漫反射区门控接近 0, 避免误扰动。</span></p>
+    sourceLayout: ad982dae5130d4b272abe512c63f15038d5da899bef3a3eab88c00064d41cb07
+  - elementId: slide-26-node-658-Shape-39
+    elementType: shape
+    bounds:
+      - 489.6
+      - 266.4
+      - 435.6
+      - 230.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 33a588a2ea136b576a0c8e72d62d1b154893a2e98d0fd22b95ae9bb31bed86e1
+  - elementId: slide-26-node-659-Shape-40
+    elementType: shape
+    bounds:
+      - 489.6
+      - 266.4
+      - 5.76
+      - 230.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#DB2777'
+    border:
+      style: solid
+      width: 1
+      color: '#DB2777'
+    sourceLayout: 60f30bb3affc86e6b06e34c6eb55fe4184778c0d771dce58fbde5d65d69fbe73
+  - elementId: slide-26-node-660-Text-41
+    elementType: text
+    bounds:
+      - 504
+      - 273.6
+      - 410.4
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">projection / specular 双分支与 β 残差</span></p>
+    sourceLayout: f3183816dcdad8fc2fa6a3fd90334f63bcb97ca835f9266c77565162b20b0feb
+  - elementId: slide-26-node-661-Text-42
+    elementType: text
+    bounds:
+      - 504
+      - 302.4
+      - 410.4
+      - 187.2
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#DB2777'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#DB2777;font-size:12px;font-family:Calibri;font-weight:700">projection_branch (大核 7×7)</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">    通用空间投影, 保留稳定的纹理结构表示, 是基准路径</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#DB2777;font-size:12px;font-family:Calibri;font-weight:700">specular_branch + FFC</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">    小核 + FFC 频域, 专门处理高光相关的频域/空间异常, 使输出对高反光更敏感</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#DB2777;font-size:12px;font-family:Calibri;font-weight:700">β 受控强度 (可学习)</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">    output = spec_refined + β · spec_refined · final_gate, 初始化为小值; 训练逐渐学到合适注入幅度, 避免破坏预训练梯度分支特征分布</span></p>
+    sourceLayout: 346cd1f4088db30477d7d9d512fc2d33a7968da0e655602abed3d8804343b7c0
+  - elementId: slide-26-node-662-Text-43
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: 9bdc46eaa72b50bc333b08b80c03514f67a68b5343111f6b68519d5be478aa87

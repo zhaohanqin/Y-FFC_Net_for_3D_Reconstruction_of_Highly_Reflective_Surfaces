@@ -1,0 +1,133 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-15-node-327-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 96647e515c6a5bcfe067de9b5c9aa05c48721b7e81e4a0a85362c3fb1dc75c77
+  - elementId: slide-15-node-328-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">04 · FFC CORE</span></p>
+    sourceLayout: 91a9095f267c6a76abcb0d4dfd93b1deaee28185823745c069023c56dd3c99ed
+  - elementId: slide-15-node-329-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">FFC 频域卷积核心 · 三层封装</span></p>
+    sourceLayout: 46b86a07035f3d0e1b18472d23c9b5ae256c1b5f08b7a613b8545d5010754c3f
+  - elementId: slide-15-node-330-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">15 / 50</span></p>
+    sourceLayout: 79000ff661599a3b7e994532e78bf2d5b1baf5d59cd8f1d854dc5b45b55fb16e
+  - elementId: slide-15-node-331-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: cda84dc5593fdd5a42b2020842fa013deee1d8d5b9631e9025a015c76fbd8f47
+  - elementId: slide-15-node-332-Image-0
+    elementType: image
+    bounds:
+      - 161.793
+      - 104.4
+      - 636.174
+      - 356.4
+    src: media/3d0fb436d405b774a966ad64.png
+    fit:
+      mode: fill
+    sourceLayout: 119f7827d1c75c0204a4618cbfb6da7d90ad7f7c2ead04ac7d5372f164e6d61b
+  - elementId: slide-15-node-333-Text-5
+    elementType: text
+    bounds:
+      - 36
+      - 471.6
+      - 885.6
+      - 39.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11.5
+      color: '#475569'
+      align:
+        - center
+        - top
+      wrap: true
+      text: '<p><span style="color:#475569;font-size:11.5px;font-style:italic">FFC 由内到外三层封装: FourierUnit (最底层 FFT 单元) → SpectralTransform (全局 FU + 局部 LFU + 门控融合) → FFC_BN_ACT (Local/Global 四路交互的统一入口)</span></p>'
+    sourceLayout: a790322d831b035f34ebe644e5b7ab806b07577bf2654d89320a7ddfdb57c5e5
+  - elementId: slide-15-node-334-Text-6
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: 5fb1ac0f147fc9604b810d64a942bd773b45551f0276fd15dcb36be07e4fbf76

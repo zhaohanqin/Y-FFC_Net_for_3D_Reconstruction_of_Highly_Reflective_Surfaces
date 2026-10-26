@@ -1,0 +1,270 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-43-node-936-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: ad110b61914018b58c2c676de73a2aea1a46979027398488f07070d19395a87d
+  - elementId: slide-43-node-937-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">10 · TRAINING</span></p>
+    sourceLayout: 0311f875db22c2614f00a1e0aafada568d4a4986038482713422fb862d56b99b
+  - elementId: slide-43-node-938-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">训练流程 · 数据 → 增强 → 优化 → EMA</span></p>
+    sourceLayout: a1b05db7ef753e372598c7a800359cc7c9ca4bd55bb629ae5f43ac95172c4534
+  - elementId: slide-43-node-939-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">43 / 50</span></p>
+    sourceLayout: 03005962275cd5f320912aeea18cee3592a38dce3e38cb74687723a73a8b4909
+  - elementId: slide-43-node-940-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: 796adae5fadb6f4687552b7b4e2fb9f68c5b425a428add07e0186caac4f9faac
+  - elementId: slide-43-node-941-Shape-5
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 432
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 9a71acb11ecd8e2045167199330e5e73862f87a8b1ab16955bce3cbdcb219d58
+  - elementId: slide-43-node-942-Shape-6
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 5.76
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0D9488'
+    border:
+      style: solid
+      width: 1
+      color: '#0D9488'
+    sourceLayout: d11d9ade02272f79971df812ea3554bf27bdfeec0b5b854d7066dd21b4fb1f28
+  - elementId: slide-43-node-943-Text-7
+    elementType: text
+    bounds:
+      - 50.4
+      - 115.2
+      - 410.4
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">ImprovedFringeDataset + 增强流水线</span></p>
+    sourceLayout: 92603ee07a01f0c09d9aae9eb54926c158aeeabf3e059ea90a4934e113b44ef9
+  - elementId: slide-43-node-944-Text-8
+    elementType: text
+    bounds:
+      - 50.4
+      - 144
+      - 410.4
+      - 349.2
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#0D9488'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:12px;font-family:Calibri;font-weight:700">样本结构  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">(input, target, gt_specular, gt_gradient), 全部 [1,H,W] 灰度归一化到 [0,1]</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#0D9488;font-size:12px;font-family:Calibri;font-weight:700">文件匹配规则  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">① 完全同名 ② input_→target_ ③ input→target ④ 提取数字 target_数字.ext</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#0D9488;font-size:12px;font-family:Calibri;font-weight:700">EnhancedPairedTransform  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">水平翻转 / 垂直翻转 / 旋转 / 随机裁剪 resize 回原尺寸 / 亮度缩放 (input+target+gt_spec 同步)</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#0D9488;font-size:12px;font-family:Calibri;font-weight:700">HighlightAugmentation (p=0.5)</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">随机叠加 1~6 个高斯 blob, 半径 3~max(5,short/20), 强度 0.2~0.7, 同步更新 gt_specular</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#0D9488;font-size:12px;font-family:Calibri;font-weight:700">监督目标构造 (增强后)  </span><span style="color:#1F2937;font-size:11px;font-family:Consolas">gt_specular = clamp(input - target, 0, 1)</span></p><p><span style="color:#1F2937;font-size:11px;font-family:Consolas">gt_gradient = normalized_sobel_magnitude(input)</span></p>
+    sourceLayout: b28143eb468ecd6cf6a02753303f61151b89d6fe4b72183eac3260d0c613c627
+  - elementId: slide-43-node-945-Shape-9
+    elementType: shape
+    bounds:
+      - 489.6
+      - 108
+      - 435.6
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: c0734a863677db038116a7d58b049c2dd2ad46edda34a66d8bbe59738c701158
+  - elementId: slide-43-node-946-Shape-10
+    elementType: shape
+    bounds:
+      - 489.6
+      - 108
+      - 5.76
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#7C3AED'
+    border:
+      style: solid
+      width: 1
+      color: '#7C3AED'
+    sourceLayout: 532dc4ae20c410f596f1e14a9c5ee4dc607e4ad739af0d9230f715ff64cb0cc1
+  - elementId: slide-43-node-947-Text-11
+    elementType: text
+    bounds:
+      - 504
+      - 115.2
+      - 410.4
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">train_one_epoch · 单 batch 数据流</span></p>
+    sourceLayout: 38896b3b70bff2aa4904eff96b2a3ad4be52920f23e9bb94d950e3170b7eee55
+  - elementId: slide-43-node-948-Shape-12
+    elementType: shape
+    bounds:
+      - 504
+      - 144
+      - 410.4
+      - 327.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0F172A'
+    border:
+      style: solid
+      width: 1
+      color: '#0F172A'
+    sourceLayout: e5e045ee2723661e13f2ea4937424c0b2eecf42b8068fe786bce01dd9e012f68
+  - elementId: slide-43-node-949-Text-13
+    elementType: text
+    bounds:
+      - 514.8
+      - 151.2
+      - 388.8
+      - 313.2
+    content:
+      fontFamily: Consolas
+      fontSize: 9
+      color: '#E2E8F0'
+      align:
+        - left
+        - top
+      wrap: true
+      text: '<p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">for (inp, tgt, gt_s, gt_g) in loader:</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">    # 1) forward</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">    out = model(inp)</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">    # out = {r, b, g, s, r_direct, alpha, cs}</span></p><p></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">    # 2) loss</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">    loss, sub = criterion(</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">        pred_diffuse = out[&quot;r&quot;],</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">        target       = tgt,</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">        est_b        = out[&quot;b&quot;],</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">        gt_specular  = gt_s,</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">        pred_grad    = out[&quot;g&quot;],</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">        gt_grad      = gt_g,</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">        cross_scale_consistency = out[&quot;cs&quot;],</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">        input_img    = inp,</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">        pred_s_lik   = out[&quot;s&quot;],</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">        pred_r_direct= out[&quot;r_direct&quot;])</span></p><p></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">    # 3) NaN/Inf 检查 + 异常 batch 跳过</span></p><p></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">    # 4) backward</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">    (loss / ACCUMULATION_STEPS).backward()</span></p><p></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">    if (step+1) % ACCUMULATION_STEPS == 0:</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">        clip_grad_norm_(params, GRAD_CLIP_VALUE)</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">        optimizer.step()</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">        scheduler.step()</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">        optimizer.zero_grad()</span></p><p><span style="color:#E2E8F0;font-size:9px;font-family:Consolas">        ema.update()</span></p>'
+    sourceLayout: 14f1decb139a540d3a22c4b74265c33c720a96662af9417559ffea08eb5613f6
+  - elementId: slide-43-node-950-Text-14
+    elementType: text
+    bounds:
+      - 504
+      - 475.2
+      - 410.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 9.5
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9.5px;font-style:italic">保存策略  ·  综合评分 = 0.7·SSIM + 0.3·1/(1+Loss)   →   best_model / best_ssim / best_loss / last / checkpoint_epoch_*.pth</span></p>
+    sourceLayout: e658fc28db442c55f4912cb9295da5d8c63182573e18842fc2c9616fd3911beb
+  - elementId: slide-43-node-951-Text-15
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: 22441bc167cc27db2d865074f903a3358d6a4908a682e500c0021deb95ae5558

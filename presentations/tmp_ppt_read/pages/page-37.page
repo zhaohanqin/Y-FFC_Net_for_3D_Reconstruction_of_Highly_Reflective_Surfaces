@@ -1,0 +1,270 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-37-node-832-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 132852eea09027bb56ba305d4f3645bc96ee38c344ee7a6076e300647d28afe6
+  - elementId: slide-37-node-833-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">08 · FUSION + REFINEMENT</span></p>
+    sourceLayout: 0907bea37b98b4f9ff4830fa88851554450724f4f8717faa6a154128ecfc8675
+  - elementId: slide-37-node-834-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">双路融合 + 残差精修 · 公式与文字说明</span></p>
+    sourceLayout: 0c5c9c237fd60a7d379374bdfa2cc47d970e753415d0e281ce052eae0b4d70dc
+  - elementId: slide-37-node-835-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">37 / 50</span></p>
+    sourceLayout: 5fa5584a3386490c54cff8b122185b41ee29bcc3fa1a877584eba66af0ccc114
+  - elementId: slide-37-node-836-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: 37a8dd4e2dfd1b8389a1060a9dda2e6396e6d4112a3947666c43494373ed6b55
+  - elementId: slide-37-node-837-Shape-5
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 468
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0F172A'
+    border:
+      style: solid
+      width: 1
+      color: '#0F172A'
+    sourceLayout: 59173401d5845876645ee03fe49405fd5ed16d930031cf96feadb71c30ac318c
+  - elementId: slide-37-node-838-Text-6
+    elementType: text
+    bounds:
+      - 46.8
+      - 115.2
+      - 446.4
+      - 374.4
+    content:
+      fontFamily: Consolas
+      fontSize: 10
+      color: '#E2E8F0'
+      align:
+        - left
+        - top
+      wrap: true
+      text: '<p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas"># YFFC.forward 末段 (在主解码器输出之后)</span></p><p></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas"># 1) 物理减法路径</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">r_sub = torch.clamp(x - b, 0.0, 1.0)</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">#   x   : 原始输入</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">#   b   : 主解码器估计的高反光分量</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">#   含义: 漫反射 = 输入 - 镜面</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">#   优点: 物理可解释</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">#   缺点: 当 b 在暗区被低估时, x-b 会</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">#         被 clamp 到 0, 丢失暗部细节</span></p><p></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas"># 2) 直接预测路径</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">r_direct = decoder.r_direct_head(...)</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">#   绕过减法链, 由网络直接学习漫反射</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">#   在 b 估计不准的暗区/复杂区起兜底作用</span></p><p></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas"># 3) 双路融合</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">alpha = torch.sigmoid(alpha_logit)</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">r_fused = alpha * r_direct + (1-alpha) * r_sub</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">#   alpha 可学习, 让网络自适应选择两路比例</span></p><p></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas"># 4) 残差精修</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">delta = refinement_head(r_fused, x, r_direct)</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">#   ResidualRefinementHead 内部:</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">#   cat([r_fused, x, r_direct]) -&gt; 3 通道</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">#   Conv3x3 -&gt; 24ch -&gt; GELU</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">#   轻量残差块 24-&gt;24-&gt;24</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">#   GELU -&gt; Conv 24-&gt;16 -&gt; Conv 16-&gt;1 + Tanh</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">#   delta in [-1, 1]</span></p><p></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas"># 5) 最终输出 (clamp 限幅 + 系数缩放)</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">r = torch.clamp(r_fused + 0.15 * delta, 0, 1)</span></p><p><span style="color:#E2E8F0;font-size:10px;font-family:Consolas">#   0.15 是受控强度系数, 防止精修头过度修改</span></p>'
+    sourceLayout: c8de50f5f576452b1365492b138016044ac9bbdaa8d38ce3db1ec615f2bdd0ae
+  - elementId: slide-37-node-839-Shape-7
+    elementType: shape
+    bounds:
+      - 518.4
+      - 108
+      - 406.8
+      - 183.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: d58fce75ab04c9301696a08fe9f1e3d09905ac4bf224922d6cc56eb317c89991
+  - elementId: slide-37-node-840-Shape-8
+    elementType: shape
+    bounds:
+      - 518.4
+      - 108
+      - 5.76
+      - 183.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0D9488'
+    border:
+      style: solid
+      width: 1
+      color: '#0D9488'
+    sourceLayout: b9989fcd953cd7f2146095597ffa6be4985da5c2fd131e6b153d432e30e40b91
+  - elementId: slide-37-node-841-Text-9
+    elementType: text
+    bounds:
+      - 532.8
+      - 115.2
+      - 381.6
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">为什么需要双路融合</span></p>
+    sourceLayout: c70c4f05c2b616d9c77d53493eec277a7abc972fbf7f17e18876a80e89c72073
+  - elementId: slide-37-node-842-Text-10
+    elementType: text
+    bounds:
+      - 532.8
+      - 140.4
+      - 381.6
+      - 144
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - top
+      wrap: true
+      text: '<p><span style="color:#0D9488;font-size:11px;font-family:Calibri">·  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">r_sub 保留物理含义, 在亮区 b 可靠时是最优</span></p><p><span style="color:#0D9488;font-size:11px;font-family:Calibri">·  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">r_sub 的缺陷在 b 估计不准的暗区: x-b 会被 clamp 到 0, 暗部细节会丢</span></p><p><span style="color:#0D9488;font-size:11px;font-family:Calibri">·  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">r_direct 直接学习, 不依赖 b, 对暗区与复杂边界更鲁棒</span></p><p><span style="color:#0D9488;font-size:11px;font-family:Calibri">·  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">α 自适应选择, 不必硬性二选一</span></p>'
+    sourceLayout: 149d6b7878a09f79f620bebeb1d5813250df8269ec403c25aee0077e698530f7
+  - elementId: slide-37-node-843-Shape-11
+    elementType: shape
+    bounds:
+      - 518.4
+      - 298.8
+      - 406.8
+      - 198
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: ff0b8cf94b922b813daeb8c62d4f89a4b2282a7ae6514b43dfc0a23df37c84d6
+  - elementId: slide-37-node-844-Shape-12
+    elementType: shape
+    bounds:
+      - 518.4
+      - 298.8
+      - 5.76
+      - 198
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#DB2777'
+    border:
+      style: solid
+      width: 1
+      color: '#DB2777'
+    sourceLayout: 3d04d3603b83e8560fe4c17f0af84fedb31739d9e65928362c8f5c2cc58c1070
+  - elementId: slide-37-node-845-Text-13
+    elementType: text
+    bounds:
+      - 532.8
+      - 306
+      - 381.6
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">为什么需要残差精修头 (受控 ±0.15)</span></p>
+    sourceLayout: bfea8570816e776661ec6b64c84f45ccc03ddfed9dcd7ad5ff1c2cf6bc72189a
+  - elementId: slide-37-node-846-Text-14
+    elementType: text
+    bounds:
+      - 532.8
+      - 331.2
+      - 381.6
+      - 162
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#DB2777'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#DB2777;font-size:11px;font-family:Calibri">·  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">r_fused 是粗略结果, 仍可能在亮暗边界、过渡区域有不连续</span></p><p><span style="color:#DB2777;font-size:11px;font-family:Calibri">·  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">RefinementHead 同时看到 r_fused、原图 x、r_direct, 学习像素级微调量 delta</span></p><p><span style="color:#DB2777;font-size:11px;font-family:Calibri">·  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">Tanh 输出 delta ∈ [-1, 1]; 系数 0.15 限制实际修改幅度 ∈ [-0.15, 0.15]</span></p><p><span style="color:#DB2777;font-size:11px;font-family:Calibri">·  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">保留 r_fused 主体的同时, 仅做小幅细节修复, 避免推翻已有融合结果</span></p>
+    sourceLayout: 738f77943d431d2550d21c59e51d8896613aeb878e7150d2999f44ec6427f743
+  - elementId: slide-37-node-847-Text-15
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: a8bc043b1cd032176bd2bce013ff845db16375f1a27ed1255712405bf83fd003

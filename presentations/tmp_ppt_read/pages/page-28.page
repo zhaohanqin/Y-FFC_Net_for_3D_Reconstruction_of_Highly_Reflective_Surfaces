@@ -1,0 +1,133 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-28-node-668-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: fc442b861906213b59f3e6dcc4397a1a5ce3dccfa7c8e93043c3aaeacb182a75
+  - elementId: slide-28-node-669-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">07 · MAIN DECODER</span></p>
+    sourceLayout: a8bff8ac39bf4aead76b45c1613080abf1b28ef7f5310baf38fec007ce70b54a
+  - elementId: slide-28-node-670-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">MainDecoder · 5 级架构 + SpecAware + 双头输出</span></p>
+    sourceLayout: 3e0f38a253468a40871b63c021c5d8c75026d8f5df91613960d03d3dd184fb5b
+  - elementId: slide-28-node-671-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">28 / 50</span></p>
+    sourceLayout: c272601015b12fc50f67926a7273faf755857f09221692611ac44f6d64162541
+  - elementId: slide-28-node-672-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: 43f8534ff74572e2f3510d2cfaa1d2e9111c947cd4141d7e62808a0b55ef87fa
+  - elementId: slide-28-node-673-Image-0
+    elementType: image
+    bounds:
+      - 161.793
+      - 104.4
+      - 636.174
+      - 356.4
+    src: media/440af341482a40a587765533.png
+    fit:
+      mode: fill
+    sourceLayout: e4bcc61ae18f3620d70c5da41cd33711ba50a718b4e8b9779223f866e6d181b1
+  - elementId: slide-28-node-674-Text-5
+    elementType: text
+    bounds:
+      - 36
+      - 471.6
+      - 885.6
+      - 39.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11.5
+      color: '#475569'
+      align:
+        - center
+        - top
+      wrap: true
+      text: '<p><span style="color:#475569;font-size:11.5px;font-style:italic">5 级渐进上采样: 每级 = TransposedConvBlock + FFC (仅 L2/L3) + 三路先验调制 + SpecAwareAttention + Attention_block + cat(enc skip, enh)。最末 L5 出 b、r_direct、alpha_logit 三个输出。</span></p>'
+    sourceLayout: 5c98dfb740772e879d1d196179fcf36e5ac16ff00262467630f2bb6c04686799
+  - elementId: slide-28-node-675-Text-6
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: 379ee641a48f138a12e506610eadfa66d9b446d7c233d3fc1e94efaa4db8d567

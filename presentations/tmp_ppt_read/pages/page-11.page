@@ -1,0 +1,541 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-11-node-227-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 4865f2e81f3cb927988bd56b92be000b90dd7af134071185e0d38faee6f2c9aa
+  - elementId: slide-11-node-228-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">03 · ENCODER · RESNET</span></p>
+    sourceLayout: d9fd183ae45f90aa6d1c0fc9e35d60202803e8cac8fa359b5ede1ffa155d6d0c
+  - elementId: slide-11-node-229-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">ResNet50 局部纹理分支 · 结构与数据流</span></p>
+    sourceLayout: 154937d89330d90f164e12116ffcfd257bc781877a34e859d6ac7e77c189e082
+  - elementId: slide-11-node-230-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">11 / 50</span></p>
+    sourceLayout: 68eb50b91d69f708e160ee5418f42b68d8867b65256fa2a586b1c8ead7bca3c6
+  - elementId: slide-11-node-231-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: 7c8e1fa908700067258c07b0420ec5b5038561e9314e1eccefa6d01d4f230262
+  - elementId: slide-11-node-232-Shape-5
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 432
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 186bf6956c941cf8ebdbf1292a1b2e4a5efbaf1ace6f4df008c0f161c8f794bf
+  - elementId: slide-11-node-233-Shape-6
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 5.76
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#DB2777'
+    border:
+      style: solid
+      width: 1
+      color: '#DB2777'
+    sourceLayout: 44a098c37d0d531680dd1c9956022e318636724d7470ff91d3fd23ce627fd8dc
+  - elementId: slide-11-node-234-Text-7
+    elementType: text
+    bounds:
+      - 50.4
+      - 115.2
+      - 410.4
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 15
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:15px;font-weight:700">结构与单通道适配</span></p>
+    sourceLayout: cc203bc6240fcb5fdc2dbb997c8c5e3d9f124c9b8be7776cc33e2da95fba0e56
+  - elementId: slide-11-node-235-Text-8
+    elementType: text
+    bounds:
+      - 50.4
+      - 147.6
+      - 410.4
+      - 345.6
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#DB2777'
+      align:
+        - left
+        - top
+      wrap: true
+      text: '<p><span style="color:#DB2777;font-size:12px;font-family:Calibri;font-weight:700">灰度输入适配  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">第一层 conv1 由 RGB (3→64) 改为 1→64; 权重由 ImageNet 预训练的 RGB 卷积核沿通道维取均值初始化: new_w = old_w.mean(dim=1, keepdim=True)。这样灰度输入也能继承预训练的边缘/纹理表征能力。</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#DB2777;font-size:12px;font-family:Calibri;font-weight:700">layer4 空洞改造  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">layer4 stride 改为 1, 并用 dilation 替代下采样, 使深层仍保持 H/16 分辨率, 避免高反光语义被过度下采样。</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#DB2777;font-size:12px;font-family:Calibri;font-weight:700">通道压缩  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">对 layer1/2/3 输出分别加 reduce_l1/l2/l3 (1×1 Conv) 把 256/512/1024 通道压到 128/256/512, 便于解码器使用。</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#DB2777;font-size:12px;font-family:Calibri;font-weight:700">末层融合  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">x_l3_512 与 x_l4_512 都是 H/16 × 512, 通过 cat + fuse_l34 (Conv 1×1) 合并为 512 通道的 x_bb_4。该融合让浅层与深层 H/16 语义同时进入瓶颈。</span></p>'
+    sourceLayout: 0444540b0366c5bf6dd23876d86c3b799967d14c9ddea9555adb05ab89839437
+  - elementId: slide-11-node-236-Shape-9
+    elementType: shape
+    bounds:
+      - 489.6
+      - 108
+      - 435.6
+      - 183.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 284f3f770b99e20e85bc9a4fcf12daf0c48c00b1b4a42e9fce178ae3dcfa8e6a
+  - elementId: slide-11-node-237-Shape-10
+    elementType: shape
+    bounds:
+      - 489.6
+      - 108
+      - 5.76
+      - 183.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: cd9ef7c78c3cadf52f19ef43433e4e689051c3c7af5545bd216e0e5f15ace5b9
+  - elementId: slide-11-node-238-Text-11
+    elementType: text
+    bounds:
+      - 504
+      - 115.2
+      - 410.4
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">ResNet 内部 5 路特征</span></p>
+    sourceLayout: beb41501b21a3179c9427e6fd65b352cedb96158eed3b284c40d0dd7e64e5f44
+  - elementId: slide-11-node-239-Text-12
+    elementType: text
+    bounds:
+      - 504
+      - 144
+      - 68.4
+      - 25.2
+    content:
+      fontFamily: Consolas
+      fontSize: 11
+      color: '#DB2777'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#DB2777;font-size:11px;font-family:Consolas;font-weight:700">stem</span></p>
+    sourceLayout: 4e2a10036e2b5efff7c5e10971317d30a2c184b5bd6b5caece7da7534bca17d6
+  - elementId: slide-11-node-240-Text-13
+    elementType: text
+    bounds:
+      - 576
+      - 144
+      - 144
+      - 25.2
+    content:
+      fontFamily: Consolas
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px;font-family:Consolas">64ch · H/2</span></p>
+    sourceLayout: dcfb33e34d6f59dc94111e24c4af296953f03bfd3caa728ae0730c9c87f83d91
+  - elementId: slide-11-node-241-Text-14
+    elementType: text
+    bounds:
+      - 720
+      - 144
+      - 201.6
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10.5px">→ x_bb_1</span></p>
+    sourceLayout: 2d83e5f7b6893ca080fd64b9fad771d9dddfb13bba069016d1e5c478bd4461e2
+  - elementId: slide-11-node-242-Text-15
+    elementType: text
+    bounds:
+      - 504
+      - 172.8
+      - 68.4
+      - 25.2
+    content:
+      fontFamily: Consolas
+      fontSize: 11
+      color: '#DB2777'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#DB2777;font-size:11px;font-family:Consolas;font-weight:700">layer1</span></p>
+    sourceLayout: 5aaf009710d80e72c1e1c8d39400adfa79d8fcd253db219c33370a52e938197f
+  - elementId: slide-11-node-243-Text-16
+    elementType: text
+    bounds:
+      - 576
+      - 172.8
+      - 144
+      - 25.2
+    content:
+      fontFamily: Consolas
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px;font-family:Consolas">256→128ch · H/4</span></p>
+    sourceLayout: 64c4e26616d0f2ae64a18de7bb62e819377e5fbb38e5e4f8a25dd80193e742d8
+  - elementId: slide-11-node-244-Text-17
+    elementType: text
+    bounds:
+      - 720
+      - 172.8
+      - 201.6
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10.5px">→ x_bb_2 (经 AdaptiveSkipFusion)</span></p>
+    sourceLayout: f5a0765b99c8e1ca16b10ea8b0536afd367c458632d944fcf682829e3cd25614
+  - elementId: slide-11-node-245-Text-18
+    elementType: text
+    bounds:
+      - 504
+      - 201.6
+      - 68.4
+      - 25.2
+    content:
+      fontFamily: Consolas
+      fontSize: 11
+      color: '#DB2777'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#DB2777;font-size:11px;font-family:Consolas;font-weight:700">layer2</span></p>
+    sourceLayout: 8c25bd23c7ae05149acad8e3e010b4ff36f3619a2f3f01defad78342c6d4eceb
+  - elementId: slide-11-node-246-Text-19
+    elementType: text
+    bounds:
+      - 576
+      - 201.6
+      - 144
+      - 25.2
+    content:
+      fontFamily: Consolas
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px;font-family:Consolas">512→256ch · H/8</span></p>
+    sourceLayout: 8ddbf4c2f06c72e5f608fd6b4f43c63ce7b0959679c95c33b8dd04ae1eec503a
+  - elementId: slide-11-node-247-Text-20
+    elementType: text
+    bounds:
+      - 720
+      - 201.6
+      - 201.6
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10.5px">→ x_bb_3 (经 AdaptiveSkipFusion)</span></p>
+    sourceLayout: 01d5a40d341c98f2ddcada529e456955cf62083669a14d07455fc122666a6a70
+  - elementId: slide-11-node-248-Text-21
+    elementType: text
+    bounds:
+      - 504
+      - 230.4
+      - 68.4
+      - 25.2
+    content:
+      fontFamily: Consolas
+      fontSize: 11
+      color: '#DB2777'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#DB2777;font-size:11px;font-family:Consolas;font-weight:700">layer3</span></p>
+    sourceLayout: e82b12fa647bfab51ba6b1e095314e7dae13975127b9f91b0cb88caefad44131
+  - elementId: slide-11-node-249-Text-22
+    elementType: text
+    bounds:
+      - 576
+      - 230.4
+      - 144
+      - 25.2
+    content:
+      fontFamily: Consolas
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px;font-family:Consolas">1024→512ch · H/16</span></p>
+    sourceLayout: 28257ee578743cf4ea1ebca07e53dc2ae8be5971af46900d360bf284b22f620b
+  - elementId: slide-11-node-250-Text-23
+    elementType: text
+    bounds:
+      - 720
+      - 230.4
+      - 201.6
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10.5px">→ cat → fuse_l34</span></p>
+    sourceLayout: f50f396375d5c6ffb5be634647f8e9941466148c77dd6a1af8211f4dd832e07f
+  - elementId: slide-11-node-251-Text-24
+    elementType: text
+    bounds:
+      - 504
+      - 259.2
+      - 68.4
+      - 25.2
+    content:
+      fontFamily: Consolas
+      fontSize: 11
+      color: '#DB2777'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#DB2777;font-size:11px;font-family:Consolas;font-weight:700">layer4</span></p>
+    sourceLayout: 4cc6a1aaee512d5b50c660b5dbe69025c80655e2854994ed73420e040af4829d
+  - elementId: slide-11-node-252-Text-25
+    elementType: text
+    bounds:
+      - 576
+      - 259.2
+      - 144
+      - 25.2
+    content:
+      fontFamily: Consolas
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px;font-family:Consolas">2048→512ch · H/16 (dilated)</span></p>
+    sourceLayout: af0c03f6d23afd1313d0556d58a195a3181ece0e03645cc6060222b92558b743
+  - elementId: slide-11-node-253-Text-26
+    elementType: text
+    bounds:
+      - 720
+      - 259.2
+      - 201.6
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10.5px">→ cat → fuse_l34 → x_bb_4</span></p>
+    sourceLayout: c9950370e8aaa6ed3f9f91681e489c77a5929fd1e251d50ab52c810c8c23c72d
+  - elementId: slide-11-node-254-Shape-27
+    elementType: shape
+    bounds:
+      - 489.6
+      - 298.8
+      - 435.6
+      - 198
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: e5ea87e776e19a7bbbeb06997a6a66d3f04d12f8cb96de0561ebfc4b914ee5ea
+  - elementId: slide-11-node-255-Shape-28
+    elementType: shape
+    bounds:
+      - 489.6
+      - 298.8
+      - 5.76
+      - 198
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0D9488'
+    border:
+      style: solid
+      width: 1
+      color: '#0D9488'
+    sourceLayout: f419f8c0beb267d5a902ca0b549425b2812102234566bc6336d1d1886292470c
+  - elementId: slide-11-node-256-Text-29
+    elementType: text
+    bounds:
+      - 504
+      - 306
+      - 410.4
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">为什么 X-FFC 选择 ResNet50</span></p>
+    sourceLayout: 348140756e4beae265b9c934ed51d09e32c8c5b63a6a65237cc2b1459d8de4a3
+  - elementId: slide-11-node-257-Text-30
+    elementType: text
+    bounds:
+      - 504
+      - 334.8
+      - 410.4
+      - 154.8
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri">·  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">卷积归纳偏置对条纹边缘、亮暗跃迁等高反光关键特征敏感</span></p><p><span style="color:#0D9488;font-size:11px;font-family:Calibri">·  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">5 级特征金字塔天然为解码器提供多尺度 skip</span></p><p><span style="color:#0D9488;font-size:11px;font-family:Calibri">·  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">与 Transformer 形成“局部 + 全局”互补, 覆盖不同感受野</span></p><p><span style="color:#0D9488;font-size:11px;font-family:Calibri">·  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">ImageNet 预训练权重在分层学习率 (×0.1) 下做轻微微调, 避免破坏稳定低层特征</span></p>
+    sourceLayout: 945c5e3b9b7f4e46948f1602c98b2201c2aa815061b08bad234abac6a54bdc5f
+  - elementId: slide-11-node-258-Text-31
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: c1e1f4770e45ebf9431e7e69548890487590ed6f7f812929fb26033d318d5b6f

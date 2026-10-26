@@ -1,0 +1,89 @@
+pageType: content
+background:
+  type: solid
+  color: '#1E2761'
+elements:
+  - elementId: slide-19-node-469-Text-1
+    elementType: text
+    bounds:
+      - 57.6
+      - 180
+      - 792
+      - 36
+    content:
+      fontFamily: Calibri
+      fontSize: 16
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:16px;font-weight:700">PART 05</span></p>
+    sourceLayout: 461553bbd0f659aaa81a3a36593609c05459e65901a8fdef8658eeff49dbe519
+  - elementId: slide-19-node-470-Text-2
+    elementType: text
+    bounds:
+      - 57.6
+      - 219.6
+      - 792
+      - 86.4
+    content:
+      fontFamily: Calibri
+      fontSize: 50
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:50px;font-weight:700">GradientDecoder 梯度辅助解码器</span></p>
+    sourceLayout: ecc9426360c99e92ce6b77f63773f6cc68f7cb8d6a304eba9d1d6e0c0487d1bd
+  - elementId: slide-19-node-471-Text-3
+    elementType: text
+    bounds:
+      - 57.6
+      - 313.2
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 17
+      color: '#CADCFC'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#CADCFC;font-size:17px">5 个 Block 渐进上采 · 双任务输出 g 与 s · 中间特征 xe1..4 服务 EnhancementLayers</span></p>
+    sourceLayout: f61866fde509edc106e930740c633eac59f59d956c81abfea5877ab1485869cf
+  - elementId: slide-19-node-472-Shape-4
+    elementType: line
+    bounds:
+      - 57.6
+      - 363.6
+      - 108
+      - 0
+    viewBox:
+      - 108
+      - 0.001
+    points: 0,0 108,0.001
+    border:
+      style: solid
+      width: 3
+      color: '#0D9488'
+    sourceLayout: 179fb2dbb048aa2649e8a9f1cfe428ad5ca2264dd472b7c6ec744946d2a7cd9f
+  - elementId: slide-19-node-473-Text-5
+    elementType: text
+    bounds:
+      - 864
+      - 504
+      - 72
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#CADCFC'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#CADCFC;font-size:10px">19 / 50</span></p>
+    sourceLayout: bcfbcebae5ca9f39a8f0dd00fcef58a30c850e42c9f3333b9f42fa776ed1851c

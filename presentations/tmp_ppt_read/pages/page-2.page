@@ -1,0 +1,842 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-2-node-15-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 20d7fa41efbb255fc263a16a225b38c7f2668519e040dc229b6f2a5cce7909ea
+  - elementId: slide-2-node-16-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">OUTLINE</span></p>
+    sourceLayout: d65edddb8495a41ee69b89c29e9de194da9da3932532f267d5c5f88d93067fe5
+  - elementId: slide-2-node-17-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">目录 · 讲解大纲</span></p>
+    sourceLayout: 9376320f4c6c8e0718476f574adb7459daddfac2fd8cebb82d1624767a75e2d8
+  - elementId: slide-2-node-18-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">2 / 50</span></p>
+    sourceLayout: b5aea4c4aefafeae42ee712ccc794cde6e13f3b382f0a45b5c57dda6cda494f2
+  - elementId: slide-2-node-19-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: 09074cb5e8b0813da9c80e80828e2bd1cb46d3f89ab0339c54ca0dd2989f9ad2
+  - elementId: slide-2-node-20-Shape-5
+    elementType: shape
+    bounds:
+      - 43.2
+      - 108
+      - 39.6
+      - 30.24
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0D9488'
+    border:
+      style: solid
+      width: 1
+      color: '#0D9488'
+    sourceLayout: 5bfeddc4bb28ae856e5ecf7c3868dbe485b31d51e968284f889d3c67aa138947
+  - elementId: slide-2-node-21-Text-6
+    elementType: text
+    bounds:
+      - 43.2
+      - 108
+      - 39.6
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#FFFFFF'
+      align:
+        - center
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:14px;font-weight:700">01</span></p>
+    sourceLayout: 8328da98dd8ea61995b32b8f12bb7608652d1e3dcc021ccf408d852637081c57
+  - elementId: slide-2-node-22-Text-7
+    elementType: text
+    bounds:
+      - 100.8
+      - 108
+      - 396
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 15
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:15px;font-weight:700">任务定义与设计目标</span></p>
+    sourceLayout: 6a14a2bb477e24b5e98747344504f566c515e6d02d55cc81ca653e7395004833
+  - elementId: slide-2-node-23-Text-8
+    elementType: text
+    bounds:
+      - 504
+      - 108
+      - 432
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:11px">P3–4 · 输入/输出与设计要点</span></p>
+    sourceLayout: 32e21d0e3b53693cb573b6b983679c1b5db3b7df6219c63da903a6e2d515dc58
+  - elementId: slide-2-node-24-Shape-9
+    elementType: shape
+    bounds:
+      - 43.2
+      - 144
+      - 39.6
+      - 30.24
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 2e8ffb14723d66b88a8e25fbc2441c2a9c65c7aa367383aa3d8009cb5a492411
+  - elementId: slide-2-node-25-Text-10
+    elementType: text
+    bounds:
+      - 43.2
+      - 144
+      - 39.6
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#FFFFFF'
+      align:
+        - center
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:14px;font-weight:700">02</span></p>
+    sourceLayout: 5fae6e621c7f2c3ddf16d38e93e677402ba7c0ce259b520a987c250ca163f0b4
+  - elementId: slide-2-node-26-Text-11
+    elementType: text
+    bounds:
+      - 100.8
+      - 144
+      - 396
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 15
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:15px;font-weight:700">总体架构与数据流</span></p>
+    sourceLayout: a54ce5749e81f8e8f3cc9489d9f06cd87139511e962eb8f3d00057796e2fcf75
+  - elementId: slide-2-node-27-Text-12
+    elementType: text
+    bounds:
+      - 504
+      - 144
+      - 432
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:11px">P5–7 · X 型双分支拓扑、端到端流程</span></p>
+    sourceLayout: cc752215cabda1e4f3b1a810e3f2d2bddf57f8062a0fdf1be1eb7c72ae2a2a78
+  - elementId: slide-2-node-28-Shape-13
+    elementType: shape
+    bounds:
+      - 43.2
+      - 180
+      - 39.6
+      - 30.24
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#7C3AED'
+    border:
+      style: solid
+      width: 1
+      color: '#7C3AED'
+    sourceLayout: 30871c9e4319a47edf0764ed475e58539dfd3255244ad5c910a2d4f0f9e64686
+  - elementId: slide-2-node-29-Text-14
+    elementType: text
+    bounds:
+      - 43.2
+      - 180
+      - 39.6
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#FFFFFF'
+      align:
+        - center
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:14px;font-weight:700">03</span></p>
+    sourceLayout: 05888a407f548e67e77e5f4ffa16229f47129c69174ac4a1ec9b8157d56f7a08
+  - elementId: slide-2-node-30-Text-15
+    elementType: text
+    bounds:
+      - 100.8
+      - 180
+      - 396
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 15
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:15px;font-weight:700">Encoder 双分支编码器</span></p>
+    sourceLayout: 77e1d69a5a77f2a3d43eb54166d83da4fd4f457bce82a16f327143a757c38bf7
+  - elementId: slide-2-node-31-Text-16
+    elementType: text
+    bounds:
+      - 504
+      - 180
+      - 432
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:11px">P8–13 · ResNet50 + Swin + 融合 + FFC 瓶颈</span></p>
+    sourceLayout: 269361f2dcbdc071143d043c90f2ab595c86886d7dc14702ce6cbe29cca80efc
+  - elementId: slide-2-node-32-Shape-17
+    elementType: shape
+    bounds:
+      - 43.2
+      - 216
+      - 39.6
+      - 30.24
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F59E0B'
+    border:
+      style: solid
+      width: 1
+      color: '#F59E0B'
+    sourceLayout: a1c84699637c47808f49d9bb6f3a5e154932f5c1026710e08b249113dced9d6d
+  - elementId: slide-2-node-33-Text-18
+    elementType: text
+    bounds:
+      - 43.2
+      - 216
+      - 39.6
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#FFFFFF'
+      align:
+        - center
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:14px;font-weight:700">04</span></p>
+    sourceLayout: 8358da661dc3de8f1b46d18a40744b2997d0f2f9f10431787c39b2191d83556d
+  - elementId: slide-2-node-34-Text-19
+    elementType: text
+    bounds:
+      - 100.8
+      - 216
+      - 396
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 15
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:15px;font-weight:700">FFC 频域卷积核心</span></p>
+    sourceLayout: 6fc561e9d06acd46a81d558e7199e76a0000a694eb54b05204e7a604316fed5a
+  - elementId: slide-2-node-35-Text-20
+    elementType: text
+    bounds:
+      - 504
+      - 216
+      - 432
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:11px">P14–18 · FourierUnit / SpectralT. / FFC_BN_ACT 与包含关系</span></p>
+    sourceLayout: b31dce53a0ee51e076daa3c1223a576cce7461bfaa720b2e67c200183289fb21
+  - elementId: slide-2-node-36-Shape-21
+    elementType: shape
+    bounds:
+      - 43.2
+      - 252
+      - 39.6
+      - 30.24
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#DB2777'
+    border:
+      style: solid
+      width: 1
+      color: '#DB2777'
+    sourceLayout: df81c66c1049fb8d53a81d463598e9adbdb6bd8a2c38a0c0af70b63a631e70e1
+  - elementId: slide-2-node-37-Text-22
+    elementType: text
+    bounds:
+      - 43.2
+      - 252
+      - 39.6
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#FFFFFF'
+      align:
+        - center
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:14px;font-weight:700">05</span></p>
+    sourceLayout: b674b37c4d32f7924efca5508aed84d5b897dd9adfc50062e8a8002a68b25339
+  - elementId: slide-2-node-38-Text-23
+    elementType: text
+    bounds:
+      - 100.8
+      - 252
+      - 396
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 15
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:15px;font-weight:700">GradientDecoder 梯度辅助解码器</span></p>
+    sourceLayout: dd4f5f8718701e2fdeb0b72622ae6bac5a402a3cabe729c5d01eda15517fc85b
+  - elementId: slide-2-node-39-Text-24
+    elementType: text
+    bounds:
+      - 504
+      - 252
+      - 432
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:11px">P19–22 · 5 个 Block 每级输入输出</span></p>
+    sourceLayout: 1ef1cc3d1628e53b64e514e47776bd3b99f6309dc43270eb64c517d0236af71c
+  - elementId: slide-2-node-40-Shape-25
+    elementType: shape
+    bounds:
+      - 43.2
+      - 288
+      - 39.6
+      - 30.24
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#10B981'
+    border:
+      style: solid
+      width: 1
+      color: '#10B981'
+    sourceLayout: d0842d47cd4cf196a184d57cd3e5016ce2f03d8f1efa3ca1c9c2a2ee8696e326
+  - elementId: slide-2-node-41-Text-26
+    elementType: text
+    bounds:
+      - 43.2
+      - 288
+      - 39.6
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#FFFFFF'
+      align:
+        - center
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:14px;font-weight:700">06</span></p>
+    sourceLayout: 34a3474d0111f68c7bb37c5616ba244d3b549311428cd11e2bdb071865c7594d
+  - elementId: slide-2-node-42-Text-27
+    elementType: text
+    bounds:
+      - 100.8
+      - 288
+      - 396
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 15
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:15px;font-weight:700">EnhancementLayers 增强桥接</span></p>
+    sourceLayout: 9fb33a5d2e151b861708d1e3748ef41c00a0d14147970e65377d9f8f2341de93
+  - elementId: slide-2-node-43-Text-28
+    elementType: text
+    bounds:
+      - 504
+      - 288
+      - 432
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:11px">P23–26 · 输入与输出完整说明</span></p>
+    sourceLayout: 58d079a3eed25e626f7908f4b698b033ea819e0dc6435e8ca2d2e2ad105bc0fe
+  - elementId: slide-2-node-44-Shape-29
+    elementType: shape
+    bounds:
+      - 43.2
+      - 324
+      - 39.6
+      - 30.24
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#2A3B7E'
+    border:
+      style: solid
+      width: 1
+      color: '#2A3B7E'
+    sourceLayout: b544e2cc78c434d22d1ce8188d871c81986e378ead37c590d9d49a7007db714c
+  - elementId: slide-2-node-45-Text-30
+    elementType: text
+    bounds:
+      - 43.2
+      - 324
+      - 39.6
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#FFFFFF'
+      align:
+        - center
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:14px;font-weight:700">07</span></p>
+    sourceLayout: 071778466b2da11b1d13f6643cf1d4a9f69de6e91c48eb5b42a22785ac17a78a
+  - elementId: slide-2-node-46-Text-31
+    elementType: text
+    bounds:
+      - 100.8
+      - 324
+      - 396
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 15
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:15px;font-weight:700">MainDecoder 主解码器</span></p>
+    sourceLayout: 0cfb08d515c4ea0b0e586704ac990d2232481d2829e7edd9e7b613eaec9e3dbc
+  - elementId: slide-2-node-47-Text-32
+    elementType: text
+    bounds:
+      - 504
+      - 324
+      - 432
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:11px">P27–35 · 每一级输入输出、SpecAware、双头</span></p>
+    sourceLayout: 881a2fa8aefd4a70f6a78f176eccc3740a89e6765620026cbd5a6c4802f5522a
+  - elementId: slide-2-node-48-Shape-33
+    elementType: shape
+    bounds:
+      - 43.2
+      - 360
+      - 39.6
+      - 30.24
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0D9488'
+    border:
+      style: solid
+      width: 1
+      color: '#0D9488'
+    sourceLayout: 21f3650ba27d705fc5a829b05957820c57a8fc6d109ce99dbe76cc82cb01a82a
+  - elementId: slide-2-node-49-Text-34
+    elementType: text
+    bounds:
+      - 43.2
+      - 360
+      - 39.6
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#FFFFFF'
+      align:
+        - center
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:14px;font-weight:700">08</span></p>
+    sourceLayout: cf527a73cd7ecd0ffb9bfa6f41fef351909a5d0b9f291772f15653dfc39e030e
+  - elementId: slide-2-node-50-Text-35
+    elementType: text
+    bounds:
+      - 100.8
+      - 360
+      - 396
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 15
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:15px;font-weight:700">双路融合 + 残差精修</span></p>
+    sourceLayout: 8c96d66ac5f0edac07247d1a462c3d10d6a958df0919999db17a8c2d073d9ee7
+  - elementId: slide-2-node-51-Text-36
+    elementType: text
+    bounds:
+      - 504
+      - 360
+      - 432
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:11px">P36–37 · α 融合公式与 RefinementHead</span></p>
+    sourceLayout: e4062d8d6f77f78436a7b88362afd2a458db3e82912fbb38b2f0da660c38cadf
+  - elementId: slide-2-node-52-Shape-37
+    elementType: shape
+    bounds:
+      - 43.2
+      - 396
+      - 39.6
+      - 30.24
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#7C3AED'
+    border:
+      style: solid
+      width: 1
+      color: '#7C3AED'
+    sourceLayout: 7aec14eb005c1d80211d12f563bdaf5b00343e2fe160404852dd0af9e6c1546b
+  - elementId: slide-2-node-53-Text-38
+    elementType: text
+    bounds:
+      - 43.2
+      - 396
+      - 39.6
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#FFFFFF'
+      align:
+        - center
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:14px;font-weight:700">09</span></p>
+    sourceLayout: b58d0dca1069afb2c009b83629c9faf439e234947f9e310817978fdad723c3d8
+  - elementId: slide-2-node-54-Text-39
+    elementType: text
+    bounds:
+      - 100.8
+      - 396
+      - 396
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 15
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:15px;font-weight:700">损失函数 EnhancedCompositeLoss</span></p>
+    sourceLayout: 497300efe44ddccadbe74014658477537cbc4a7f5c5bba7d4c94297795a755c1
+  - elementId: slide-2-node-55-Text-40
+    elementType: text
+    bounds:
+      - 504
+      - 396
+      - 432
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:11px">P38–40 · 多任务复合损失</span></p>
+    sourceLayout: 1f54551b2ecd9ba89c2911dd92fa7c644bbe050a42058362039ff0f70dc94c2f
+  - elementId: slide-2-node-56-Shape-41
+    elementType: shape
+    bounds:
+      - 43.2
+      - 432
+      - 39.6
+      - 30.24
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F59E0B'
+    border:
+      style: solid
+      width: 1
+      color: '#F59E0B'
+    sourceLayout: 2658c61cedd2a9a59f46e884d9815954a7ff8c561ac4283f9bd5bd2ed426d64e
+  - elementId: slide-2-node-57-Text-42
+    elementType: text
+    bounds:
+      - 43.2
+      - 432
+      - 39.6
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#FFFFFF'
+      align:
+        - center
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:14px;font-weight:700">10</span></p>
+    sourceLayout: e6ed24de15a54fb683a0f7a123c054d8380a6bb9086438c663e528b9cdc91ab1
+  - elementId: slide-2-node-58-Text-43
+    elementType: text
+    bounds:
+      - 100.8
+      - 432
+      - 396
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 15
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:15px;font-weight:700">训练 + 推理流程</span></p>
+    sourceLayout: b36cfffcc6665057c8ca7c315cd1975250e6eb01686bb65f9a74c82ac257d2d8
+  - elementId: slide-2-node-59-Text-44
+    elementType: text
+    bounds:
+      - 504
+      - 432
+      - 432
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:11px">P41–45 · 训练循环、滑窗、TTA、优化器</span></p>
+    sourceLayout: d57469c4dab6d50e8bc3d37b97f02bea393191f6d490771c723a17268f468cc0
+  - elementId: slide-2-node-60-Shape-45
+    elementType: shape
+    bounds:
+      - 43.2
+      - 468
+      - 39.6
+      - 30.24
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#DB2777'
+    border:
+      style: solid
+      width: 1
+      color: '#DB2777'
+    sourceLayout: 8432aff666e80105c696dd2fbfe5993e2a7c4dceb9d4716488239edbe3333771
+  - elementId: slide-2-node-61-Text-46
+    elementType: text
+    bounds:
+      - 43.2
+      - 468
+      - 39.6
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#FFFFFF'
+      align:
+        - center
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:14px;font-weight:700">11</span></p>
+    sourceLayout: de044c1ba2813b099aae9ca9d7f91b201fbae9f948ec0daed1d3b994786a82ce
+  - elementId: slide-2-node-62-Text-47
+    elementType: text
+    bounds:
+      - 100.8
+      - 468
+      - 396
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 15
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:15px;font-weight:700">总结与模块包含关系</span></p>
+    sourceLayout: ea877fa325b3ce234015d3dc922e21286aeddb34d2da44474b53a227ca46e281
+  - elementId: slide-2-node-63-Text-48
+    elementType: text
+    bounds:
+      - 504
+      - 468
+      - 432
+      - 30.24
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:11px">P46–50 · 关键设计回顾</span></p>
+    sourceLayout: ad28aee1f00b86199aa5ac95745435302d1070b7ec01d4a4813f3503ecd1179b
+  - elementId: slide-2-node-64-Text-49
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: 7f0a79501e93d916dd327218cd710d9ff466c156a930d6f83c4ef2bf85cce8d0

@@ -1,0 +1,270 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-13-node-306-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 16414c975a2bbe12afb5cf7887820c01af2d6e7ebaa8c970c3eb95c211f7e8a2
+  - elementId: slide-13-node-307-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">03 · ENCODER · BOTTLENECK</span></p>
+    sourceLayout: 26eefa8900c9920b907d1735d3d026fbb0f58367b8f7893fe949be0fbb3f9d8b
+  - elementId: slide-13-node-308-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">Encoder 末端 · FFC 瓶颈 + HighFrequencyEnhancement</span></p>
+    sourceLayout: 05a046ff83c44bb9153dfd0c33db9302cec4e45823736e3dd3ac7a7aa1e86103
+  - elementId: slide-13-node-309-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">13 / 50</span></p>
+    sourceLayout: 8bfc381a0448a16a9ee47fc354cf752e688bde86d6fb3cea7acb3cc4aaa44eac
+  - elementId: slide-13-node-310-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: b621b84dcb1576cf8dd5a009aea78391d2d7b100d12b6a11f82f70dadeb8355e
+  - elementId: slide-13-node-311-Shape-5
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 468
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0F172A'
+    border:
+      style: solid
+      width: 1
+      color: '#0F172A'
+    sourceLayout: e4f6b8fbf8cade23472cbff75e8d2ff880b1c3e8efcb0e30cf5e1718565caf8e
+  - elementId: slide-13-node-312-Text-6
+    elementType: text
+    bounds:
+      - 46.8
+      - 115.2
+      - 446.4
+      - 374.4
+    content:
+      fontFamily: Consolas
+      fontSize: 11
+      color: '#E2E8F0'
+      align:
+        - left
+        - top
+      wrap: true
+      text: '<p><span style="color:#E2E8F0;font-size:11px;font-family:Consolas"># Encoder 末端流程 (在 forward 中的实际位置)</span></p><p></p><p><span style="color:#E2E8F0;font-size:11px;font-family:Consolas"># 已经得到 H/16 融合特征 x_bb_4 [B,512,H/16,W/16]</span></p><p><span style="color:#E2E8F0;font-size:11px;font-family:Consolas"># 以及顶向回流的精炼版本</span></p><p></p><p><span style="color:#E2E8F0;font-size:11px;font-family:Consolas"># (1) 通道压缩 + 投影</span></p><p><span style="color:#E2E8F0;font-size:11px;font-family:Consolas">x_c = cba_after_backbone(x_bb_4)</span></p><p><span style="color:#E2E8F0;font-size:11px;font-family:Consolas"># x_c [B, 256, H/16, W/16]</span></p><p></p><p><span style="color:#E2E8F0;font-size:11px;font-family:Consolas"># (2) FFC 瓶颈 (频域全局建模)</span></p><p><span style="color:#E2E8F0;font-size:11px;font-family:Consolas">ffc_out = FFC_BN_ACT(x_c,</span></p><p><span style="color:#E2E8F0;font-size:11px;font-family:Consolas">                     ratio_gin=0.5,</span></p><p><span style="color:#E2E8F0;font-size:11px;font-family:Consolas">                     ratio_gout=0.5)</span></p><p><span style="color:#E2E8F0;font-size:11px;font-family:Consolas">x_c = x_c + ffc_out          # 残差</span></p><p></p><p><span style="color:#E2E8F0;font-size:11px;font-family:Consolas"># (3) 高频显式增强</span></p><p><span style="color:#E2E8F0;font-size:11px;font-family:Consolas">hf = HighFrequencyEnhancement(x_c)</span></p><p><span style="color:#E2E8F0;font-size:11px;font-family:Consolas">#  内部:</span></p><p><span style="color:#E2E8F0;font-size:11px;font-family:Consolas">#  · 固定 Laplacian 分支 (二阶边缘)</span></p><p><span style="color:#E2E8F0;font-size:11px;font-family:Consolas">#  · 可学习高频分支</span></p><p><span style="color:#E2E8F0;font-size:11px;font-family:Consolas">#  · 多尺度 (sigma=1,3,5) 高斯-残差</span></p><p><span style="color:#E2E8F0;font-size:11px;font-family:Consolas">#  · SE 通道注意力</span></p><p><span style="color:#E2E8F0;font-size:11px;font-family:Consolas">x_c = x_c + gamma * hf       # gamma 受控</span></p><p></p><p><span style="color:#E2E8F0;font-size:11px;font-family:Consolas"># (4) 数值保护</span></p><p><span style="color:#E2E8F0;font-size:11px;font-family:Consolas">x_c = _safe_tensor(x_c)</span></p><p></p><p><span style="color:#E2E8F0;font-size:11px;font-family:Consolas"># x_c 进入 GradientDecoder Block 1</span></p><p><span style="color:#E2E8F0;font-size:11px;font-family:Consolas"># 与 MainDecoder L1</span></p>'
+    sourceLayout: 262dba2fdb599a36b511d6fa2695fee9ffa76d36a98ba11a556cca0a2fb9dbd0
+  - elementId: slide-13-node-313-Shape-7
+    elementType: shape
+    bounds:
+      - 518.4
+      - 108
+      - 406.8
+      - 183.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 55af8b0f784084fd849cdb1e4c2df010e3f23b58e22ce33ebee3b735babdd1ff
+  - elementId: slide-13-node-314-Shape-8
+    elementType: shape
+    bounds:
+      - 518.4
+      - 108
+      - 5.76
+      - 183.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0D9488'
+    border:
+      style: solid
+      width: 1
+      color: '#0D9488'
+    sourceLayout: 678e8ab509d71467fccf580a42eb46043f6be5e0f9f9ec3e10771133dee8ad27
+  - elementId: slide-13-node-315-Text-9
+    elementType: text
+    bounds:
+      - 532.8
+      - 115.2
+      - 381.6
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">FFC 瓶颈作用</span></p>
+    sourceLayout: b38283dd826e356387a7a32f4691eabefa86220ba898f1e335226bc87c64cec5
+  - elementId: slide-13-node-316-Text-10
+    elementType: text
+    bounds:
+      - 532.8
+      - 140.4
+      - 381.6
+      - 144
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri">·  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">ratio_gin = ratio_gout = 0.5, 通道一半走频域 (SpectralTransform)</span></p><p><span style="color:#0D9488;font-size:11px;font-family:Calibri">·  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">FFT 把 H/16 空间特征转到频域, 1×1 Conv 等价空间域全局加权</span></p><p><span style="color:#0D9488;font-size:11px;font-family:Calibri">·  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">在 H/16 即便有较大下采样, 仍可能覆盖不全图像; FFC 在此弥补全局视野</span></p><p><span style="color:#0D9488;font-size:11px;font-family:Calibri">·  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">以残差形式注入, 保留 ResNet/Swin 已有结构信息</span></p>
+    sourceLayout: 7a6e3664fabcea23ca452e57793e85ebca010c396f714ff3f13f8fb6b17bd0b3
+  - elementId: slide-13-node-317-Shape-11
+    elementType: shape
+    bounds:
+      - 518.4
+      - 298.8
+      - 406.8
+      - 198
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 7efe3079028191415572b7796dec7a9360535153e366b6eb55bc53a8571e4c6f
+  - elementId: slide-13-node-318-Shape-12
+    elementType: shape
+    bounds:
+      - 518.4
+      - 298.8
+      - 5.76
+      - 198
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#DB2777'
+    border:
+      style: solid
+      width: 1
+      color: '#DB2777'
+    sourceLayout: 3768757f0674a8b35aab5b91a3afea32f711cf20e59601a4e17d5718196d6ca1
+  - elementId: slide-13-node-319-Text-13
+    elementType: text
+    bounds:
+      - 532.8
+      - 306
+      - 381.6
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">HighFrequencyEnhancement</span></p>
+    sourceLayout: dedbacf609f4bbecc05be8249fe9ccf453cd1b0cbb400d9d64f78f048d24fd0e
+  - elementId: slide-13-node-320-Text-14
+    elementType: text
+    bounds:
+      - 532.8
+      - 331.2
+      - 381.6
+      - 162
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#DB2777'
+      align:
+        - left
+        - top
+      wrap: true
+      text: '<p><span style="color:#DB2777;font-size:11px;font-family:Calibri">·  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">Laplacian 分支 (固定核): 提取二阶导, 对条纹边缘敏感</span></p><p><span style="color:#DB2777;font-size:11px;font-family:Calibri">·  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">可学习高频分支: 数据驱动捕获非 Laplacian 高频</span></p><p><span style="color:#DB2777;font-size:11px;font-family:Calibri">·  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">SE 通道注意力: 自动选择真正重要的高频分量</span></p><p><span style="color:#DB2777;font-size:11px;font-family:Calibri">·  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">受控残差缩放: output = x + gamma · SE(fusion(...)), 避免破坏整体表示</span></p><p><span style="color:#DB2777;font-size:11px;font-family:Calibri">·  </span><span style="color:#1F2937;font-size:11px;font-family:Calibri">意义: 高光边界与条纹本身都是强高频信号; 显式增强避免被深层卷积平滑掉</span></p>'
+    sourceLayout: 036bd1a1b32e84ca5ca28f5b1878c7b7b6bf3daa864c4171f2b27b921bfc3149
+  - elementId: slide-13-node-321-Text-15
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: 636a4d6be77e100ece2c3f84e03f7be51bb833fdeda8abcaecd0053bba678c4b

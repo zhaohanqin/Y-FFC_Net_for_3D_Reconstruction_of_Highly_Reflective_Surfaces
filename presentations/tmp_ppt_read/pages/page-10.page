@@ -1,0 +1,706 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-10-node-185-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: e2c88451828c830e13366f2362c0f45a3ca6f1771e9c446ffb89978007d642bc
+  - elementId: slide-10-node-186-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">03 · ENCODER · OUTPUTS</span></p>
+    sourceLayout: 180eec195e4c07450699034fc3eda305f64f3c9a3c620ce1ec68c8c8823bba88
+  - elementId: slide-10-node-187-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">Encoder · 五路输出与各自用途</span></p>
+    sourceLayout: 24a1ae72f57318fb0482f2d51ef72ad6785ee401f7fa6b372a99080ffb5943b9
+  - elementId: slide-10-node-188-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">10 / 50</span></p>
+    sourceLayout: 2997451882a4704a008963e7ddc88d4573bbf4c3c30c810a8f3c7ebc8e6c6bb3
+  - elementId: slide-10-node-189-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: 6478f7b825c356115b2938d381049ec3e6e87e0acc2157a57c02c427af48187e
+  - elementId: slide-10-node-190-Text-5
+    elementType: text
+    bounds:
+      - 36
+      - 104.4
+      - 885.6
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:12px;font-style:italic">Encoder 接收 x ∈ [B,1,H,W], 输出 4 路 skip 特征 (x_bb_1..4) + 1 路瓶颈特征 (x_c)。skip 为多尺度解码服务, 瓶颈作为主解码器与梯度解码器的核心入口。</span></p>
+    sourceLayout: 7105d3b07dc25b6daef9a86d3e88cc43c871227d2d7a71c2ba82337925ef50f8
+  - elementId: slide-10-node-191-Shape-6
+    elementType: shape
+    bounds:
+      - 36
+      - 158.4
+      - 885.6
+      - 32.4
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: b5460c0ac150ae4d3f038bfe36152f79f7650149273d5892a196b04df7205ad7
+  - elementId: slide-10-node-192-Text-7
+    elementType: text
+    bounds:
+      - 46.8
+      - 158.4
+      - 79.2
+      - 32.4
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:12px;font-weight:700">名称</span></p>
+    sourceLayout: 69795f420bec8dc1a886530718cf8657fb955124f77e017549869995d7212bd7
+  - elementId: slide-10-node-193-Text-8
+    elementType: text
+    bounds:
+      - 140.4
+      - 158.4
+      - 129.6
+      - 32.4
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:12px;font-weight:700">形状</span></p>
+    sourceLayout: 361b97ed50d7b58065e05373dfc76c6b52d3497b57005301941f9dbc8226d78b
+  - elementId: slide-10-node-194-Text-9
+    elementType: text
+    bounds:
+      - 284.4
+      - 158.4
+      - 309.6
+      - 32.4
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:12px;font-weight:700">构造来源</span></p>
+    sourceLayout: 4ae6a0033f7a48005c97bb8f1af5f5027498c49416b0f01a110731d673894030
+  - elementId: slide-10-node-195-Text-10
+    elementType: text
+    bounds:
+      - 608.4
+      - 158.4
+      - 309.6
+      - 32.4
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:12px;font-weight:700">下游用途</span></p>
+    sourceLayout: 41a01146592811e713df61c4f5149adb5a2efd021f361d89edf1f3527e1a35a6
+  - elementId: slide-10-node-196-Shape-11
+    elementType: shape
+    bounds:
+      - 36
+      - 190.8
+      - 885.6
+      - 61.2
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.5
+      color: '#E2E8F0'
+    sourceLayout: 160aa1c5a36a2acea1f34ca5b4d8399e5c5f749a38798418c3b68cdeebdcd585
+  - elementId: slide-10-node-197-Shape-12
+    elementType: shape
+    bounds:
+      - 36
+      - 190.8
+      - 5.76
+      - 61.2
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0D9488'
+    border:
+      style: solid
+      width: 1
+      color: '#0D9488'
+    sourceLayout: 504b5fb5ccd2e9199ce4ab028a2128135722955179972da8a59a9cedcd90709e
+  - elementId: slide-10-node-198-Text-13
+    elementType: text
+    bounds:
+      - 46.8
+      - 190.8
+      - 79.2
+      - 61.2
+    content:
+      fontFamily: Consolas
+      fontSize: 12
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:12px;font-family:Consolas;font-weight:700">x_bb_1</span></p>
+    sourceLayout: 7c48f4691ffb89f56d21d5b19086cd9adeb15060f8c0660d66479b421d0ad09a
+  - elementId: slide-10-node-199-Text-14
+    elementType: text
+    bounds:
+      - 140.4
+      - 190.8
+      - 129.6
+      - 61.2
+    content:
+      fontFamily: Consolas
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px;font-family:Consolas">[B, 64, H/2, W/2]</span></p>
+    sourceLayout: e2a77ac8542ba20f5106a1a423ef93d2a11f4f1e70ebfc077cec34d7d8824b28
+  - elementId: slide-10-node-200-Text-15
+    elementType: text
+    bounds:
+      - 284.4
+      - 190.8
+      - 309.6
+      - 61.2
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px">ResNet stem (conv1+pool 后)</span></p>
+    sourceLayout: 0d921430367764d5d9be63f999745abd32b3fa6524ede69fa12d7a6785f1160e
+  - elementId: slide-10-node-201-Text-16
+    elementType: text
+    bounds:
+      - 608.4
+      - 190.8
+      - 309.6
+      - 61.2
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px">MainDecoder L4 skip · GradientDecoder Block 4/5 skip</span></p>
+    sourceLayout: 24baefe8e6990bad94e8847351eecdccdb03266278ac15baef114feec0b135b9
+  - elementId: slide-10-node-202-Shape-17
+    elementType: shape
+    bounds:
+      - 36
+      - 252
+      - 885.6
+      - 61.2
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.5
+      color: '#E2E8F0'
+    sourceLayout: 4202972da9f34a8bd67f4fa32d3035c96d36220e8d4341a411918e30e472101d
+  - elementId: slide-10-node-203-Shape-18
+    elementType: shape
+    bounds:
+      - 36
+      - 252
+      - 5.76
+      - 61.2
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 9a5e5ef24514c16f88e4512806e9bba8a1dfea1656ceca5b69613890eeefa037
+  - elementId: slide-10-node-204-Text-19
+    elementType: text
+    bounds:
+      - 46.8
+      - 252
+      - 79.2
+      - 61.2
+    content:
+      fontFamily: Consolas
+      fontSize: 12
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:12px;font-family:Consolas;font-weight:700">x_bb_2</span></p>
+    sourceLayout: 4a9d6bb833cedebdc0e89f46ca72268b2415feeb34c64ab19393e7778137d9d9
+  - elementId: slide-10-node-205-Text-20
+    elementType: text
+    bounds:
+      - 140.4
+      - 252
+      - 129.6
+      - 61.2
+    content:
+      fontFamily: Consolas
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px;font-family:Consolas">[B, 128, H/4, W/4]</span></p>
+    sourceLayout: 0e231cf04e87bd863b898e026793115b02cdf5c1dcc40e7093579f08eef979c6
+  - elementId: slide-10-node-206-Text-21
+    elementType: text
+    bounds:
+      - 284.4
+      - 252
+      - 309.6
+      - 61.2
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px">ResNet layer1 + AdaptiveSkipFusion (与 swin_4 融合) + TopDown 注入 H/4 语义</span></p>
+    sourceLayout: 98012ae94d92b0f7630f24f723a3afdc57ec8ea1b42c7dbd705f6d60fbd65ceb
+  - elementId: slide-10-node-207-Text-22
+    elementType: text
+    bounds:
+      - 608.4
+      - 252
+      - 309.6
+      - 61.2
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px">MainDecoder L3 skip · GradientDecoder Block 3 skip</span></p>
+    sourceLayout: 02189bfaef9db36efcdbef867484ee064d33a569e6f0617e0e66b8b4a3210d4f
+  - elementId: slide-10-node-208-Shape-23
+    elementType: shape
+    bounds:
+      - 36
+      - 313.2
+      - 885.6
+      - 61.2
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.5
+      color: '#E2E8F0'
+    sourceLayout: ca83c47cc95665b5104f6d6510a895f81b5cb9598fce420f3223d9d2ea1fb66c
+  - elementId: slide-10-node-209-Shape-24
+    elementType: shape
+    bounds:
+      - 36
+      - 313.2
+      - 5.76
+      - 61.2
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#7C3AED'
+    border:
+      style: solid
+      width: 1
+      color: '#7C3AED'
+    sourceLayout: 2f5f5f750638e96076fd7aba13d52e151b2f2bf6144f62a22f2a32751e6acd13
+  - elementId: slide-10-node-210-Text-25
+    elementType: text
+    bounds:
+      - 46.8
+      - 313.2
+      - 79.2
+      - 61.2
+    content:
+      fontFamily: Consolas
+      fontSize: 12
+      color: '#7C3AED'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#7C3AED;font-size:12px;font-family:Consolas;font-weight:700">x_bb_3</span></p>
+    sourceLayout: 3ef940fca1de8c468a3446bdfd2ee95e314a23a63342a2fd17730e702686cbae
+  - elementId: slide-10-node-211-Text-26
+    elementType: text
+    bounds:
+      - 140.4
+      - 313.2
+      - 129.6
+      - 61.2
+    content:
+      fontFamily: Consolas
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px;font-family:Consolas">[B, 256, H/8, W/8]</span></p>
+    sourceLayout: 8f8c4fd5945a3fa8497be768f7450e0dd8e6ac4590056771eb60df2628d79690
+  - elementId: slide-10-node-212-Text-27
+    elementType: text
+    bounds:
+      - 284.4
+      - 313.2
+      - 309.6
+      - 61.2
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px">ResNet layer2 + AdaptiveSkipFusion (与 swin_8 融合) + TopDown 注入 H/8 语义</span></p>
+    sourceLayout: 8d4f80e6391a031e255e667cc3dbaaceaca79268c256939b8ea5ede4d7d47bec
+  - elementId: slide-10-node-213-Text-28
+    elementType: text
+    bounds:
+      - 608.4
+      - 313.2
+      - 309.6
+      - 61.2
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px">MainDecoder L2 skip · GradientDecoder Block 2 skip</span></p>
+    sourceLayout: 4a9b62bea37503d00f612b8e1ea0760f3a1f51db1ed80ac41135b60cc3f609ae
+  - elementId: slide-10-node-214-Shape-29
+    elementType: shape
+    bounds:
+      - 36
+      - 374.4
+      - 885.6
+      - 61.2
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.5
+      color: '#E2E8F0'
+    sourceLayout: ad19b985782a10e0a90c1fc714ca83b6fee5ffd46ded709defaf6d4801e548c0
+  - elementId: slide-10-node-215-Shape-30
+    elementType: shape
+    bounds:
+      - 36
+      - 374.4
+      - 5.76
+      - 61.2
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#DB2777'
+    border:
+      style: solid
+      width: 1
+      color: '#DB2777'
+    sourceLayout: 51fd1f77bac15f136cb09f96f97b5b35ebb8c9d566362bc74a067dfc6817ed94
+  - elementId: slide-10-node-216-Text-31
+    elementType: text
+    bounds:
+      - 46.8
+      - 374.4
+      - 79.2
+      - 61.2
+    content:
+      fontFamily: Consolas
+      fontSize: 12
+      color: '#DB2777'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#DB2777;font-size:12px;font-family:Consolas;font-weight:700">x_bb_4</span></p>
+    sourceLayout: 72de57816daf2fb8191a6ebb56e239cf02f00479e07b358daf468470f1757abb
+  - elementId: slide-10-node-217-Text-32
+    elementType: text
+    bounds:
+      - 140.4
+      - 374.4
+      - 129.6
+      - 61.2
+    content:
+      fontFamily: Consolas
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px;font-family:Consolas">[B, 512, H/16, W/16]</span></p>
+    sourceLayout: 4e3d14f0377cc2759a11c39f9f344efd9c594111f95dfa2675c729b62f789838
+  - elementId: slide-10-node-218-Text-33
+    elementType: text
+    bounds:
+      - 284.4
+      - 374.4
+      - 309.6
+      - 61.2
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px">cat(reduce_l3, reduce_l4) → fuse_l34; 再与 swin_16 做 CrossModalFusion 双向 CA; TopDown 精炼</span></p>
+    sourceLayout: 158e6dec722b2967fcf9b11f21a5ae53f57d5dc729c88ca65e95a90ec28fb10f
+  - elementId: slide-10-node-219-Text-34
+    elementType: text
+    bounds:
+      - 608.4
+      - 374.4
+      - 309.6
+      - 61.2
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px">MainDecoder L1 skip · GradientDecoder Block 1 fuse_global 输入</span></p>
+    sourceLayout: 805a8fb196107eaf9c081260ae92bd7261e406a6002521d4ff13aa6f1e14fe30
+  - elementId: slide-10-node-220-Shape-35
+    elementType: shape
+    bounds:
+      - 36
+      - 435.6
+      - 885.6
+      - 61.2
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#FFFFFF'
+    border:
+      style: solid
+      width: 0.5
+      color: '#E2E8F0'
+    sourceLayout: 44e58f690207b890bfb134351682bcbbd6051844e8d64c9c5bc5e5e1dc04981f
+  - elementId: slide-10-node-221-Shape-36
+    elementType: shape
+    bounds:
+      - 36
+      - 435.6
+      - 5.76
+      - 61.2
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F59E0B'
+    border:
+      style: solid
+      width: 1
+      color: '#F59E0B'
+    sourceLayout: d2991aed89894a98d9d9516e38b60ee9604c39a3b05b4980ac35eda4749996e8
+  - elementId: slide-10-node-222-Text-37
+    elementType: text
+    bounds:
+      - 46.8
+      - 435.6
+      - 79.2
+      - 61.2
+    content:
+      fontFamily: Consolas
+      fontSize: 12
+      color: '#F59E0B'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#F59E0B;font-size:12px;font-family:Consolas;font-weight:700">x_c</span></p>
+    sourceLayout: 39ea3ab5cdcfba9e96ab4911611547c3aa1b5848dfd449b74caee504e65da3ad
+  - elementId: slide-10-node-223-Text-38
+    elementType: text
+    bounds:
+      - 140.4
+      - 435.6
+      - 129.6
+      - 61.2
+    content:
+      fontFamily: Consolas
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px;font-family:Consolas">[B, 256, H/16, W/16]</span></p>
+    sourceLayout: 4bec85bee40b8364cf366133b29c22409258ac4cd0a260a23dad721818c2ad28
+  - elementId: slide-10-node-224-Text-39
+    elementType: text
+    bounds:
+      - 284.4
+      - 435.6
+      - 309.6
+      - 61.2
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px">x_bb_4 → cba_after_backbone (Conv 1×1 降维到 256) → FFC_BN_ACT(ratio=0.5) 残差 → HighFrequencyEnhancement</span></p>
+    sourceLayout: 1b3ef5c2762668d3dcffae51e7b30dd890d223a32a3e9fde27b9c71480ed20ce
+  - elementId: slide-10-node-225-Text-40
+    elementType: text
+    bounds:
+      - 608.4
+      - 435.6
+      - 309.6
+      - 61.2
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px">MainDecoder 主输入 · GradientDecoder Block 1 fuse_global 另一路</span></p>
+    sourceLayout: 73e59febe4a4be9b46952d83bdde6336734dd8d442b4ea07635bcdf9e801027b
+  - elementId: slide-10-node-226-Text-41
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: 7355247a7bfdf13e33c500312ac9ae95b87746b3ab62a0e71b2fb626507f7786

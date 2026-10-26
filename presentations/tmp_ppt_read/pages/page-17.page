@@ -1,0 +1,237 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-17-node-381-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 6a8684b7422452aa646156ea2fc288da5b52ab4cbecf2ee2050aaf6915d88f41
+  - elementId: slide-17-node-382-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">04 · FFC · SPECTRAL + FFC_BN_ACT</span></p>
+    sourceLayout: d35d3e24b359b4b4f9c26b192760afc0fa5ae9c6c7fc7dbde752c630e749c2e4
+  - elementId: slide-17-node-383-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">SpectralTransform 与 FFC_BN_ACT · 中外两层封装详解</span></p>
+    sourceLayout: 568f760208ddcd8f94f099f19e1f02bd960d426d421bed2fb4f4045aa7205aef
+  - elementId: slide-17-node-384-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">17 / 50</span></p>
+    sourceLayout: a2c5b2a4e6d15325711e89d81865fb50690b0d17a5a1267c395530c201a9e528
+  - elementId: slide-17-node-385-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: affd49949807836d0e3c9be43f1b70b4789f326edc4f07b71a62659abe44c8ea
+  - elementId: slide-17-node-386-Shape-5
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 432
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 62b6208b75b724e7e4c4d92122bbe133ca4f45b47dac53f6600b8f563f7053d0
+  - elementId: slide-17-node-387-Shape-6
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 5.76
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0D9488'
+    border:
+      style: solid
+      width: 1
+      color: '#0D9488'
+    sourceLayout: e5afa115928e00d0ebf0e5f3569ee4bf3a42bbbf31e9619dc411bd8a023f3292
+  - elementId: slide-17-node-388-Text-7
+    elementType: text
+    bounds:
+      - 50.4
+      - 115.2
+      - 410.4
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">SpectralTransform · FFC 的全局分支</span></p>
+    sourceLayout: ab7df89b3ad36261e2f802163a442683c5fcea03822de2573fadf4ce76850c58
+  - elementId: slide-17-node-389-Text-8
+    elementType: text
+    bounds:
+      - 50.4
+      - 144
+      - 410.4
+      - 349.2
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#0D9488'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:12px;font-family:Calibri;font-weight:700">组件构成</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">    Conv 1×1 降维 → FU (整图 FFT) → LFU (上下两半各做 FFT) → Gate Fusion → Conv 1×1 升维</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#0D9488;font-size:12px;font-family:Calibri;font-weight:700">FU 分支的角色</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">    对整张特征图做 FourierUnit, 捕获大范围条纹周期与整片高光趋势</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#0D9488;font-size:12px;font-family:Calibri;font-weight:700">LFU 分支的角色</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">    把特征按高度分上下两半, 分别送入独立 FourierUnit, 再 cat 起来; 强化局部位置敏感的频域响应, 弥补整图 FFT 丢失空间信息的缺点</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#0D9488;font-size:12px;font-family:Calibri;font-weight:700">Gate Fusion</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">    combined = g · FU(x) + (1 − g) · LFU(x); 可学习门 g 决定每个位置更依赖全局还是局部频域, 避免固定相加产生信息冲突</span></p>
+    sourceLayout: e6e3ad338f20ec2b90c51c27492665660cd00ae8ff454f183c226b6c07f5fd9f
+  - elementId: slide-17-node-390-Shape-9
+    elementType: shape
+    bounds:
+      - 489.6
+      - 108
+      - 435.6
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 33a6770865609e2e3a88525bf1bcec760c20dac19e83987efffe6cdb4bff6d86
+  - elementId: slide-17-node-391-Shape-10
+    elementType: shape
+    bounds:
+      - 489.6
+      - 108
+      - 5.76
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F59E0B'
+    border:
+      style: solid
+      width: 1
+      color: '#F59E0B'
+    sourceLayout: fcb6dd15c9a7a51bea98d0a685a804e0203e393e5a9128168d624bdccf94cd03
+  - elementId: slide-17-node-392-Text-11
+    elementType: text
+    bounds:
+      - 504
+      - 115.2
+      - 410.4
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">FFC_BN_ACT · 统一入口 (网络中使用的层)</span></p>
+    sourceLayout: b88c370de302242cf411d678232e9dd6aeef584ecdce43d72213f5e4abe67275
+  - elementId: slide-17-node-393-Text-12
+    elementType: text
+    bounds:
+      - 504
+      - 144
+      - 410.4
+      - 349.2
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#F59E0B'
+      align:
+        - left
+        - top
+      wrap: true
+      text: '<p><span style="color:#F59E0B;font-size:12px;font-family:Calibri;font-weight:700">通道划分</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">    输入通道按 ratio_gin 拆为 Local (L) 与 Global (G); 输出按 ratio_gout 拆为 out_xl 与 out_xg</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#F59E0B;font-size:12px;font-family:Calibri;font-weight:700">四路交互</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">    L→L 普通空间卷积; L→G 普通空间卷积; G→L 通过 SpectralTransform; G→G 通过 SpectralTransform</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#F59E0B;font-size:12px;font-family:Calibri;font-weight:700">聚合规则</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">    out_xl = L→L + G→L; out_xg = L→G + G→G; 输出为 (out_xl, out_xg) 元组</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#F59E0B;font-size:12px;font-family:Calibri;font-weight:700">下游用法</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">    在模型中一般写成: out = ffc((x_local, x_global)); 下游通常 torch.cat([out[0], out[1]], dim=1) 拼回完整特征再继续传播</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#F59E0B;font-size:12px;font-family:Calibri;font-weight:700">ratio 关键参数</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">    ratio_gin/ratio_gout = 0.5 表示一半通道走频域; 0.25 表示频域分支占四分之一 (轻量场景)</span></p>'
+    sourceLayout: 7982208049c32da21100cc723de247b44268c5e34c4ce9a7f7400fbc6f4e0c97
+  - elementId: slide-17-node-394-Text-13
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: 19c68302b88bbc011e178e31bdd85bc979017d2298c9d384a9aed042d83ba97e

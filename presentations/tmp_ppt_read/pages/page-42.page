@@ -1,0 +1,133 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-42-node-928-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 664a57c656e0fc87622694679d1d7fe56e220f8033018f87c9f8be029d461a99
+  - elementId: slide-42-node-929-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">10 · TRAIN &amp; INFER</span></p>
+    sourceLayout: 4e308b7cd8fd1f7824b55306ca06e2e29c8fd15cff2d8e33dbb500ecc9ee2259
+  - elementId: slide-42-node-930-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">训练 + 推理完整数据流</span></p>
+    sourceLayout: be16fc67df413f13cb87f6a8e913f9276865bbc0d971077fb4520cc63e707fd1
+  - elementId: slide-42-node-931-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">42 / 50</span></p>
+    sourceLayout: 409a62faca6f4a085a9aec04928f6a913cdf723a8cb0a79cd24d7a8d57313305
+  - elementId: slide-42-node-932-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: 5131784ec5de8161887f3198c5c92b84f911861bad8010f6a17fe96802870166
+  - elementId: slide-42-node-933-Image-0
+    elementType: image
+    bounds:
+      - 161.793
+      - 104.4
+      - 636.174
+      - 356.4
+    src: media/e50306f5add28ae874b5b6d8.png
+    fit:
+      mode: fill
+    sourceLayout: a9f2af937b56ed948f23ef2ce057c4da6829adc8a62911981a3a315a21c37139
+  - elementId: slide-42-node-934-Text-5
+    elementType: text
+    bounds:
+      - 36
+      - 471.6
+      - 885.6
+      - 39.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11.5
+      color: '#475569'
+      align:
+        - center
+        - top
+      wrap: true
+      text: '<p><span style="color:#475569;font-size:11.5px;font-style:italic">训练: Dataset → 增强 → forward → criterion → backward → clip → optimizer → scheduler → EMA。推理: load_model → load_image → 滑窗 + Tukey 融合 → 可选 TTA → 保存多份输出。</span></p>'
+    sourceLayout: 58a156025c3ab09297044d81f6d554bcd57b1d75cda6e1a0fe5b1d3c5b254b34
+  - elementId: slide-42-node-935-Text-6
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: 6f5547e9394824df39f9d2c7a8019b3935f5f6686a505526622c0ef97a09e6d9

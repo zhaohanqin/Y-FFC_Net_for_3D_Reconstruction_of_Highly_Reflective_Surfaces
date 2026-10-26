@@ -1,0 +1,653 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-3-node-65-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 1da32146233834355a9549e76c5b27edeac85ee4c6b1769c2529dd209f556e80
+  - elementId: slide-3-node-66-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">01 · TASK DEFINITION</span></p>
+    sourceLayout: 1f819a6b4afd9d867a911bccf8278e167b462f2d43eb619015da5bd4da58e0a9
+  - elementId: slide-3-node-67-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">任务定义 · 把输入分解为漫反射与高反光</span></p>
+    sourceLayout: e83cc0307330192b9411a425a82dd23cbf0e6e28f54d64b1cfcfae4092cc751d
+  - elementId: slide-3-node-68-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">3 / 50</span></p>
+    sourceLayout: 8652855cf6e36ca52d82f166571e058d466eafb98d73a3ae370ae0e1b04470c1
+  - elementId: slide-3-node-69-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: 7a389190917c2a79ea0a2baec3d7beeb42898f2b5b6126d005da82615dfb2e16
+  - elementId: slide-3-node-70-Shape-5
+    elementType: shape
+    bounds:
+      - 36
+      - 104.4
+      - 885.6
+      - 57.6
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 830a723f0c0b3b06207d40d834d09bb408fbfc5fda59f92a192f46408e4e6d75
+  - elementId: slide-3-node-71-Text-6
+    elementType: text
+    bounds:
+      - 36
+      - 104.4
+      - 432
+      - 57.6
+    content:
+      fontFamily: Calibri
+      fontSize: 32
+      color: '#FFFFFF'
+      align:
+        - center
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:32px;font-weight:700">x  ≈  r  +  b</span></p>
+    sourceLayout: 2c89db54ffb8bc053c815917e1d1ec1f64d213256d35dde07cce9c982f8c4756
+  - elementId: slide-3-node-72-Text-7
+    elementType: text
+    bounds:
+      - 468
+      - 104.4
+      - 453.6
+      - 57.6
+    content:
+      fontFamily: Calibri
+      fontSize: 13
+      color: '#CADCFC'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#CADCFC;font-size:13px">输入 x 视作漫反射 r 与镜面/高反光 b 的叠加；模型同时恢复 r、估计 b 并产生辅助先验 g 与 s。</span></p>
+    sourceLayout: 8289da459a896ae4016758e84adb39900a04bffae5838d6caf5ed1319aee8693
+  - elementId: slide-3-node-73-Shape-8
+    elementType: shape
+    bounds:
+      - 36
+      - 183.6
+      - 288
+      - 136.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 391f6454011fad32be35d4a7fb24be08749c3a1111fcdddbeca2dc5e01256384
+  - elementId: slide-3-node-74-Shape-9
+    elementType: shape
+    bounds:
+      - 36
+      - 183.6
+      - 5.76
+      - 136.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#0D9488'
+    border:
+      style: solid
+      width: 1
+      color: '#0D9488'
+    sourceLayout: 97d4931432881062e40d719a541aa8dca5592d71ec95921a9d2767851d53fa76
+  - elementId: slide-3-node-75-Text-10
+    elementType: text
+    bounds:
+      - 54
+      - 190.8
+      - 259.2
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">输入 x</span></p>
+    sourceLayout: babc6924c3788a8dbdee8ca5069bcbd358f184d65e477acb6beec6eda8e0c9df
+  - elementId: slide-3-node-76-Text-11
+    elementType: text
+    bounds:
+      - 54
+      - 219.6
+      - 259.2
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Consolas;font-weight:700">[B, 1, H, W]</span></p>
+    sourceLayout: 7a9b8fb182c93470e2791905fbadd7f38b15379a0286e39c2708c198764ce5a6
+  - elementId: slide-3-node-77-Text-12
+    elementType: text
+    bounds:
+      - 54
+      - 244.8
+      - 259.2
+      - 72
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px">灰度结构光条纹图，已归一化到 [0,1]。包含条纹纹理、真实反射、高亮饱和区与噪声。</span></p>
+    sourceLayout: 84421e8c9affb47839308e5f62aecf9d7f97e86a9a8cf0359cf81c42084f588b
+  - elementId: slide-3-node-78-Shape-13
+    elementType: shape
+    bounds:
+      - 334.8
+      - 183.6
+      - 288
+      - 136.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 4d5fca3962da4db2d26157305facbcf4f84dd8f2b943a2d2d7c8df9097d10157
+  - elementId: slide-3-node-79-Shape-14
+    elementType: shape
+    bounds:
+      - 334.8
+      - 183.6
+      - 5.76
+      - 136.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 24688d8c889fc18ed68a266dd61bc4152b855e833ce71eac0b4026807db36c0c
+  - elementId: slide-3-node-80-Text-15
+    elementType: text
+    bounds:
+      - 352.8
+      - 190.8
+      - 259.2
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">输出 r</span></p>
+    sourceLayout: 75315280e0ec0e453849684958ce20f14ca0b2a87b86aa782339086b863d2fe9
+  - elementId: slide-3-node-81-Text-16
+    elementType: text
+    bounds:
+      - 352.8
+      - 219.6
+      - 259.2
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 11
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:11px;font-family:Consolas;font-weight:700">[B, 1, H, W]</span></p>
+    sourceLayout: 8dff6d0b06e5619b12d8db87b2a516f6689f395da54db994ec61d492c3864310
+  - elementId: slide-3-node-82-Text-17
+    elementType: text
+    bounds:
+      - 352.8
+      - 244.8
+      - 259.2
+      - 72
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px">最终漫反射图，是推理主结果。由 r_direct 与 r_sub 经 α 融合后，再经过 ResidualRefinementHead 精修得到。</span></p>
+    sourceLayout: 0a3e7049d22bcb3b36bcd912e917f51db8a73c4fe46b95cd7a4e4b7dbf3ed42e
+  - elementId: slide-3-node-83-Shape-18
+    elementType: shape
+    bounds:
+      - 633.6
+      - 183.6
+      - 288
+      - 136.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 519840eca90cae869739dbb02c8fb47324cc25fa8527c0b9bf34eb25147bb578
+  - elementId: slide-3-node-84-Shape-19
+    elementType: shape
+    bounds:
+      - 633.6
+      - 183.6
+      - 5.76
+      - 136.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#DB2777'
+    border:
+      style: solid
+      width: 1
+      color: '#DB2777'
+    sourceLayout: 69417a19e1c3d8c0aa724c209c6e63c2c33f6fe3021852b076439f40438b2548
+  - elementId: slide-3-node-85-Text-20
+    elementType: text
+    bounds:
+      - 651.6
+      - 190.8
+      - 259.2
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">输出 b</span></p>
+    sourceLayout: 068ad451f56a59ed62364d91c6ec15d189368b70b31ca8a566acf5501d9038f8
+  - elementId: slide-3-node-86-Text-21
+    elementType: text
+    bounds:
+      - 651.6
+      - 219.6
+      - 259.2
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 11
+      color: '#DB2777'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#DB2777;font-size:11px;font-family:Consolas;font-weight:700">[B, 1, H, W]</span></p>
+    sourceLayout: baa13b2ba612663116f9ca15c41f1a62107e3c658f6cf7eb763aa96c39a5e913
+  - elementId: slide-3-node-87-Text-22
+    elementType: text
+    bounds:
+      - 651.6
+      - 244.8
+      - 259.2
+      - 72
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px">模型估计的镜面/高反光分量。可解释“从输入中被移除的高动态亮斑”，并构建物理减法路径。</span></p>
+    sourceLayout: 4d94c402726b90835682aedd9aad17adb9935b77a8e7a80329eb8ce55beaed6c
+  - elementId: slide-3-node-88-Shape-23
+    elementType: shape
+    bounds:
+      - 36
+      - 331.2
+      - 288
+      - 136.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: f4072c64e937452a201d8585a6018bc86178550507185a3bc52fe880f5526cb4
+  - elementId: slide-3-node-89-Shape-24
+    elementType: shape
+    bounds:
+      - 36
+      - 331.2
+      - 5.76
+      - 136.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F59E0B'
+    border:
+      style: solid
+      width: 1
+      color: '#F59E0B'
+    sourceLayout: 0508028a8b7399208cfc405a18aafb08a9681b729f3e024940e76f0b862d3a2e
+  - elementId: slide-3-node-90-Text-25
+    elementType: text
+    bounds:
+      - 54
+      - 338.4
+      - 259.2
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">辅助 g</span></p>
+    sourceLayout: dd86d5e011c956ee082626fc1c1974b77275a156de9e892db5a224784d494e93
+  - elementId: slide-3-node-91-Text-26
+    elementType: text
+    bounds:
+      - 54
+      - 367.2
+      - 259.2
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 11
+      color: '#F59E0B'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#F59E0B;font-size:11px;font-family:Consolas;font-weight:700">[B, 1, H, W]</span></p>
+    sourceLayout: cf62706eb8f0490329754b22b38881faa5471b04532a87b104e57799caf2bada
+  - elementId: slide-3-node-92-Text-27
+    elementType: text
+    bounds:
+      - 54
+      - 392.4
+      - 259.2
+      - 72
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px">输入图像 Sobel 梯度幅值。帮助模型显式看见条纹边界、高光边缘和局部结构突变。</span></p>
+    sourceLayout: 31c67481203cf6f2f4f85481322ff28c16132c043fde364f9e309712f7d094b9
+  - elementId: slide-3-node-93-Shape-28
+    elementType: shape
+    bounds:
+      - 334.8
+      - 331.2
+      - 288
+      - 136.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 07c753629f507e6bc30022e3c2c538570afac7a370ac8ecbca558ea62153d4b1
+  - elementId: slide-3-node-94-Shape-29
+    elementType: shape
+    bounds:
+      - 334.8
+      - 331.2
+      - 5.76
+      - 136.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#7C3AED'
+    border:
+      style: solid
+      width: 1
+      color: '#7C3AED'
+    sourceLayout: 466c8e27b825822a668fbfd4c697424aa8647cce68efdfd367bbb562b7289e53
+  - elementId: slide-3-node-95-Text-30
+    elementType: text
+    bounds:
+      - 352.8
+      - 338.4
+      - 259.2
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">辅助 s</span></p>
+    sourceLayout: 3e3ea86f5cad5779b98b2e970eb596eee84b1076b80db8ce95b2018af7a5c783
+  - elementId: slide-3-node-96-Text-31
+    elementType: text
+    bounds:
+      - 352.8
+      - 367.2
+      - 259.2
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 11
+      color: '#7C3AED'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#7C3AED;font-size:11px;font-family:Consolas;font-weight:700">[B, 1, H, W]</span></p>
+    sourceLayout: efee90b98ebbf25ee230e43a1fefd9edb7e741257268b33cd2c0d989f6b105b9
+  - elementId: slide-3-node-97-Text-32
+    elementType: text
+    bounds:
+      - 352.8
+      - 392.4
+      - 259.2
+      - 72
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px">高反光软概率图。监督目标为 clamp(input - target, 0, 1)，作为高光位置的可微 soft mask。</span></p>
+    sourceLayout: e629ad99200a3e28c32180c50623f3215a554a6a037433d43992125484ebcf3e
+  - elementId: slide-3-node-98-Shape-33
+    elementType: shape
+    bounds:
+      - 633.6
+      - 331.2
+      - 288
+      - 136.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: a84e6f1e9b7bd52ec8d4761463e827d8da305950f5d6a848a62731d96ace044a
+  - elementId: slide-3-node-99-Shape-34
+    elementType: shape
+    bounds:
+      - 633.6
+      - 331.2
+      - 5.76
+      - 136.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#10B981'
+    border:
+      style: solid
+      width: 1
+      color: '#10B981'
+    sourceLayout: 715d8791d2f39d78963bd5746f0edf01bac690e913a2bdb73e5e5287e68e0974
+  - elementId: slide-3-node-100-Text-35
+    elementType: text
+    bounds:
+      - 651.6
+      - 338.4
+      - 259.2
+      - 25.2
+    content:
+      fontFamily: Calibri
+      fontSize: 14
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:14px;font-weight:700">训练辅助</span></p>
+    sourceLayout: a59d9e8cd918f937817b4d80ea29386b6adb0a6d9fe7cf519455fdb2475bd7d8
+  - elementId: slide-3-node-101-Text-36
+    elementType: text
+    bounds:
+      - 651.6
+      - 367.2
+      - 259.2
+      - 21.6
+    content:
+      fontFamily: Consolas
+      fontSize: 11
+      color: '#10B981'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#10B981;font-size:11px;font-family:Consolas;font-weight:700">r_direct / alpha / cs</span></p>
+    sourceLayout: e054271eafe0c75802ded6ae292f0391f8481f8f753bdeb3f5dac880cdb6fa53
+  - elementId: slide-3-node-102-Text-37
+    elementType: text
+    bounds:
+      - 651.6
+      - 392.4
+      - 259.2
+      - 72
+    content:
+      fontFamily: Calibri
+      fontSize: 10.5
+      color: '#1F2937'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1F2937;font-size:10.5px">r_direct 是主解码器直接预测的漫反射；alpha 为双路融合系数；cs 为跨尺度一致性标量。</span></p>
+    sourceLayout: 0bf6173c97c28eef6edaf8541d921554508c2d110521b2cf15a73de8084f8877
+  - elementId: slide-3-node-103-Text-38
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: 51b16ebe17ea5254078f5acb94bfb32826e87f2d010735818cc763bdff4a413b

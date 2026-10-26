@@ -30,7 +30,7 @@ import os
 from pathlib import Path
 from tqdm import tqdm
 # ★[V3.2] 同时导入 _tukey_window 用于滑窗融合
-from Y_FFC_unified import YFFC, replace_bn_with_gn, _tukey_window
+from X_FFC_unified import XFFC, replace_bn_with_gn, _tukey_window
 
 
 def _sanitize_output_tensor(tensor):
@@ -80,7 +80,7 @@ def _tta_forward(model, inp):
     avg_g = torch.stack(preds_g, dim=0).mean(0) if preds_g else None
     avg_s = torch.stack(preds_s, dim=0).mean(0) if preds_s else None
 
-    # 双路融合 + 精修（与 YFFC.forward 末尾一致）
+    # 双路融合 + 精修（与 XFFC.forward 末尾一致）
     r_sub = torch.clamp(inp - avg_b, 0.0, 1.0)
     if avg_r_direct is not None:
         if last_alpha is not None and last_alpha.dim() == 0:
@@ -158,14 +158,14 @@ def load_model(model_path, device, prefer_ema=True):
         prefer_ema: 若 checkpoint 中包含 EMA 权重，是否优先使用（推荐 True）
 
     返回:
-        加载好权重的 YFFC 模型（已 .eval()）
+        加载好权重的 XFFC 模型（已 .eval()）
     """
     checkpoint = torch.load(model_path, map_location=device, weights_only=False)
 
     if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
         base_state_dict = checkpoint['model_state_dict']
         # 推理 checkpoint 已包含训练后的 Swin 权重，禁用 ImageNet 预训练加载以避免离线推理时下载权重。
-        model = YFFC(swin_pretrained=False)
+        model = XFFC(swin_pretrained=False)
         if _uses_group_norm_state_dict(base_state_dict):
             replace_bn_with_gn(model, num_groups=8)
 
@@ -188,7 +188,7 @@ def load_model(model_path, device, prefer_ema=True):
     elif isinstance(checkpoint, dict):
         # ── 可能是纯 state_dict（key 为 layer 名称） ──
         # 推理 checkpoint 已包含训练后的 Swin 权重，禁用 ImageNet 预训练加载以避免离线推理时下载权重。
-        model = YFFC(swin_pretrained=False)
+        model = XFFC(swin_pretrained=False)
         if _uses_group_norm_state_dict(checkpoint):
             replace_bn_with_gn(model, num_groups=8)
         _load_state_dict_flexible(model, checkpoint)

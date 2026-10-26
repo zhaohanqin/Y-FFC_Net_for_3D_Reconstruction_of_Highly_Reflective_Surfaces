@@ -1,0 +1,133 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-39-node-853-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 069e36ac391962d9b80e66f742db41b861f14059391c1a444764346f650664c2
+  - elementId: slide-39-node-854-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">09 · LOSS</span></p>
+    sourceLayout: 0eb9e3d35301892ea3ccdfe84599b74e12921c8a45a04bd03c158b7f72aaba64
+  - elementId: slide-39-node-855-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">EnhancedCompositeLoss · 多任务复合损失结构图</span></p>
+    sourceLayout: e43e8aad0682259df055e57097e79c3f22a870c128e95a4f85273658112a1a7d
+  - elementId: slide-39-node-856-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">39 / 50</span></p>
+    sourceLayout: c88f04b1239dc44c8fcd89ef45a4f8f38999b134e2ba771789109bccbf2df55d
+  - elementId: slide-39-node-857-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: f6cd6c5c97a29c904efe5d05923e46d594dca9caa4e63d260712c19489470b64
+  - elementId: slide-39-node-858-Image-0
+    elementType: image
+    bounds:
+      - 161.793
+      - 104.4
+      - 636.174
+      - 356.4
+    src: media/aeee606fd54a8b875b16c7a6.png
+    fit:
+      mode: fill
+    sourceLayout: cf1d5450d4ea4c6650f302c4ea9a600887aab78ccdcb8262314bbd9dac035191
+  - elementId: slide-39-node-859-Text-5
+    elementType: text
+    bounds:
+      - 36
+      - 471.6
+      - 885.6
+      - 39.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11.5
+      color: '#475569'
+      align:
+        - center
+        - top
+      wrap: true
+      text: <p><span style="color:#475569;font-size:11.5px;font-style:italic">围绕 r / b / g / s / r_direct / cs 六类输出构造的复合损失，按训练阶段由 ImprovedWeightScheduler 动态加权。</span></p>
+    sourceLayout: faeb9d1f7b78e5cf4e0897fd1c81a4161ed61eee138f443a18f666e52d957ddb
+  - elementId: slide-39-node-860-Text-6
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: 116a71ac573d8d3783b2d59966c360e557b3abda057837498848d5b358b43e91

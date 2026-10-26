@@ -1,0 +1,237 @@
+pageType: content
+background:
+  type: solid
+  color: '#FFFFFF'
+elements:
+  - elementId: slide-22-node-524-Shape-0
+    elementType: shape
+    bounds:
+      - 0
+      - 0
+      - 12.96
+      - 540
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#1E2761'
+    border:
+      style: solid
+      width: 1
+      color: '#1E2761'
+    sourceLayout: 3704994014b8b00ca2f4d4cdf8dd7acaaa5643eca67bcca6e8cec07a60526406
+  - elementId: slide-22-node-525-Text-1
+    elementType: text
+    bounds:
+      - 36
+      - 18
+      - 792
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 11
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:11px;font-family:Calibri;font-weight:700">05 · GRADIENT DECODER · OUTPUT HEADS</span></p>
+    sourceLayout: d66f10879ed93732daefcfd7db7addbcc008fdafba15819eb3cdf0a6e8ccf9ef
+  - elementId: slide-22-node-526-Text-2
+    elementType: text
+    bounds:
+      - 36
+      - 39.6
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 24
+      color: '#1E2761'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:24px;font-family:Calibri;font-weight:700">梯度头 + 高反光概率头 · 详细说明与下游用法</span></p>
+    sourceLayout: 4bcd98931543894aa5b72acbea961116e56f61461552a68ec07e29d0830ad9ba
+  - elementId: slide-22-node-527-Text-3
+    elementType: text
+    bounds:
+      - 864
+      - 18
+      - 86.4
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#475569'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:10px">22 / 50</span></p>
+    sourceLayout: 39612e0e10211d7beecf9b7265462db657046ebd6d8bc544c3e70d6cf5c30b5d
+  - elementId: slide-22-node-528-Shape-4
+    elementType: line
+    bounds:
+      - 36
+      - 90
+      - 885.6
+      - 0
+    viewBox:
+      - 885.6
+      - 0.001
+    points: 0,0 885.6,0.001
+    border:
+      style: solid
+      width: 1
+      color: '#E2E8F0'
+    sourceLayout: 2b6ca4bd1a022cb0d9dc54ae2d8e758e6f150e2f3e4c67b2c61fae4a51b03f34
+  - elementId: slide-22-node-529-Shape-5
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 432
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 05e03ddaffc685e47bab7252a4fe205a7bcb01987aecf888ad1c9db4a113a4a5
+  - elementId: slide-22-node-530-Shape-6
+    elementType: shape
+    bounds:
+      - 36
+      - 108
+      - 5.76
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F59E0B'
+    border:
+      style: solid
+      width: 1
+      color: '#F59E0B'
+    sourceLayout: 8dedbe52317afec7b5b5943c6b8bad24be815de4c5521df30813f076a8beb11a
+  - elementId: slide-22-node-531-Text-7
+    elementType: text
+    bounds:
+      - 50.4
+      - 115.2
+      - 410.4
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 15
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:15px;font-weight:700">梯度头 (Grad Head) · 输出 x_g</span></p>
+    sourceLayout: f8076307cf4e1169439d52ad394a6c697e51c0ea5005500bbf5cb5c0fa284cd8
+  - elementId: slide-22-node-532-Text-8
+    elementType: text
+    bounds:
+      - 50.4
+      - 147.6
+      - 410.4
+      - 349.2
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#F59E0B'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#F59E0B;font-size:12px;font-family:Calibri;font-weight:700">结构</span><span style="color:#1F2937;font-size:11px;font-family:Consolas">    x_concat → block_5_conv_2 (Conv 3×3) → Sigmoid → x_g [B,1,H,W]</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#F59E0B;font-size:12px;font-family:Calibri;font-weight:700">监督目标</span><span style="color:#1F2937;font-size:11px;font-family:Consolas">    gt_grad = normalized_sobel_magnitude(input_img)</span></p><p><span style="color:#475569;font-size:10.5px;font-family:Calibri">    监督的是“输入图”的 Sobel 梯度, 而不是“目标漫反射”的梯度</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#F59E0B;font-size:12px;font-family:Calibri;font-weight:700">训练损失</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">    l_grad (SSIM)、l_grad_edge (Charbonnier with edge weight)、l_grad_spec (用输入高亮先验约束 g 与 b 边界关系)</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#F59E0B;font-size:12px;font-family:Calibri;font-weight:700">下游消费者</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">    1) EnhancementLayers 的 edge_gate; 2) MainDecoder 三路先验调制中的 grad_gate 与 joint_gate; 3) MainDecoder L5 与 cat(gradient g) 直接拼接</span></p>
+    sourceLayout: 40f927df59271351b6d9123926b8da5a8b6f45c8d71d14876fe6a8edc0902c40
+  - elementId: slide-22-node-533-Shape-9
+    elementType: shape
+    bounds:
+      - 489.6
+      - 108
+      - 435.6
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#F8FAFC'
+    border:
+      style: solid
+      width: 0.75
+      color: '#E2E8F0'
+    sourceLayout: 2571513529e008bcec36efbf012427ce2503fbbff15f32a37cbaf06d2113d613
+  - elementId: slide-22-node-534-Shape-10
+    elementType: shape
+    bounds:
+      - 489.6
+      - 108
+      - 5.76
+      - 388.8
+    shapeName: rect
+    fill:
+      type: solid
+      color: '#7C3AED'
+    border:
+      style: solid
+      width: 1
+      color: '#7C3AED'
+    sourceLayout: d7cea3ae7453ae094c526d16f18d0553cb196dc7329967d16ece8769b92d8f64
+  - elementId: slide-22-node-535-Text-11
+    elementType: text
+    bounds:
+      - 504
+      - 115.2
+      - 410.4
+      - 28.8
+    content:
+      fontFamily: Calibri
+      fontSize: 15
+      color: '#1E2761'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#1E2761;font-size:15px;font-weight:700">高反光概率头 (Spec-Lik Head) · 输出 x_s</span></p>
+    sourceLayout: 2564517721be0e8199bf4393de9460fb802ebe1e725c697f551e9b5e9de715e2
+  - elementId: slide-22-node-536-Text-12
+    elementType: text
+    bounds:
+      - 504
+      - 147.6
+      - 410.4
+      - 349.2
+    content:
+      fontFamily: Calibri
+      fontSize: 12
+      color: '#7C3AED'
+      align:
+        - left
+        - top
+      wrap: true
+      text: <p><span style="color:#7C3AED;font-size:12px;font-family:Calibri;font-weight:700">结构</span><span style="color:#1F2937;font-size:11px;font-family:Consolas">    x_concat → Conv 3×3 (→32ch) → Conv 3×3 (→16ch) → Conv 5×5 (→1ch) → Sigmoid → x_s [B,1,H,W]</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#7C3AED;font-size:12px;font-family:Calibri;font-weight:700">监督目标</span><span style="color:#1F2937;font-size:11px;font-family:Consolas">    gt_specular = clamp(input - target, 0, 1)</span></p><p><span style="color:#475569;font-size:10.5px;font-family:Calibri">    输入中比目标多出来的高反光成分, 作为高光位置软标签</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#7C3AED;font-size:12px;font-family:Calibri;font-weight:700">训练损失</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">    l_s_lik (BCE + SSIM)、l_s_cons (s 与 b 在高反光区域的双向一致性约束)</span></p><p><span style="color:#000000;font-size:4px;font-family:Calibri"> </span></p><p><span style="color:#7C3AED;font-size:12px;font-family:Calibri;font-weight:700">下游消费者</span><span style="color:#1F2937;font-size:11px;font-family:Calibri">    1) EnhancementLayers 的 specular_gate (与 g、x 联合); 2) MainDecoder 三路先验中的 joint_gate 与 spec_lik_gate; 3) 训练损失中作为高光区域定位线索</span></p>
+    sourceLayout: 1ceab48cfab83fa0d4df6d28ab836227115c009d90b70b2443e259180791dd40
+  - elementId: slide-22-node-537-Text-13
+    elementType: text
+    bounds:
+      - 36
+      - 514.8
+      - 648
+      - 18
+    content:
+      fontFamily: Calibri
+      fontSize: 9
+      color: '#475569'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#475569;font-size:9px">X-FFC V3.2 当前模型详细技术讲解</span></p>
+    sourceLayout: 8e405845b9db28e4c73f4d0352c559be6e07fbd9062c262ca2940a216183d5d6

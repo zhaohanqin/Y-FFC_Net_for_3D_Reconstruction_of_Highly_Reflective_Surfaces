@@ -1,0 +1,89 @@
+pageType: content
+background:
+  type: solid
+  color: '#1E2761'
+elements:
+  - elementId: slide-46-node-1058-Text-1
+    elementType: text
+    bounds:
+      - 57.6
+      - 180
+      - 792
+      - 36
+    content:
+      fontFamily: Calibri
+      fontSize: 16
+      color: '#0D9488'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#0D9488;font-size:16px;font-weight:700">PART 11</span></p>
+    sourceLayout: 48bce629c98c156b4ed4fbdd592aa1a0a885e2104beff8747c0d3e78b5a9713e
+  - elementId: slide-46-node-1059-Text-2
+    elementType: text
+    bounds:
+      - 57.6
+      - 219.6
+      - 792
+      - 86.4
+    content:
+      fontFamily: Calibri
+      fontSize: 50
+      color: '#FFFFFF'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#FFFFFF;font-size:50px;font-weight:700">总结与模块包含关系</span></p>
+    sourceLayout: aa500846be88925fb0fac569d0360318e994b473e389ff7dc1a11d7c278af4f9
+  - elementId: slide-46-node-1060-Text-3
+    elementType: text
+    bounds:
+      - 57.6
+      - 313.2
+      - 828
+      - 43.2
+    content:
+      fontFamily: Calibri
+      fontSize: 17
+      color: '#CADCFC'
+      align:
+        - left
+        - middle
+      wrap: true
+      text: <p><span style="color:#CADCFC;font-size:17px">关键设计回顾 · 模块树 · 输出含义与使用建议</span></p>
+    sourceLayout: 146541e443e0a4fee2b383e0a3c4cf4396c2ea9a4b6d7e0b94cc1c04d4c622c5
+  - elementId: slide-46-node-1061-Shape-4
+    elementType: line
+    bounds:
+      - 57.6
+      - 363.6
+      - 108
+      - 0
+    viewBox:
+      - 108
+      - 0.001
+    points: 0,0 108,0.001
+    border:
+      style: solid
+      width: 3
+      color: '#0D9488'
+    sourceLayout: 4d6250d948a0248820080d03cdcf605a3d9c959db7980ba83806fb5dc79c31e6
+  - elementId: slide-46-node-1062-Text-5
+    elementType: text
+    bounds:
+      - 864
+      - 504
+      - 72
+      - 21.6
+    content:
+      fontFamily: Calibri
+      fontSize: 10
+      color: '#CADCFC'
+      align:
+        - right
+        - middle
+      wrap: true
+      text: <p><span style="color:#CADCFC;font-size:10px">46 / 50</span></p>
+    sourceLayout: 5ef0099cc9e135dd49b605c5a83f4b38c6affb8c59d813a88fc450c951aaa9e0

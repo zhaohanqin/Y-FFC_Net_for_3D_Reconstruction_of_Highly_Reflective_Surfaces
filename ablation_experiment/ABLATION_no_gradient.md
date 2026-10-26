@@ -1,6 +1,6 @@
 # 消融实验 B：去除梯度辅助分支（ABLATION_no_gradient）
 
-**文件**：`Y_FFC_no_gradient.py` / `train_no_gradient.py`
+**文件**：`X_FFC_no_gradient.py` / `train_no_gradient.py`
 **对照**：完整 YFFC（baseline `train.py`，建议加同种子 42 重跑）
 
 ## 为什么这么做
