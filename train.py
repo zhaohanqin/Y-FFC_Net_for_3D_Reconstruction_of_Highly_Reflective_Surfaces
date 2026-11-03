@@ -12,11 +12,10 @@ train_v2.py — Y-FFC V2 工程化训练脚本（增强可观测性版）
 核心训练逻辑（V2 增强部分）：
   ⭐⭐⭐⭐⭐ 分层 LR / EMA / GN / Warmup / 动态权重
   ⭐⭐⭐⭐⭐ 输入分辨率自定义 (H, W)，如 (160, 128) / (384, 384)
-  ⭐⭐⭐⭐  EnhancedCompositeLoss（SpecularFocal + Dice + GradConsistency）
+  ⭐⭐⭐⭐  EnhancedCompositeLoss（Charbonnier + MS-SSIM + 幅度谱 + 镜面梯度 + 高光 BCE）
   ⭐⭐⭐⭐  高反光模拟数据增强 HighlightAugmentation
   ⭐⭐⭐   网络内嵌 SpecularAwareAttention + HighFrequencyEnhancement
   ⭐⭐     梯度一致性损失 GradientConsistencyLoss
-  ⭐⭐     OHEM 难样本挖掘
 
 增强可观测性：
   ✅ 终端日志完整展示全部子损失项（SSIM / L1 / Freq / Perceptual / Spec / Stat / Grad / Focal / Dice / GC）
@@ -24,13 +23,17 @@ train_v2.py — Y-FFC V2 工程化训练脚本（增强可观测性版）
   ✅ 验证样本可视化（输入 / GT / 预测 / 镜面反射 / 梯度 / 差异图）
   ✅ 子损失历史曲线独立绘制
   ✅ 训练总结文件包含完整子损失信息
+  ✅ 每个 epoch 的损失 / SSIM / MAE / MSE / PSNR / 子损失写入 CSV 与 Excel
+  ✅ 每轮写入断点，中断后可续训，并继续更新同一份 CSV、Excel 和训练曲线
 """
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
+import csv
 import os
+import random
 import time
 import math
 import numpy as np
@@ -148,71 +151,37 @@ class ImprovedFringeDataset(Dataset):
 
 
 # ════════════════════════════════════════════════════════════════════════
-# 扩展版动态权重调度（新增 focal/dice/gc 权重调度）
+# 五项损失的固定权重
 # ════════════════════════════════════════════════════════════════════════
 
 class ImprovedWeightScheduler:
-    """
-    ★[FIX-D] 全量改用「常量权重 + 例外两项退火」,根治"权重曲线驱动的中期回升"。
+    """五项损失的固定权重。停用项保持 0，不再按 epoch 做课程或退火。"""
 
-    旧版策略(已废弃):
-      早期(0~30%)以 L1 快速收敛 → 中期(30~60%)加大 focal/dice/freq →
-      后期(60~100%) 权重冻结。
-    旧版问题(实测):
-      多个 aux 损失(dice / focal / grad_edge / perceptual / s_lik / spec_peak)
-      的数值在 epoch ≈ 10 后就已经进入 plateau,但权重还在沿 30%~60% 进度
-      持续线性爬升。"恒定的子损失值 × 单调增大的权重 = 加权贡献单调增大",
-      在你 50-epoch 训练里仅 dice 一项贡献就从 0.080 涨到 0.165,叠加其他
-      三项一共净增 ≈ +0.10,正好等于观察到的总 loss 中期回升幅度。这不是
-      模型变差,纯粹是调度策略本身的算术现象。
-
-    新版策略:
-      ① 所有 aux 权重直接锁 plateau,从 epoch 0 起不变。理由:
-          - 你的模型 SSIM 在 epoch ~13 就到 0.98+,主任务收敛根本不需要
-            "先抑后扬"的课程;
-          - 锁定权重后,总 loss 的演化只反映"sub_loss 数值变化"本身,
-            曲线天然单调下降。
-      ② 仅 `grad_spec` 和 `r_smooth` 保留 60% 之后的退火(沿用 FIX-B 的设计):
-          这两项确实与主任务的细节恢复冲突,后期必须让路。
-      ③ `lambda_s_cons` 直接置 0:FIX-A 把 pred_s_lik 改成二值监督后,
-         它的值域已经从连续 [0,1] 收缩到 ≈{0,1},而 est_b 仍预测连续值,
-         再让它们做 L1 一致性是结构性抗任务,实测 s_cons 单调上涨
-         从 0.003 → 0.04 就是证据。
-    """
     def __init__(self, total_epochs):
         self.T = max(total_epochs, 1)
 
     def get_weights(self, ep):
-        p = min(ep / self.T, 1.0)
-        # 后期退火因子:仅 grad_spec 和 r_smooth 用(主任务冲突项,细节阶段必须让路)
-        anneal = 1.0 if p <= 0.6 else max(0.2, 1.0 - (p - 0.6) / 0.4 * 0.8)
-
+        del ep
         return {
-            'lambda_ssim':        1.0,
-            'lambda_l1':          0.5,
-            'lambda_freq':        0.15,
-            'lambda_perceptual':  0.10,
-            'lambda_spec':        0.5,
-            'lambda_stat':        0.0,   # [P5] 移除冗余 stat 损失
-            'lambda_grad':        0.3,
-            'lambda_grad_edge':   0.8,
-            # ★[FIX-D] grad_spec 保留后期退火:仍是主任务冲突项,后期细节恢复阶段让路
-            'lambda_grad_spec':   0.03 * anneal,
-            'lambda_focal':       0.8,
-            'lambda_dice':        0.3,
-            'lambda_gc':          0.2,
-            'lambda_cs':          0.05,
-            'lambda_s_lik':       1.0,
-            # ★[FIX-D 关键] s_cons 锁 0:FIX-A 把 pred_s_lik 改二值监督后,
-            #   它和 est_b 已经是结构性不同的两种预测(二值 vs 连续),
-            #   再做一致性是抗任务。实测训练曲线中 s_cons 从 0.003
-            #   单调涨到 0.04,直接禁用。
+            'lambda_ssim':        1.0,   # MS-SSIM
+            'lambda_l1':          0.5,   # Charbonnier(r, target)
+            'lambda_freq':        0.15,  # 幅度谱
+            'lambda_perceptual':  0.0,
+            'lambda_spec':        0.5,   # Charbonnier(b, gt_specular)
+            'lambda_stat':        0.0,
+            'lambda_grad':        0.0,
+            'lambda_grad_edge':   0.8,   # 边缘加权 Charbonnier(g, Sobel(input))
+            'lambda_grad_spec':   0.0,
+            'lambda_focal':       0.0,
+            'lambda_dice':        0.0,
+            'lambda_gc':          0.2,   # 镜面梯度一致性
+            'lambda_cs':          0.0,
+            'lambda_s_lik':       1.0,   # 高光 BCE
             'lambda_s_cons':      0.0,
-            'lambda_spec_peak':   0.5,
-            'lambda_r_focal_hl':  0.8,
-            'lambda_r_dual_cons': 0.15,
-            # ★[FIX-D] r_smooth 保留后期退火(沿用 FIX-B)
-            'lambda_r_smooth':    0.05 * anneal,
+            'lambda_spec_peak':   0.0,
+            'lambda_r_focal_hl':  0.0,
+            'lambda_r_dual_cons': 0.0,
+            'lambda_r_smooth':    0.0,
         }
 
     def step(self, criterion, ep):
@@ -908,6 +877,23 @@ def build_fixed_visualization_loader(val_dataset, num_samples, num_workers,
     return vis_loader, vis_indices, seed
 
 
+def build_visualization_loader_from_indices(val_dataset, indices, num_workers,
+                                            pin_memory=False):
+    """按已保存的验证集索引重建可视化样本，续训时仍画同一批图像。"""
+    dataset_size = len(val_dataset)
+    usable = [int(idx) for idx in indices if 0 <= int(idx) < dataset_size]
+    if not usable:
+        raise ValueError("保存的可视化索引已全部失效")
+    vis_dataset = torch.utils.data.Subset(val_dataset, usable)
+    vis_loader = DataLoader(
+        vis_dataset,
+        batch_size=len(usable),
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=pin_memory)
+    return vis_loader, usable
+
+
 # ════════════════════════════════════════════════════════════════════════
 # 训练曲线绘制
 # ════════════════════════════════════════════════════════════════════════
@@ -1137,6 +1123,19 @@ def plot_training_curves_realtime(history, output_folder, current_epoch):
     plt.close()
 
 
+def refresh_training_figures(history, output_folder, current_epoch, include_full=True):
+    """把训练曲线覆盖写回原路径，续训和中断后看到的仍是同一套图。"""
+    if not history.get('train_losses'):
+        return
+    plot_training_curves_realtime(history, output_folder, current_epoch)
+    if not include_full:
+        return
+    total = len(history['train_losses'])
+    plot_training_history(history, output_folder, total)
+    plot_individual_curves(history, output_folder, total)
+    plot_sub_loss_history(history, output_folder, total)
+
+
 # ════════════════════════════════════════════════════════════════════════
 # 结构化日志输出辅助函数
 # ════════════════════════════════════════════════════════════════════════
@@ -1190,6 +1189,262 @@ def print_epoch_log(ep, total_epochs, epoch_time, avg_epoch_time, eta,
     print(f"  {sep2}")
     print(f"  最优: SSIM={best_val_ssim:.4f} Loss={best_val_loss:.6f} 综合={composite:.4f}{mem_str}")
     print(sep)
+
+
+# ════════════════════════════════════════════════════════════════════════
+# 每个 epoch 的指标表（CSV + Excel）
+# ════════════════════════════════════════════════════════════════════════
+
+EPOCH_METRICS_CSV = 'epoch_metrics.csv'
+EPOCH_METRICS_XLSX = 'epoch_metrics.xlsx'
+
+# 主指标列的固定顺序。子损失、学习率和权重列按前缀追加在后面。
+_METRIC_LEADING_COLUMNS = [
+    'epoch', 'epoch_time_s',
+    'train_loss', 'val_loss', 'loss_gap',
+    'train_ssim', 'val_ssim', 'ssim_gap',
+    'train_mae', 'val_mae', 'mae_gap',
+    'train_mse', 'val_mse', 'mse_gap',
+    'train_psnr', 'val_psnr', 'psnr_gap',
+    'composite',
+    'is_best_overall', 'is_best_ssim', 'is_best_loss',
+]
+
+_METRIC_COLUMN_NOTES = [
+    ('epoch', '轮次，从 1 开始'),
+    ('epoch_time_s', '该轮训练加验证耗时，单位秒'),
+    ('train_loss / val_loss', '训练 / 验证总损失，越低越好'),
+    ('train_ssim / val_ssim', '漫反射分支 SSIM 分数，越高越好，由 1 - ssim 子损失得到'),
+    ('train_mae / val_mae', '漫反射分支 MAE'),
+    ('train_mse / val_mse', '漫反射分支 MSE'),
+    ('train_psnr / val_psnr', '漫反射分支 PSNR，单位 dB，越高越好'),
+    ('*_gap', '训练值与验证值之差的绝对值'),
+    ('composite', '综合评分：0.7×val_ssim + 0.3/(1+val_loss)，越高越好'),
+    ('is_best_*', '该轮是否刷新对应最优记录，1 表示是，0 表示否'),
+    ('lr_*', '该轮结束时各参数组学习率'),
+    ('train_sub_* / val_sub_*', '损失函数字典中的子损失原值。其中 ssim 是 1-SSIM 损失，不是 SSIM 分数'),
+    ('weight_*', '该轮使用的损失权重'),
+    ('net_*', '网络结构读数，如自适应跳跃连接的 beta 与 gate 均值'),
+]
+
+
+def _as_metric_number(value):
+    """把张量或 numpy 标量转成可写入表格的 Python 数。非有限值返回 None。"""
+    if value is None or isinstance(value, str):
+        return value
+    if isinstance(value, bool):
+        return int(value)
+    if hasattr(value, 'item'):
+        value = value.item()
+    if isinstance(value, (int, np.integer)):
+        return int(value)
+    if isinstance(value, (float, np.floating)):
+        value = float(value)
+        if not math.isfinite(value):
+            return None
+        return value
+    return value
+
+
+def _ordered_metric_columns(records):
+    """主指标在前，学习率、子损失、权重和网络读数按稳定顺序排在后面。"""
+    present = set()
+    for record in records:
+        present.update(record.keys())
+
+    ordered = [name for name in _METRIC_LEADING_COLUMNS if name in present]
+
+    def _append_group(prefix, key_order):
+        grouped = []
+        for key in key_order:
+            name = f'{prefix}{key}'
+            if name in present:
+                grouped.append(name)
+        extras = sorted(
+            name for name in present
+            if name.startswith(prefix) and name not in grouped)
+        ordered.extend(grouped)
+        ordered.extend(extras)
+
+    _append_group('lr_', [])
+    _append_group('train_sub_', SUB_LOSS_KEYS)
+    _append_group('val_sub_', SUB_LOSS_KEYS)
+    _append_group('weight_', [])
+    _append_group('net_', ['beta_h4', 'beta_h8', 'gate_h4_mean', 'gate_h8_mean'])
+
+    used = set(ordered)
+    ordered.extend(sorted(present - used))
+    return ordered
+
+
+def build_epoch_metric_record(epoch, epoch_time, learning_rates, weights,
+                              train_loss, train_ssim, train_mae, train_mse, train_psnr,
+                              val_loss, val_ssim, val_mae, val_mse, val_psnr,
+                              train_subs, val_subs, composite,
+                              is_best_overall, is_best_ssim, is_best_loss,
+                              net_stats=None):
+    """把一个 epoch 的全部标量指标收成一行。SSIM 主列是分数，子损失列保留损失原值。"""
+    def _gap(left, right):
+        left_num = _as_metric_number(left)
+        right_num = _as_metric_number(right)
+        if left_num is None or right_num is None:
+            return None
+        return abs(left_num - right_num)
+
+    record = {
+        'epoch': int(epoch),
+        'epoch_time_s': _as_metric_number(epoch_time),
+        'train_loss': _as_metric_number(train_loss),
+        'val_loss': _as_metric_number(val_loss),
+        'loss_gap': _gap(train_loss, val_loss),
+        'train_ssim': _as_metric_number(train_ssim),
+        'val_ssim': _as_metric_number(val_ssim),
+        'ssim_gap': _gap(train_ssim, val_ssim),
+        'train_mae': _as_metric_number(train_mae),
+        'val_mae': _as_metric_number(val_mae),
+        'mae_gap': _gap(train_mae, val_mae),
+        'train_mse': _as_metric_number(train_mse),
+        'val_mse': _as_metric_number(val_mse),
+        'mse_gap': _gap(train_mse, val_mse),
+        'train_psnr': _as_metric_number(train_psnr),
+        'val_psnr': _as_metric_number(val_psnr),
+        'psnr_gap': _gap(train_psnr, val_psnr),
+        'composite': _as_metric_number(composite),
+        'is_best_overall': int(bool(is_best_overall)),
+        'is_best_ssim': int(bool(is_best_ssim)),
+        'is_best_loss': int(bool(is_best_loss)),
+    }
+    for name, value in (learning_rates or {}).items():
+        record[f'lr_{name}'] = _as_metric_number(value)
+    for key, value in (train_subs or {}).items():
+        record[f'train_sub_{key}'] = _as_metric_number(value)
+    for key, value in (val_subs or {}).items():
+        record[f'val_sub_{key}'] = _as_metric_number(value)
+    for key, value in (weights or {}).items():
+        record[f'weight_{key}'] = _as_metric_number(value)
+    for key, value in (net_stats or {}).items():
+        record[f'net_{key}'] = _as_metric_number(value)
+    return record
+
+
+def _replace_metrics_file(temp_path, dest_path):
+    """覆盖目标文件。Excel 正打开目标文件时改写到同名 .new 文件，避免中断训练。"""
+    try:
+        os.replace(temp_path, dest_path)
+        return dest_path
+    except PermissionError:
+        fallback = dest_path + '.new'
+        os.replace(temp_path, fallback)
+        print(f"  [metrics] 无法覆盖 {dest_path}（文件可能正被打开），已写入 {fallback}")
+        return fallback
+
+
+def _write_metrics_csv(records, columns, csv_path):
+    temp_path = csv_path + '.tmp'
+    with open(temp_path, 'w', newline='', encoding='utf-8-sig') as handle:
+        writer = csv.DictWriter(handle, fieldnames=columns, extrasaction='ignore')
+        writer.writeheader()
+        for record in records:
+            row = {}
+            for name in columns:
+                value = record.get(name, None)
+                if isinstance(value, float):
+                    row[name] = f'{value:.10g}'
+                elif value is None:
+                    row[name] = ''
+                else:
+                    row[name] = value
+            writer.writerow(row)
+    return _replace_metrics_file(temp_path, csv_path)
+
+
+def _style_metrics_sheet(worksheet, columns):
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill('solid', fgColor='1F4E79')
+    for cell in worksheet[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+
+    for row in worksheet.iter_rows(min_row=2, max_row=worksheet.max_row,
+                                   min_col=1, max_col=worksheet.max_column):
+        for cell in row:
+            header = columns[cell.column - 1]
+            if not isinstance(cell.value, float):
+                continue
+            if header.startswith('lr_') or header.startswith('weight_'):
+                cell.number_format = '0.00E+00'
+            elif header in ('train_ssim', 'val_ssim', 'ssim_gap', 'composite'):
+                cell.number_format = '0.0000'
+            elif header.startswith('is_best') or header == 'epoch':
+                cell.number_format = '0'
+            elif header == 'epoch_time_s':
+                cell.number_format = '0.0'
+            else:
+                cell.number_format = '0.000000'
+
+    worksheet.freeze_panes = 'B2'
+    worksheet.auto_filter.ref = worksheet.dimensions
+    for index, name in enumerate(columns, start=1):
+        worksheet.column_dimensions[get_column_letter(index)].width = max(14, min(32, len(name) + 2))
+    worksheet.row_dimensions[1].height = 22
+
+
+def _write_metrics_xlsx(records, columns, xlsx_path):
+    """优先用 openpyxl 写带表头样式的工作簿；否则用 pandas。两者都没有时返回 None。"""
+    try:
+        from openpyxl import Workbook
+    except ImportError:
+        try:
+            import pandas as pd
+        except ImportError:
+            return None
+        frame = pd.DataFrame(records, columns=columns)
+        temp_path = xlsx_path + '.tmp.xlsx'
+        frame.to_excel(temp_path, index=False, sheet_name='epoch_metrics')
+        return _replace_metrics_file(temp_path, xlsx_path)
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = 'epoch_metrics'
+    sheet.append(columns)
+    for record in records:
+        sheet.append([record.get(name, None) for name in columns])
+    _style_metrics_sheet(sheet, columns)
+
+    notes = workbook.create_sheet('字段说明')
+    notes.append(['列名', '含义'])
+    for name, meaning in _METRIC_COLUMN_NOTES:
+        notes.append([name, meaning])
+    _style_metrics_sheet(notes, ['列名', '含义'])
+    notes.column_dimensions['A'].width = 36
+    notes.column_dimensions['B'].width = 78
+
+    temp_path = xlsx_path + '.tmp.xlsx'
+    workbook.save(temp_path)
+    return _replace_metrics_file(temp_path, xlsx_path)
+
+
+def save_epoch_metrics_table(records, output_folder):
+    """
+    将目前已完成的全部 epoch 重写到 CSV，并在环境支持时同时写 Excel。
+
+    每个 epoch 都整表重写，训练中途停止后，已完成轮次的数值仍然保留，
+    可直接用 Excel 或绘图脚本重画曲线、对比不同实验。
+    """
+    if not records:
+        return None, None
+
+    os.makedirs(output_folder, exist_ok=True)
+    columns = _ordered_metric_columns(records)
+    csv_path = _write_metrics_csv(
+        records, columns, os.path.join(output_folder, EPOCH_METRICS_CSV))
+    xlsx_path = _write_metrics_xlsx(
+        records, columns, os.path.join(output_folder, EPOCH_METRICS_XLSX))
+    return csv_path, xlsx_path
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -1324,11 +1579,191 @@ def save_training_summary(output_folder, cfg, history, best_info, total_time_str
         f.write(f'  Individual Curves : {os.path.join(output_folder, "training_curves/")}\n')
         f.write(f'  Sub-Loss History  : {os.path.join(output_folder, "sub_loss_history.png")}\n')
         f.write(f'  Realtime Curves   : {os.path.join(output_folder, "training_curves_realtime.png")}\n')
+        f.write(f'  Epoch Metrics CSV : {os.path.join(output_folder, EPOCH_METRICS_CSV)}\n')
+        f.write(f'  Epoch Metrics XLSX: {os.path.join(output_folder, EPOCH_METRICS_XLSX)}\n')
+        f.write(f'  Resume State      : {os.path.join(output_folder, RESUME_STATE_NAME)}\n')
         f.write(f'  Val Visualization : {os.path.join(output_folder, "val_visualization/")}\n')
         f.write(f'  This Summary      : {save_path}\n')
         f.write(sep)
 
     return save_path
+
+
+# ════════════════════════════════════════════════════════════════════════
+# 断点续训
+# ════════════════════════════════════════════════════════════════════════
+
+RESUME_STATE_NAME = 'resume_state.pth'
+
+_RESUME_CFG_KEYS = (
+    'EPOCHS', 'BATCH_SIZE', 'BASE_LR', 'WEIGHT_DECAY', 'ACCUMULATION_STEPS',
+    'GRAD_CLIP_VALUE', 'IMAGE_SIZE', 'TRAIN_SPLIT_RATIO', 'USE_GN', 'USE_EMA',
+    'EMA_DECAY', 'USE_AMP', 'USE_HIGHLIGHT_AUG', 'HIGHLIGHT_AUG_P',
+    'INPUT_DIR', 'TARGET_DIR', 'VAL_INPUT_DIR', 'VAL_TARGET_DIR',
+)
+
+
+def resolve_resume_target(resume_value, experiments_root='experiments'):
+    """
+    把续训配置解析成 (实验目录, resume_state.pth)。
+
+    resume_value:
+      None / ''        不续训
+      'latest'         使用 experiments 下最近写入的断点
+      目录或断点文件路径  从指定实验继续
+    """
+    if resume_value is None or resume_value is False or str(resume_value).strip() == '':
+        return None, None
+
+    text = str(resume_value).strip()
+    if text.lower() in {'latest', 'auto', 'last'}:
+        matches = []
+        if os.path.isdir(experiments_root):
+            for dirpath, _dirnames, filenames in os.walk(experiments_root):
+                if RESUME_STATE_NAME in filenames:
+                    matches.append(os.path.join(dirpath, RESUME_STATE_NAME))
+        if not matches:
+            raise FileNotFoundError(
+                f"在 {experiments_root} 下没有找到 {RESUME_STATE_NAME}，无法自动续训")
+        state_path = max(matches, key=os.path.getmtime)
+        return os.path.abspath(os.path.dirname(state_path)), os.path.abspath(state_path)
+
+    path = os.path.abspath(text)
+    if os.path.isfile(path):
+        return os.path.dirname(path), path
+    if os.path.isdir(path):
+        state_path = os.path.join(path, RESUME_STATE_NAME)
+        if not os.path.isfile(state_path):
+            raise FileNotFoundError(
+                f"目录 {path} 中没有 {RESUME_STATE_NAME}。请确认这是同一次训练的实验目录。")
+        return path, os.path.abspath(state_path)
+    raise FileNotFoundError(f"续训路径不存在: {resume_value}")
+
+
+def load_resume_state(path, device):
+    """读取断点。文件里包含模型、优化器、学习率日程、历史指标和可视化样本。"""
+    try:
+        state = torch.load(path, map_location=device, weights_only=False)
+    except TypeError:
+        state = torch.load(path, map_location=device)
+    if not isinstance(state, dict) or 'model_state_dict' not in state:
+        raise ValueError(f"{path} 不是可续训的断点文件")
+    if 'completed_epochs' not in state or 'history' not in state:
+        raise ValueError(f"{path} 缺少训练历史，无法在同一份表格和曲线上继续")
+    return state
+
+
+def _atomic_torch_save(payload, dest_path):
+    """先写入临时文件再替换，避免保存过程中断把上一份断点写坏。"""
+    temp_path = dest_path + '.tmp'
+    torch.save(payload, temp_path)
+    try:
+        os.replace(temp_path, dest_path)
+        return dest_path
+    except PermissionError:
+        fallback = dest_path + '.new'
+        os.replace(temp_path, fallback)
+        print(f"  [resume] 无法覆盖 {dest_path}，已写入 {fallback}")
+        return fallback
+
+
+def _history_to_plain(history):
+    plain = {}
+    for key, value in history.items():
+        if isinstance(value, defaultdict):
+            plain[key] = {name: list(items) for name, items in value.items()}
+        elif isinstance(value, list):
+            plain[key] = list(value)
+        else:
+            plain[key] = value
+    return plain
+
+
+def _history_from_plain(plain):
+    history = {
+        'train_losses': list(plain.get('train_losses', [])),
+        'val_losses': list(plain.get('val_losses', [])),
+        'train_ssims': list(plain.get('train_ssims', [])),
+        'val_ssims': list(plain.get('val_ssims', [])),
+        'train_maes': list(plain.get('train_maes', [])),
+        'val_maes': list(plain.get('val_maes', [])),
+        'val_mses': list(plain.get('val_mses', [])),
+        'val_psnrs': list(plain.get('val_psnrs', [])),
+        'train_mses': list(plain.get('train_mses', [])),
+        'train_psnrs': list(plain.get('train_psnrs', [])),
+        'train_sub_losses': defaultdict(list),
+        'val_sub_losses': defaultdict(list),
+        'epoch_records': list(plain.get('epoch_records', [])),
+    }
+    for key, values in plain.get('train_sub_losses', {}).items():
+        history['train_sub_losses'][key] = list(values)
+    for key, values in plain.get('val_sub_losses', {}).items():
+        history['val_sub_losses'][key] = list(values)
+    return history
+
+
+def _capture_rng_state():
+    state = {
+        'torch': torch.get_rng_state(),
+        'numpy': np.random.get_state(),
+        'python': random.getstate(),
+        'cuda': None,
+    }
+    if torch.cuda.is_available():
+        state['cuda'] = torch.cuda.get_rng_state_all()
+    return state
+
+
+def _restore_rng_state(state):
+    if not state:
+        return
+    try:
+        torch_state = state['torch']
+        if hasattr(torch_state, 'device') and torch_state.device.type != 'cpu':
+            torch_state = torch_state.cpu()
+        torch.set_rng_state(torch_state)
+        np.random.set_state(state['numpy'])
+        random.setstate(state['python'])
+        cuda_state = state.get('cuda')
+        if cuda_state is not None and torch.cuda.is_available():
+            if len(cuda_state) != torch.cuda.device_count():
+                print("  [续训] CUDA 设备数量与断点不一致，跳过 CUDA 随机状态恢复")
+                return
+            restored = []
+            for index, tensor in enumerate(cuda_state):
+                if tensor.device.type == 'cpu':
+                    tensor = tensor.cuda(index)
+                restored.append(tensor)
+            torch.cuda.set_rng_state_all(restored)
+    except Exception as exc:
+        print(f"  [续训] 随机状态恢复失败，后续数据打乱顺序可能与未中断时不同: {exc}")
+
+
+def _warn_resume_config(snapshot, cfg):
+    if not snapshot:
+        return
+    for key in _RESUME_CFG_KEYS:
+        old = snapshot.get(key, None)
+        new = cfg.get(key, None)
+        if old is None or old == new:
+            continue
+        if isinstance(old, (tuple, list)) and isinstance(new, (tuple, list)):
+            if tuple(old) == tuple(new):
+                continue
+        print(f"  [续训] 配置与断点不同: {key}  断点={old}  当前={new}")
+
+
+def _empty_history():
+    return {
+        'train_losses': [], 'val_losses': [],
+        'train_ssims':  [], 'val_ssims':  [],
+        'train_maes':   [], 'val_maes':   [],
+        'val_mses':     [], 'val_psnrs':  [],
+        'train_mses':   [], 'train_psnrs': [],
+        'train_sub_losses': defaultdict(list),
+        'val_sub_losses':   defaultdict(list),
+        'epoch_records': [],
+    }
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -1368,6 +1803,18 @@ def train_model(cfg):
     print(f"Y-FFC V2 训练 | 设备={device} | 分辨率={img_hw[0]}×{img_hw[1]}")
     print(f"{'=' * 78}")
 
+    resume_file = cfg.get('RESUME_FILE')
+    resume_state = None
+    if resume_file:
+        resume_state = load_resume_state(resume_file, device)
+        cfg['OUTPUT_FOLDER'] = os.path.dirname(os.path.abspath(resume_file))
+        completed_epochs = int(resume_state.get('completed_epochs', 0))
+        print(f"断点续训: {os.path.abspath(resume_file)}")
+        print(f"  已完成 {completed_epochs} 轮，目标 {cfg['EPOCHS']} 轮")
+        _warn_resume_config(resume_state.get('cfg_snapshot'), cfg)
+    else:
+        completed_epochs = 0
+
     # ── 输出目录 ──
     output_folder = cfg['OUTPUT_FOLDER']
     models_dir = os.path.join(output_folder, 'models')
@@ -1383,6 +1830,14 @@ def train_model(cfg):
         print("[GN] BN -> GN 替换")
         replace_bn_with_gn(model, 8)
     model.to(device)
+    if resume_state is not None:
+        try:
+            model.load_state_dict(resume_state['model_state_dict'])
+        except RuntimeError as exc:
+            raise RuntimeError(
+                "断点与当前模型结构不一致。续训请保持 USE_GN 等结构开关和当初训练时相同。"
+            ) from exc
+        print(f"[续训] 已恢复模型权重（完成至第 {int(resume_state['completed_epochs'])} 轮）")
 
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -1442,17 +1897,31 @@ def train_model(cfg):
     vis_interval = int(cfg.get('VIS_EVERY_N_EPOCHS', 10))
     vis_num_samples = int(cfg.get('VIS_NUM_SAMPLES', 2))
     vis_loader = None
+    saved_vis_indices = resume_state.get('vis_indices') if resume_state else None
+    saved_vis_seed = resume_state.get('vis_seed') if resume_state else None
     if vis_interval > 0 and vis_num_samples > 0:
-        vis_loader, vis_indices, vis_seed = build_fixed_visualization_loader(
-            val_ds,
-            num_samples=vis_num_samples,
-            num_workers=cfg['NUM_WORKERS'],
-            pin_memory=(device.type == 'cuda'),
-            seed=cfg.get('VIS_SAMPLE_SEED'))
+        pin_memory = (device.type == 'cuda')
+        if saved_vis_indices:
+            try:
+                vis_loader, vis_indices = build_visualization_loader_from_indices(
+                    val_ds, saved_vis_indices, cfg['NUM_WORKERS'], pin_memory=pin_memory)
+                vis_seed = saved_vis_seed
+                print(f"可视化样本: 续训沿用原来的 {len(vis_indices)} 张 "
+                      f"(seed={vis_seed}, val_indices={vis_indices})")
+            except ValueError as exc:
+                print(f"  [续训] 原可视化索引不可用，改为按原种子重抽: {exc}")
+                saved_vis_indices = None
+        if vis_loader is None:
+            vis_loader, vis_indices, vis_seed = build_fixed_visualization_loader(
+                val_ds,
+                num_samples=vis_num_samples,
+                num_workers=cfg['NUM_WORKERS'],
+                pin_memory=pin_memory,
+                seed=saved_vis_seed if saved_vis_seed is not None else cfg.get('VIS_SAMPLE_SEED'))
+            print(f"可视化样本: 本次训练固定抽取 {len(vis_indices)} 张 "
+                  f"(seed={vis_seed}, val_indices={vis_indices})")
         cfg['VIS_SAMPLE_SEED_USED'] = vis_seed
         cfg['VIS_SAMPLE_INDICES'] = vis_indices
-        print(f"可视化样本: 本次训练固定抽取 {len(vis_indices)} 张 "
-              f"(seed={vis_seed}, val_indices={vis_indices})")
     else:
         cfg['VIS_SAMPLE_SEED_USED'] = None
         cfg['VIS_SAMPLE_INDICES'] = []
@@ -1460,40 +1929,56 @@ def train_model(cfg):
 
     # ══════════ 3. 损失函数 ══════════
     criterion = EnhancedCompositeLoss(
-        use_perceptual=True, use_ohem=cfg['USE_OHEM']).to(device)
+        use_perceptual=False, use_ohem=False).to(device)
     ws = ImprovedWeightScheduler(cfg['EPOCHS'])
 
     # 打印损失函数结构
     print(f"\n损失函数: EnhancedCompositeLoss")
-    print(f"  use_perceptual={True}, use_ohem={cfg['USE_OHEM']}, use_amp={cfg['USE_AMP']}")
+    print(f"  生效项: MS-SSIM, Charbonnier(r), 幅度谱, Charbonnier(b)+梯度一致性, 边缘加权梯度, 高光BCE")
+    print(f"  use_amp={cfg['USE_AMP']}")
     print(f"  子损失项: {', '.join(SUB_LOSS_KEYS)}")
 
     # ══════════ 4. 优化器 + 调度器 ══════════
     print("\n分层学习率配置:")
     optimizer = build_optimizer_v2(model, cfg['BASE_LR'], cfg['WEIGHT_DECAY'])
-    scheduler = build_scheduler(
-        optimizer,
-        warmup_iters=min(500, math.ceil(len(train_loader) / cfg['ACCUMULATION_STEPS']) * 3),
-        total_epochs=cfg['EPOCHS'],
-        iters_per_epoch=math.ceil(len(train_loader) / cfg['ACCUMULATION_STEPS']))
+    current_scheduler_build = {
+        'warmup_iters': min(500, math.ceil(len(train_loader) / cfg['ACCUMULATION_STEPS']) * 3),
+        'total_epochs': cfg['EPOCHS'],
+        'iters_per_epoch': math.ceil(len(train_loader) / cfg['ACCUMULATION_STEPS']),
+    }
+    if resume_state is not None and resume_state.get('scheduler_build'):
+        scheduler_build = dict(resume_state['scheduler_build'])
+        if scheduler_build.get('iters_per_epoch') != current_scheduler_build['iters_per_epoch']:
+            print("  [续训] 每个 epoch 的优化步数与断点不一致，学习率日程仍按断点里的步数恢复")
+        if scheduler_build.get('total_epochs') != cfg['EPOCHS']:
+            print(f"  [续训] 学习率日程仍按最初的 {scheduler_build.get('total_epochs')} 轮余弦退火；"
+                  f"超过后保持最低学习率。当前目标轮数为 {cfg['EPOCHS']}")
+    else:
+        scheduler_build = current_scheduler_build
+    scheduler = build_scheduler(optimizer, **scheduler_build)
+    if resume_state is not None and resume_state.get('optimizer_state_dict') is not None:
+        optimizer.load_state_dict(resume_state['optimizer_state_dict'])
+    if resume_state is not None and resume_state.get('scheduler_state_dict') is not None:
+        scheduler.load_state_dict(resume_state['scheduler_state_dict'])
 
     # ══════════ 5. AMP + EMA ══════════
     scaler = torch.amp.GradScaler('cuda', enabled=(device.type == 'cuda' and cfg['USE_AMP']))
+    if resume_state is not None and resume_state.get('scaler_state_dict') is not None:
+        scaler.load_state_dict(resume_state['scaler_state_dict'])
     ema = EMA(model, cfg['EMA_DECAY']) if cfg['USE_EMA'] else None
+    if ema is not None and resume_state is not None and resume_state.get('ema_shadow'):
+        for name, tensor in resume_state['ema_shadow'].items():
+            if name in ema.shadow:
+                ema.shadow[name] = tensor.detach().to(device)
+        print("[续训] 已恢复 EMA 权重")
 
     # ══════════ 6. 历史记录 + 最优模型跟踪 ══════════
-    history = {
-        'train_losses': [], 'val_losses': [],
-        'train_ssims':  [], 'val_ssims':  [],
-        'train_maes':   [], 'val_maes':   [],
-        'val_mses':     [], 'val_psnrs':  [],
-        # 训练阶段不额外计算 MSE/PSNR，用 placeholder 对齐
-        'train_mses':   [], 'train_psnrs': [],
-        # 子损失历史：{key: [epoch_1_avg, epoch_2_avg, ...]}
-        'train_sub_losses': defaultdict(list),
-        'val_sub_losses':   defaultdict(list),
-    }
-    epoch_times = []
+    if resume_state is not None:
+        history = _history_from_plain(resume_state.get('history', {}))
+        epoch_times = list(resume_state.get('epoch_times', []))
+    else:
+        history = _empty_history()
+        epoch_times = []
 
     # 多指标最优模型保存路径
     best_composite_path = os.path.join(models_dir, 'best_model.pth')
@@ -1519,9 +2004,26 @@ def train_model(cfg):
         'Best SSIM': _best_info_init(best_ssim_path),
         'Best Loss': _best_info_init(best_loss_path),
     }
+    if resume_state is not None:
+        best_composite = float(resume_state.get('best_composite', best_composite))
+        best_val_ssim = float(resume_state.get('best_val_ssim', best_val_ssim))
+        best_val_loss = float(resume_state.get('best_val_loss', best_val_loss))
+        saved_best_info = resume_state.get('best_info') or {}
+        for tag, info in best_info.items():
+            loaded = saved_best_info.get(tag)
+            if not loaded:
+                continue
+            info.update(loaded)
+            info['path'] = {
+                'Best Overall (SSIM×0.7 + NormLoss×0.3)': best_composite_path,
+                'Best SSIM': best_ssim_path,
+                'Best Loss': best_loss_path,
+            }[tag]
 
     # 早停
-    early_stopping_counter = 0
+    early_stopping_counter = int(resume_state.get('early_stopping_counter', 0)) if resume_state else 0
+    elapsed_offset = float(resume_state.get('elapsed_seconds', 0.0)) if resume_state else 0.0
+    start_epoch = completed_epochs
 
     # ══════════ 打印完整配置 ══════════
     print(f"\n{'=' * 78}")
@@ -1533,20 +2035,85 @@ def train_model(cfg):
     print(f"  Use EMA     : {cfg['USE_EMA']} (decay={cfg['EMA_DECAY']})")
     print(f"  Use OHEM    : {cfg['USE_OHEM']}")
     print(f"  早停策略    : {'启用 (patience=' + str(cfg['EARLY_STOPPING_PATIENCE']) + ')' if cfg['USE_EARLY_STOPPING'] else '禁用'}")
+    print(f"  断点续训    : {os.path.abspath(resume_file) if resume_file else '关闭'}")
+    if start_epoch:
+        print(f"  续训起点    : 第 {start_epoch + 1} 轮（已完成 {start_epoch} 轮）")
     print(f"  输出目录    : {os.path.abspath(output_folder)}")
     print(f"\n模型保存路径:")
     print(f"  综合最优 -> {best_composite_path}")
     print(f"  SSIM最优 -> {best_ssim_path}")
     print(f"  Loss最优 -> {best_loss_path}")
     print(f"  最新模型 -> {last_model_path}")
+    print(f"  续训断点 -> {os.path.join(output_folder, RESUME_STATE_NAME)}")
     print(f"  综合评分权重: SSIM×{COMPOSITE_ALPHA:.1f} + Loss归一化×{1 - COMPOSITE_ALPHA:.1f}")
 
+    def _save_resume(completed):
+        """保存可续训断点。调用时本轮指标表已经写入同一实验目录。"""
+        payload = {
+            'completed_epochs': int(completed),
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'scheduler_state_dict': scheduler.state_dict() if scheduler is not None else None,
+            'scheduler_build': scheduler_build,
+            'scaler_state_dict': scaler.state_dict() if scaler is not None else None,
+            'ema_shadow': (
+                {name: tensor.detach().cpu() for name, tensor in ema.shadow.items()}
+                if ema is not None else None),
+            'history': _history_to_plain(history),
+            'epoch_times': list(epoch_times),
+            'best_composite': best_composite,
+            'best_val_ssim': best_val_ssim,
+            'best_val_loss': best_val_loss,
+            'best_info': best_info,
+            'early_stopping_counter': early_stopping_counter,
+            'vis_seed': cfg.get('VIS_SAMPLE_SEED_USED'),
+            'vis_indices': list(cfg.get('VIS_SAMPLE_INDICES') or []),
+            'elapsed_seconds': elapsed_offset + (time.time() - session_start),
+            'rng_state': _capture_rng_state(),
+            'cfg_snapshot': {key: cfg.get(key) for key in _RESUME_CFG_KEYS},
+            'train_size': len(train_ds),
+            'val_size': len(val_ds),
+        }
+        return _atomic_torch_save(payload, os.path.join(output_folder, RESUME_STATE_NAME))
+
+    if start_epoch >= cfg['EPOCHS'] and start_epoch > 0:
+        print(f"\n断点已完成 {start_epoch} 轮，当前 EPOCHS={cfg['EPOCHS']}，没有剩余轮次。")
+        print("若要在同一份结果上继续加训，请把 EPOCHS 调大后再运行。")
+        refresh_training_figures(history, output_folder, start_epoch, include_full=True)
+        total_time_str = str(timedelta(seconds=int(elapsed_offset)))
+        save_training_summary(output_folder, cfg, history, best_info, total_time_str)
+        history['best_info'] = best_info
+        history['total_time_str'] = total_time_str
+        history['actual_epochs'] = start_epoch
+        return history
+
+    if start_epoch > 0 and history['train_losses']:
+        if history.get('epoch_records'):
+            try:
+                csv_path, xlsx_path = save_epoch_metrics_table(
+                    history['epoch_records'], output_folder)
+                print(f"  指标表继续写入: {csv_path}")
+                if xlsx_path:
+                    print(f"  指标表继续写入: {xlsx_path}")
+            except Exception as exc:
+                print(f"  [metrics] 续训时重写指标表失败: {exc}")
+        refresh_training_figures(history, output_folder, start_epoch, include_full=True)
+        print("  已把训练曲线覆盖回原来的图片")
+        saved_train_size = resume_state.get('train_size')
+        saved_val_size = resume_state.get('val_size')
+        if saved_train_size is not None and (
+                len(train_ds) != saved_train_size or len(val_ds) != saved_val_size):
+            print("  [续训] 当前训练集或验证集样本数与断点不同，可视化索引仍按原验证集位置使用")
+
     # ══════════ 7. 训练循环 ══════════
-    start_time_total = time.time()
-    print(f"\n训练开始: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    session_start = time.time()
+    _restore_rng_state(resume_state.get('rng_state') if resume_state else None)
+    train_model._prev_lr = optimizer.param_groups[0]['lr']
+    print(f"\n{'继续训练' if start_epoch else '训练开始'}: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'=' * 78}\n")
 
-    for ep in range(cfg['EPOCHS']):
+    last_completed_epoch = start_epoch
+    for ep in range(start_epoch, cfg['EPOCHS']):
         epoch_start = time.time()
 
         # 动态权重调度
@@ -1617,14 +2184,26 @@ def train_model(cfg):
             vl, vs, vm, val_mse, val_psnr,
             train_subs, val_subs, w, current_lr, device,
             composite, best_val_ssim, best_val_loss)
+        net_stats = {}
         if hasattr(model, 'encoder') and hasattr(model.encoder, 'fuse_h4') and hasattr(model.encoder, 'fuse_h8'):
             gate4 = model.encoder.fuse_h4.last_gate_mean
             gate8 = model.encoder.fuse_h8.last_gate_mean
-            gate4_str = f"{gate4.item():.6f}" if gate4 is not None else "n/a"
-            gate8_str = f"{gate8.item():.6f}" if gate8 is not None else "n/a"
-            print(f"  [Adaptive skip] beta_h4={model.encoder.fuse_h4.beta.item():.6f}, "
-                  f"beta_h8={model.encoder.fuse_h8.beta.item():.6f}, "
+            net_stats['beta_h4'] = model.encoder.fuse_h4.beta.item()
+            net_stats['beta_h8'] = model.encoder.fuse_h8.beta.item()
+            if gate4 is not None:
+                net_stats['gate_h4_mean'] = gate4.item()
+            if gate8 is not None:
+                net_stats['gate_h8_mean'] = gate8.item()
+            gate4_str = f"{net_stats['gate_h4_mean']:.6f}" if 'gate_h4_mean' in net_stats else "n/a"
+            gate8_str = f"{net_stats['gate_h8_mean']:.6f}" if 'gate_h8_mean' in net_stats else "n/a"
+            print(f"  [Adaptive skip] beta_h4={net_stats['beta_h4']:.6f}, "
+                  f"beta_h8={net_stats['beta_h8']:.6f}, "
                   f"gate_h4_mean={gate4_str}, gate_h8_mean={gate8_str}")
+
+        # 在更新最优记录之前记下本轮是否刷新，供指标表使用。
+        is_best_overall = composite > best_composite
+        is_best_ssim = vs > best_val_ssim
+        is_best_loss = vl < best_val_loss
 
         # ── 模型保存逻辑 ──
         improved_flags = []
@@ -1701,9 +2280,51 @@ def train_model(cfg):
             else:
                 print(f"  -- 本轮无改善")
 
-        # ── 实时曲线 ──
-        if (ep + 1) % 5 == 0 or ep == 0:
-            plot_training_curves_realtime(history, output_folder, ep + 1)
+        # ── 每个 epoch 的数值表（CSV，环境支持时同时写 Excel）──
+        lr_groups = {
+            group.get('name', f'group_{idx}'): group['lr']
+            for idx, group in enumerate(optimizer.param_groups)
+        }
+        history['epoch_records'].append(build_epoch_metric_record(
+            epoch=ep + 1,
+            epoch_time=epoch_time,
+            learning_rates=lr_groups,
+            weights=w,
+            train_loss=tl, train_ssim=ts, train_mae=tm,
+            train_mse=train_mse, train_psnr=train_psnr,
+            val_loss=vl, val_ssim=vs, val_mae=vm,
+            val_mse=val_mse, val_psnr=val_psnr,
+            train_subs=train_subs, val_subs=val_subs,
+            composite=composite,
+            is_best_overall=is_best_overall,
+            is_best_ssim=is_best_ssim,
+            is_best_loss=is_best_loss,
+            net_stats=net_stats))
+        try:
+            csv_path, xlsx_path = save_epoch_metrics_table(
+                history['epoch_records'], output_folder)
+            if ep == start_epoch:
+                print(f"  每轮指标表: {csv_path}")
+                if xlsx_path:
+                    print(f"  每轮指标表: {xlsx_path}")
+                else:
+                    print("  当前环境没有 openpyxl 或 pandas，未生成 Excel；CSV 已包含全部数值")
+        except Exception as exc:
+            print(f"  [metrics] 指标表写入失败: {exc}")
+
+        last_completed_epoch = ep + 1
+        try:
+            resume_path = _save_resume(last_completed_epoch)
+            if ep == start_epoch:
+                print(f"  续训断点: {resume_path}")
+        except Exception as exc:
+            print(f"  [resume] 断点写入失败: {exc}")
+
+        # ── 同一套训练曲线，覆盖原来的图片 ──
+        try:
+            refresh_training_figures(history, output_folder, ep + 1, include_full=True)
+        except Exception as exc:
+            print(f"  [curves] 训练曲线更新失败: {exc}")
 
         # ── 验证样本可视化 ──
         if vis_loader is not None and ((ep + 1) % vis_interval == 0 or ep == 0):
@@ -1741,15 +2362,16 @@ def train_model(cfg):
             break
 
     # ══════════ 8. 保存 last_model ══════════
-    torch.save({
-        'epoch': ep + 1,
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
-        'image_size': cfg['IMAGE_SIZE'],
-    }, last_model_path)
+    if last_completed_epoch > 0:
+        torch.save({
+            'epoch': last_completed_epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'image_size': cfg['IMAGE_SIZE'],
+        }, last_model_path)
 
     # ══════════ 9. 训练总结 ══════════
-    total_time = time.time() - start_time_total
+    total_time = elapsed_offset + (time.time() - session_start)
     total_time_str = str(timedelta(seconds=int(total_time)))
     actual_epochs = len(history['train_losses'])
 
@@ -1817,6 +2439,9 @@ def train_model(cfg):
     print(f"  ├── training_history.png            (Loss / SSIM / MAE / MSE 总览)")
     print(f"  ├── sub_loss_history.png            (子损失项历史曲线)")
     print(f"  ├── training_curves_realtime.png    (实时 Loss + SSIM)")
+    print(f"  ├── {EPOCH_METRICS_CSV:<31s} (每轮损失 / SSIM / 子损失)")
+    print(f"  ├── {EPOCH_METRICS_XLSX:<31s} (同上，Excel；含字段说明)")
+    print(f"  ├── {RESUME_STATE_NAME:<31s} (中断后续训用的断点)")
     print(f"  └── training_summary.txt            (配置 / 最优 Epoch / 总结)")
     if cfg['SAVE_EVERY_N_EPOCHS'] > 0:
         print(f"  └── checkpoints/                   (定期检查点)")
@@ -1892,9 +2517,18 @@ def main():
     USE_EARLY_STOPPING    = False
     EARLY_STOPPING_PATIENCE = 30
 
-    # ========== 输出目录（自动带时间戳） ==========
+    # ========== 断点续训 ==========
+    # None     : 新开一次训练，结果写到下面带时间戳的新目录
+    # 'latest' : 从 experiments 里最近一次的断点接着训
+    # 目录路径 : 从该实验目录接着训，CSV、Excel 和训练曲线都继续写回这个目录
+    RESUME_FOLDER         = None
+
+    # ========== 输出目录（仅新训练时使用；续训时自动改回原实验目录） ==========
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     OUTPUT_FOLDER = f'experiments/yffc_v2_{timestamp}'
+    resume_file = None
+    if RESUME_FOLDER:
+        OUTPUT_FOLDER, resume_file = resolve_resume_target(RESUME_FOLDER)
 
     # ╔══════════════════════════════════════════════════════════════╗
     # ║              ★ 配置区结束 ★                                  ║
@@ -1929,6 +2563,7 @@ def main():
         'USE_EARLY_STOPPING':     USE_EARLY_STOPPING,
         'EARLY_STOPPING_PATIENCE': EARLY_STOPPING_PATIENCE,
         'OUTPUT_FOLDER':          OUTPUT_FOLDER,
+        'RESUME_FILE':            resume_file,
     }
 
     # 打印配置总览

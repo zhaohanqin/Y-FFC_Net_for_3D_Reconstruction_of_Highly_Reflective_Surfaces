@@ -337,7 +337,7 @@ def main():
         'VIS_NUM_SAMPLES': 2,
         'VIS_SAMPLE_SEED': None,
         # ── 输出 ──
-        'OUTPUT_FOLDER': f'experiments/dcunet_{timestamp}',
+        'OUTPUT_FOLDER': f'comporison_model/experiments/dcunet_{timestamp}',
     }
 
     print("\n当前配置:")

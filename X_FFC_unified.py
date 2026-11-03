@@ -742,7 +742,10 @@ class SwinEncoderBranch(nn.Module):
         # 推荐训练/推理使用 320x256、384x384、512x512 等 patch。
         # 这里不做 224x224 resize，只做右/下 padding 到 32 的倍数，保护结构光条纹相位关系。
         # 不建议直接整图训练 2448x2048；大图推理建议 sliding-window + overlap 融合。
+        orig_h, orig_w = x.shape[-2:]
         x = self._pad_to_multiple(x, multiple=32)
+        pad_h = int(x.shape[-2]) - int(orig_h)
+        pad_w = int(x.shape[-1]) - int(orig_w)
 
         feat = x
         swin_4 = swin_8 = swin_16 = None
@@ -764,22 +767,49 @@ class SwinEncoderBranch(nn.Module):
             "swin_4": swin_4,
             "swin_8": swin_8,
             "swin_16": swin_16,
+            "pad_h": pad_h,
+            "pad_w": pad_w,
         }
+
+
+def _crop_swin_padding(feat, pad_h, pad_w, stride):
+    """裁掉右/下 padding 对应的 token，不在特征图上做插值。"""
+    if feat is None or (int(pad_h) == 0 and int(pad_w) == 0):
+        return feat
+    crop_h = int(feat.shape[-2]) - int(pad_h) // int(stride)
+    crop_w = int(feat.shape[-1]) - int(pad_w) // int(stride)
+    crop_h = max(1, min(crop_h, int(feat.shape[-2])))
+    crop_w = max(1, min(crop_w, int(feat.shape[-1])))
+    if crop_h == feat.shape[-2] and crop_w == feat.shape[-1]:
+        return feat
+    return feat[..., :crop_h, :crop_w].contiguous()
+
+
+def _align_feature(feat, ref):
+    """对齐到 ResNet 网格：多出的 token 直接裁掉，只在相差不超过 1 像素时插值。"""
+    th, tw = ref.shape[-2:]
+    if feat.shape[-2:] == (th, tw):
+        return feat
+    fh, fw = feat.shape[-2:]
+    if fh >= th and fw >= tw:
+        cropped = feat[..., :th, :tw].contiguous()
+        if cropped.shape[-2:] == (th, tw):
+            return cropped
+        feat = cropped
+    dh = abs(int(feat.shape[-2]) - int(th))
+    dw = abs(int(feat.shape[-1]) - int(tw))
+    if dh <= 1 and dw <= 1:
+        return F.interpolate(feat, size=(th, tw), mode='bilinear', align_corners=False)
+    return F.interpolate(feat, size=(th, tw), mode='bilinear', align_corners=False)
 
 
 class AdaptiveSkipFusion(nn.Module):
     """
-    轻量级自适应 Swin skip 融合模块。
+    H/4、H/8 的 Swin 残差注入。
 
-    作用：
-      - 先把 Swin skip 投影到 ResNet skip 的通道数；
-      - 根据 concat([res_feat, swin_proj]) 生成逐位置、逐通道 gate；
-      - 使用 fused = res_feat + beta * gate * swin_proj 做内容自适应残差注入。
-
-    beta 是整体强度控制参数，初始为 0.0，让模型初始时接近纯 ResNet skip，
-    避免突然改变 Decoder 已经适配的 skip 特征分布。gate 负责控制不同空间位置、
-    不同通道上 Swin 上下文注入多少。H/4、H/8 分辨率较高，因此这里使用轻量门控，
-    不直接使用重型 CrossModalFusion；H/16 仍保留 CrossModalFusion 做瓶颈强交互。
+    skip = res_feat + beta * gate * swin_proj。
+    swin_proj 只做一次 1x1 通道对齐。gate 再乘输入亮度得到的高光先验：
+    高光区域允许窗口上下文进入，条纹区域先验接近 0，Swin 不改写 ResNet skip。
     """
 
     def __init__(self, res_channels, swin_channels, init_beta=0.03, gate_reduction=2):
@@ -788,11 +818,7 @@ class AdaptiveSkipFusion(nn.Module):
         self.beta = nn.Parameter(torch.tensor(float(init_beta)))
         self.last_gate_mean = None
 
-        self.swin_proj = nn.Sequential(
-            nn.Conv2d(swin_channels, res_channels, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(res_channels),
-            nn.GELU(),
-        )
+        self.swin_proj = nn.Conv2d(swin_channels, res_channels, kernel_size=1, stride=1, padding=0, bias=False)
         self.gate_net = nn.Sequential(
             nn.Conv2d(res_channels * 2, hidden_channels, kernel_size=1, stride=1, padding=0, bias=True),
             nn.GELU(),
@@ -800,19 +826,28 @@ class AdaptiveSkipFusion(nn.Module):
             nn.Sigmoid(),
         )
 
-        # 初始 gate 偏小，配合 beta=0.0，使训练初期尽量保持 ResNet skip 分布稳定。
+        # 权重置零、bias 置零，初始 gate = 0.5。空间选择交给高光先验，避免 bias=-2 把 Swin 压到几乎不参与。
         final_gate_conv = self.gate_net[-2]
-        if isinstance(final_gate_conv, nn.Conv2d) and final_gate_conv.bias is not None:
-            nn.init.constant_(final_gate_conv.bias, -2.0)
+        if isinstance(final_gate_conv, nn.Conv2d):
+            nn.init.zeros_(final_gate_conv.weight)
+            if final_gate_conv.bias is not None:
+                nn.init.constant_(final_gate_conv.bias, 0.0)
 
-    def forward(self, res_feat, swin_feat):
+    def forward(self, res_feat, swin_feat, highlight_prior=None):
         if swin_feat.shape[-2:] != res_feat.shape[-2:]:
-            swin_feat = F.interpolate(
-                swin_feat, size=res_feat.shape[-2:],
-                mode='bilinear', align_corners=False)
+            swin_feat = _align_feature(swin_feat, res_feat)
 
         swin_proj = self.swin_proj(swin_feat)
         gate = self.gate_net(torch.cat([res_feat, swin_proj], dim=1))
+        if highlight_prior is not None:
+            prior = highlight_prior
+            if prior.dim() == 3:
+                prior = prior.unsqueeze(0)
+            if prior.shape[1] != 1:
+                prior = prior.mean(dim=1, keepdim=True)
+            if prior.shape[-2:] != gate.shape[-2:]:
+                prior = F.interpolate(prior, size=gate.shape[-2:], mode='bilinear', align_corners=False)
+            gate = gate * prior.to(device=gate.device, dtype=gate.dtype)
         self.last_gate_mean = gate.detach().mean()
         return res_feat + self.beta * gate * swin_proj
 
@@ -912,12 +947,12 @@ class CrossModalFusion(nn.Module):
         cnn_feat = self._modality_norm(cnn_feat)
         context_feat = self._modality_norm(context_feat)
 
+        # 只对 Swin 的 K/V 降采样。CNN 侧保留细条纹，不做平均池化。
         if self.sr_ratio > 1:
             context_kv = self.sr_pool(context_feat)
-            cnn_kv = self.sr_pool(cnn_feat)
         else:
             context_kv = context_feat
-            cnn_kv = cnn_feat
+        cnn_kv = cnn_feat
 
         # CNN 查询 Swin：为 ResNet 局部纹理补充窗口上下文。
         q_c = self.q_c2ctx(cnn_feat)
@@ -1448,39 +1483,28 @@ class CompositeLoss(nn.Module):
 
 class EnhancedCompositeLoss(nn.Module):
     """
-    增强版复合损失（V3.2 优化版 — 针对漫反射 r 增加直接监督，根治"靠减法链"的脆弱）。
+    五项复合损失。日志键保持原样，停用项固定返回 0，不进入总损失。
 
-    [P3]  SSIM → 0.8*MS-SSIM + 0.2*SSIM 混合
-    [P4]  频域损失加入相位一致性约束 (V3.2: phase 项权重 0.25 → 0.15)
-    [P5]  移除冗余 statistical_loss（lambda_stat 默认 0）
-    [P12] SSIM as_loss=True 保留梯度
-    [P13] L1 → Charbonnier 平滑损失
+    生效项：
+      - 漫反射：Charbonnier(r, target) + MS-SSIM
+      - 条纹频谱：r 的幅度谱 L1
+      - 镜面：Charbonnier(b, gt_specular) + 梯度一致性
+      - 梯度辅助：边缘加权 Charbonnier(g, Sobel(input))
+      - 高光概率：s 的加权 BCE
 
-    [V3.1 新增]
-      l_s_lik   : spec_lik_head 与 gt_specular 的 BCE+SSIM
-      l_s_cons  : pred_s_lik 与 est_b 在高光区域的双向一致性
-      l_spec_peak: 高光区 est_b 欠预测单侧惩罚
-
-    ★[V3.2 新增 — 针对漫反射 r 的直接监督]★
-      [D3] l_r_focal_hl : 在 gt_specular 高光区，对 pred_r vs target 加 focal 重点
-                          监督。意义：原版"高光区是否去得干净"完全由 b 决定，
-                          这里给 r 一个直接强约束，迫使去高光残留无处可逃。
-      [D4] l_r_dual_cons: r_direct（主解码器直接预测）与最终 r 一致性。
-                          意义：让 dual-head 的两条路径相互校准、互为正则。
-      [D5] l_r_smooth   : 在 gt_specular 高光区域，对 pred_r 施加局部平滑先验。
-                          意义：漫反射应低频为主；高光被去除后该区域应平滑。
+    `ssim` 日志键仍是单尺度 1-SSIM，供训练脚本换算 SSIM 指标。
+    进入总损失的结构项是 MS-SSIM。
     """
 
-    def __init__(self, lambda_ssim=1.0, lambda_l1=1.0, lambda_freq=0.1,
-                 lambda_perceptual=0.05, lambda_spec=0.5, lambda_stat=0.0,
-                 lambda_grad=0.5, lambda_grad_edge=0.5,
-                 use_edge_weight=True, use_perceptual=True,
-                 lambda_focal=0.8, lambda_dice=0.3, lambda_gc=0.2,
-                 lambda_cs=0.05, lambda_grad_spec=0.05,
-                 lambda_s_lik=0.5, lambda_s_cons=0.05,
-                 lambda_spec_peak=0.3,
-                 # ★[V3.2 新增权重] ★
-                 lambda_r_focal_hl=0.5, lambda_r_dual_cons=0.1, lambda_r_smooth=0.05,
+    def __init__(self, lambda_ssim=1.0, lambda_l1=0.5, lambda_freq=0.15,
+                 lambda_perceptual=0.0, lambda_spec=0.5, lambda_stat=0.0,
+                 lambda_grad=0.0, lambda_grad_edge=0.8,
+                 use_edge_weight=True, use_perceptual=False,
+                 lambda_focal=0.0, lambda_dice=0.0, lambda_gc=0.2,
+                 lambda_cs=0.0, lambda_grad_spec=0.0,
+                 lambda_s_lik=1.0, lambda_s_cons=0.0,
+                 lambda_spec_peak=0.0,
+                 lambda_r_focal_hl=0.0, lambda_r_dual_cons=0.0, lambda_r_smooth=0.0,
                  highlight_prior_gamma=1.0,
                  # ★[FIX-A 问题2] SpecLik 监督可配置超参（均有默认值，可后续调整）
                  spec_lik_pos_thresh=0.10,      # 高光前景二值化阈值（gt_sc>此值=前景）
@@ -1532,115 +1556,44 @@ class EnhancedCompositeLoss(nn.Module):
         self.ohem_ratio = ohem_ratio
 
     def frequency_loss(self, p, g):
-        """[P4-FIX2] 幅度谱 + 能量加权相位一致性。
-
-        ★[V3.2 微调] phase 系数 0.25 → 0.15。
-        原因：训练前期 pred 与 gt 相位差大，phase_loss 量级远大于 amp_loss，
-              即便 [V3.1 NaN-Fix] 解决了反向爆炸问题，前向数值仍偏大干扰主任务。
-        """
+        """漫反射幅度谱 L1。只约束条纹频率，不再加相位项。"""
         p = _safe_tensor(p.float(), nan=0.0, posinf=1.0, neginf=0.0, clamp=(0.0, 1.0))
         g = _safe_tensor(g.float(), nan=0.0, posinf=1.0, neginf=0.0, clamp=(0.0, 1.0))
         p_fft = torch.fft.rfft2(p, norm='ortho')
         g_fft = torch.fft.rfft2(g, norm='ortho')
-        p_abs = torch.abs(p_fft)
-        g_abs = torch.abs(g_fft)
-        amp_loss = F.l1_loss(p_abs, g_abs)
-
-        # 能量加权"准相位"差（无除法，反向稳定）
-        re_inner = (p_fft * g_fft.conj()).real
-        amp_prod = p_abs * g_abs
-        with torch.no_grad():
-            energy_mask = (g_abs > g_abs.mean() * 0.01).float()
-            denom_mask = energy_mask.sum().clamp_min(1.0)
-        phase_loss = (torch.abs(amp_prod - re_inner) * energy_mask).sum() / denom_mask
-        phase_loss = _safe_tensor(phase_loss, nan=0.0, posinf=0.0, neginf=0.0)
-        # ★[V3.2] 0.25 → 0.15
-        return amp_loss + 0.15 * phase_loss
+        return F.l1_loss(torch.abs(p_fft), torch.abs(g_fft))
 
     def forward(self, pred_diffuse, target, est_b, gt_specular,
                 pred_grad, gt_grad, cross_scale_consistency=None,
                 input_img=None, pred_s_lik=None,
                 pred_r_direct=None):
         """
-        ★[V3.2] 新增 pred_r_direct 参数：MainDecoder 直接预测的漫反射输出。
-        若为 None（旧 forward 调用），相关损失项为 0，保持向后兼容。
+        总损失只含五项：MS-SSIM、Charbonnier(r)、幅度谱、镜面 Charbonnier + 梯度一致性、
+        边缘加权输入梯度、高光 BCE。其余参数保留调用接口，对应日志项返回 0。
         """
         gt_sc = gt_specular.clamp(0, 1)
+        zero = pred_diffuse.new_zeros(())
 
-        # [P3] MS-SSIM + SSIM 混合
         l_ssim_single = 1.0 - self.ssim_fn(pred_diffuse.float(), target.float())
         l_msssim = 1.0 - self.msssim_fn(pred_diffuse.float(), target.float())
-        l_ssim = 0.8 * l_msssim + 0.2 * l_ssim_single
-
-        # [P13][SAFE] Charbonnier 替代 L1
-        if self.use_edge_weight:
-            wm = self._ew_fn(gt_specular.detach())
-            l_l1 = (torch.sqrt((pred_diffuse - target)**2 + 1e-6) * wm).mean()
-        else:
-            l_l1 = charbonnier_loss(pred_diffuse, target)
-
-        # [P4] 频域损失含相位
+        l_l1 = charbonnier_loss(pred_diffuse, target)
         l_freq = self.frequency_loss(pred_diffuse.float(), target.float())
+        l_spec = charbonnier_loss(est_b, gt_sc)
+        l_gc = self.gc(est_b, gt_sc)
 
-        l_percep = (self.perceptual(pred_diffuse, target)
-                    if self.use_perceptual
-                    else torch.tensor(0.0, device=pred_diffuse.device))
-
-        # [P13] Charbonnier for specular
-        l_spec = (charbonnier_loss(est_b, gt_sc) +
-                  0.5 * (1.0 - self.ssim_fn(est_b.float(), gt_sc.float())))
-
-        l_stat = torch.tensor(0.0, device=pred_diffuse.device)
-        if self.lambda_stat > 0:
-            l_stat = statistical_loss(pred_diffuse, target)
-
-        l_grad = 1.0 - self.ssim_fn(pred_grad.float(), gt_grad.float())
         grad_w = compute_input_gradient_weight_map(gt_grad.detach()).to(
             device=pred_grad.device, dtype=pred_grad.dtype)
-        highlight_prior = None
-        if input_img is not None:
-            highlight_prior = compute_highlight_prior(input_img.detach()).to(
-                device=pred_grad.device, dtype=pred_grad.dtype)
-            if highlight_prior.shape[-2:] != pred_grad.shape[-2:]:
-                highlight_prior = F.interpolate(
-                    highlight_prior, size=pred_grad.shape[-2:],
-                    mode='bilinear', align_corners=False)
-            grad_w = grad_w * (1.0 + self.highlight_prior_gamma * highlight_prior)
         l_grad_edge = (
             torch.sqrt((pred_grad - gt_grad) ** 2 + 1e-6) * grad_w
         ).mean()
 
-        if highlight_prior is None:
-            l_grad_spec = torch.tensor(0.0, device=pred_grad.device)
-        else:
-            # ★[FIX-D 问题2] 把动态目标 Sobel(est_b) 换成稳定目标 Sobel(gt_specular)。
-            #   旧版用 est_b.detach() 作目标:est_b 是模型自己的预测,在整个训练过程
-            #   中持续演化 → Sobel(est_b) 是一个"会变的靶子",pred_grad 永远在追
-            #   一个移动目标,体现在 val 曲线上就是中期的 U 形回弹(epoch 7~15)。
-            #   现在用 gt_sc.detach() 的 Sobel 作目标:目标固定不变,pred_grad
-            #   只需要单调收敛,U 形彻底消失。
-            #   语义上仍然合理:highlight_prior 在亮区为正,Sobel(input) ≈
-            #   Sobel(diffuse) + Sobel(specular) 且亮区主导项是 specular,所以
-            #   Sobel(gt_sc) 在亮区与 Sobel(input) 接近,不会与主 grad 监督冲突。
-            gt_sc_grad = normalized_sobel_magnitude(
-                gt_sc.detach().float(), quantile=0.995).to(
-                device=pred_grad.device, dtype=pred_grad.dtype)
-            if gt_sc_grad.shape[-2:] != pred_grad.shape[-2:]:
-                gt_sc_grad = F.interpolate(
-                    gt_sc_grad, size=pred_grad.shape[-2:],
-                    mode='bilinear', align_corners=False)
-            l_grad_spec = (
-                torch.abs(pred_grad - gt_sc_grad) * highlight_prior
-            ).mean()
+        l_percep = zero
+        l_stat = zero
+        l_grad = zero
+        l_grad_spec = zero
 
-        # ── spec_likelihood 头主监督 ──
-        # ★[FIX-A 问题2] 改为「二值高光标签 + pos_weight 加权 BCE + Dice」：
-        #   旧版用连续 gt_sc(0~1) 作 BCE 目标，模型最优解=匹配偏低的连续值，
-        #   永远到不了 0.5；且背景像素海量 + reduction='mean' 把整图往 0 压。
-        #   现用二值前景标签 (gt_sc > spec_lik_pos_thresh) 并以 pos_weight 平衡
-        #   前景/背景，再加 Dice 推前景重叠，使高光区跨过 0.5、二值图更完整。
         if pred_s_lik is None:
-            l_s_lik = torch.tensor(0.0, device=pred_diffuse.device)
+            l_s_lik = zero
         else:
             if pred_s_lik.shape[-2:] != gt_sc.shape[-2:]:
                 pred_s_lik = F.interpolate(
@@ -1648,108 +1601,34 @@ class EnhancedCompositeLoss(nn.Module):
                     mode='bilinear', align_corners=False)
             pred_s_lik_safe = pred_s_lik.clamp(1e-4, 1.0 - 1e-4)
             with torch.no_grad():
-                gt_bin = (gt_sc > self.spec_lik_pos_thresh).float()       # 高光前景二值标签
-                pos = gt_bin.mean().clamp(1e-3, 0.5)                      # 前景占比
+                gt_bin = (gt_sc > self.spec_lik_pos_thresh).float()
+                pos = gt_bin.mean().clamp(1e-3, 0.5)
                 pos_weight = ((1.0 - pos) / pos).clamp(1.0, self.spec_lik_pos_weight_max)
-            # 带 pos_weight 的 BCE（对 sigmoid 输出）
             bce_map = -(pos_weight * gt_bin * torch.log(pred_s_lik_safe)
                         + (1.0 - gt_bin) * torch.log(1.0 - pred_s_lik_safe))
-            l_bce = bce_map.mean()
-            # Dice：缓解极端类别不平衡，进一步推前景重叠
-            inter = (pred_s_lik_safe * gt_bin).sum(dim=(1, 2, 3))
-            union = pred_s_lik_safe.sum(dim=(1, 2, 3)) + gt_bin.sum(dim=(1, 2, 3))
-            l_dice_slik = (1.0 - (2.0 * inter + 1.0) / (union + 1.0)).mean()
-            l_s_lik = l_bce + self.spec_lik_dice_weight * l_dice_slik
+            l_s_lik = bce_map.mean()
 
-        # ── pred_s_lik 与 est_b 双向一致性 (V3.1) ──
-        if pred_s_lik is None:
-            l_s_cons = torch.tensor(0.0, device=pred_diffuse.device)
-        else:
-            soft_mask = gt_sc.detach()
-            cons_fwd = (torch.abs(pred_s_lik - est_b.detach()) * soft_mask).mean()
-            cons_bwd = (torch.abs(est_b - pred_s_lik.detach()) * soft_mask).mean()
-            l_s_cons = cons_fwd + cons_bwd
+        l_s_cons = zero
+        l_focal = zero
+        l_dice = zero
+        l_spec_peak = zero
+        l_r_focal_hl = zero
+        l_r_dual_cons = zero
+        l_r_smooth = zero
+        l_cs = zero
 
-        if self.use_ohem:
-            l_focal = specular_ohem_loss(est_b, gt_sc, self.focal, self.ohem_ratio)
-        else:
-            l_focal = self.focal(est_b, gt_sc)
-        l_dice = self.dice(est_b, gt_sc)
-        l_gc = self.gc(est_b, gt_sc)
-
-        # ── 高光区 est_b 欠预测单侧惩罚 (V3.1) ──
-        # ★[FIX-D 问题3] 把硬阈值 (gt_sc > 0.3).float() 换成 soft_high_mask:
-        #   - 硬阈值在阈值附近不连续:gt_sc 从 0.299 → 0.301 时掩码值从 0 跳到 1,
-        #     损失值会有微小阶跃。叠加 lambda_spec_peak 在旧调度里 0.1 → 0.5 的
-        #     爬升,加权贡献先升后降,呈现小幅回升的形态。
-        #   - 现在用 sigmoid(12*(gt_sc - 0.30)) 软掩码:阈值附近连续过渡,像素的
-        #     "高光程度"以平滑 [0,1] 值参与加权,损失随训练进度的演化也更平滑。
-        #   - 配合 FIX-D 常量权重(lambda_spec_peak = 0.5 锁定不变),小幅回升消失。
-        with torch.no_grad():
-            soft_high_mask = torch.sigmoid(12.0 * (gt_sc - 0.30))  # [0,1] 软掩码
-        under = F.relu(gt_sc - est_b) * soft_high_mask
-        l_spec_peak = under.mean()
-
-        # ═════════════════════════════════════════════════════════════════
-        # ★[V3.2 新增 — 针对漫反射 r 的直接监督] ★
-        # ═════════════════════════════════════════════════════════════════
-
-        # [D3] l_r_focal_hl：高光区域对 pred_r vs target 的 focal-style 监督
-        # 关键意义：旧版"r 在高光区是否去除干净"完全由 b 决定，间接监督薄弱。
-        # 这里给 r 直接增加一个高光区强约束损失，迫使 r 不允许残留高光痕迹。
-        # 配方：error * (1 + 4*soft_high_mask) * (1 + |error|)^1.5
-        #   - 在 soft_high_mask≈1（强高光区）权重 ×5
-        #   - focal 形式 (1+|err|)^1.5 让误差大的像素额外加权
-        r_err = torch.abs(pred_diffuse - target)
-        r_hl_weight = 1.0 + 4.0 * soft_high_mask
-        r_focal_term = (1.0 + r_err.detach()) ** 1.5
-        l_r_focal_hl = (r_err * r_hl_weight * r_focal_term).mean()
-
-        # [D4] l_r_dual_cons：r_direct 与最终 pred_diffuse 一致性
-        # 让 dual-head 的两条路径相互校准、互为正则。
-        # 注意：pred_r_direct 是 MainDecoder 直接头输出（grad 流），pred_diffuse 是融合 + 精修后输出。
-        # 不 detach 任何一方，让梯度可以双向流通，但用 Charbonnier 防止前期不稳定。
-        if pred_r_direct is None:
-            l_r_dual_cons = torch.tensor(0.0, device=pred_diffuse.device)
-        else:
-            l_r_dual_cons = charbonnier_loss(pred_r_direct, pred_diffuse)
-
-        # [D5] l_r_smooth：在高光区，pred_r 的局部平滑先验
-        # ★[FIX-A 问题1] 改为「单侧」约束：仅惩罚比局部均值更亮的残留（亮点/高光残留），
-        #   不再惩罚模型正常恢复的暗向条纹细节。旧版双侧惩罚与主任务(SSIM/L1)直接对抗，
-        #   导致后期细节恢复时 l_r_smooth 反弹上升、顶起总 loss。
-        pred_r_smooth = F.avg_pool2d(pred_diffuse, kernel_size=3, stride=1, padding=1)
-        bright_residual = F.relu(pred_diffuse - pred_r_smooth)
-        l_r_smooth = (bright_residual * soft_high_mask).mean()
-
-        if cross_scale_consistency is None:
-            l_cs = torch.tensor(0.0, device=pred_diffuse.device)
-        else:
-            l_cs = cross_scale_consistency.to(device=pred_diffuse.device, dtype=pred_diffuse.dtype)
-
-        # ★ 纯加权求和，所有项 ≥ 0
-        total = (self.lambda_ssim * l_ssim + self.lambda_l1 * l_l1 +
-                 self.lambda_freq * l_freq + self.lambda_perceptual * l_percep +
-                 self.lambda_spec * l_spec + self.lambda_stat * l_stat +
-                 self.lambda_grad * l_grad +
+        total = (self.lambda_ssim * l_msssim + self.lambda_l1 * l_l1 +
+                 self.lambda_freq * l_freq +
+                 self.lambda_spec * l_spec +
                  self.lambda_grad_edge * l_grad_edge +
-                 self.lambda_grad_spec * l_grad_spec +
-                 self.lambda_focal * l_focal +
-                 self.lambda_dice * l_dice + self.lambda_gc * l_gc +
-                 self.lambda_cs * l_cs +
-                 self.lambda_s_lik * l_s_lik +
-                 self.lambda_s_cons * l_s_cons +
-                 self.lambda_spec_peak * l_spec_peak +
-                 # ★[V3.2 新增] ★
-                 self.lambda_r_focal_hl * l_r_focal_hl +
-                 self.lambda_r_dual_cons * l_r_dual_cons +
-                 self.lambda_r_smooth * l_r_smooth)
+                 self.lambda_gc * l_gc +
+                 self.lambda_s_lik * l_s_lik)
 
         d = {}
         for k, v in [('total', total), ('ssim', l_ssim_single),
                       ('ssim_single_loss', l_ssim_single),
                       ('msssim_loss', l_msssim),
-                      ('ssim_mixed_loss', l_ssim),
+                      ('ssim_mixed_loss', l_msssim),
                       ('l1', l_l1),
                       ('freq', l_freq), ('perceptual', l_percep),
                       ('spec', l_spec), ('stat', l_stat), ('grad', l_grad),
@@ -2136,21 +2015,20 @@ class Encoder(nn.Module):
     编码器：ResNet50 局部纹理分支 + Swin-Tiny 多尺度上下文分支。
 
     结构流程：
-      1. ResNet50 分支提取多尺度局部纹理特征：
-         x_bb_1: [B, 64,  H/2,  W/2]
-         x_bb_2: [B, 128, H/4,  W/4]
-         x_bb_3: [B, 256, H/8,  W/8]
-         x_bb_4: [B, 512, H/16, W/16]
-      2. SwinEncoderBranch 从同一灰度输入提取 H/4、H/8、H/16 三个层级特征：
-         swin_4:  [B, 96,  H/4,  W/4]
-         swin_8:  [B, 192, H/8,  W/8]
-         swin_16: [B, 384, H/16, W/16]
-      3. H/4 和 H/8 使用 AdaptiveSkipFusion 做内容自适应 skip 融合，增强 x_bb_2 / x_bb_3。
-      4. H/16 仍沿用第一阶段 CrossModalFusion(x_bb_4, swin_feat_16) 做瓶颈层融合。
-      5. 融合结果进入 cba_after_backbone、FFC bottleneck 和 HighFrequencyEnhancement。
+      1. ResNet50 分支提取多尺度局部纹理特征。通道对齐只用 1x1 线性投影，
+         不再对 layer3/layer4 做 3x3 二次融合：
+         x_bb_1: stem，[B, 64,  H/2,  W/2]
+         x_bb_2: layer1 的 1x1 投影，[B, 128, H/4,  W/4]
+         x_bb_3: layer2 的 1x1 投影，[B, 256, H/8,  W/8]
+         x_bb_4: layer4 的 1x1 投影，加上 layer3 的 1x1 残差，[B, 512, H/16, W/16]
+      2. SwinEncoderBranch 从同一灰度输入提取 H/4、H/8、H/16。
+         先裁掉 padding token，再与 ResNet 网格对齐。
+      3. H/4、H/8 用 AdaptiveSkipFusion 按高光先验做残差注入。
+      4. H/16 用 CrossModalFusion，结果残差加回 ResNet 投影，不覆盖原特征。
+      5. 这份 x_bb_4 进入 cba_after_backbone、FFC bottleneck 和 HighFrequencyEnhancement。
+         编码器不再把 H/16 回写到浅层 skip。
 
-    本阶段不改 Decoder 接口，不引入 H/32 特征，不做多尺度 CrossModalFusion。
-    返回 5 级特征，保持后续 Decoder 的 skip connection 约定不变。
+    不改 Decoder 接口，不引入 H/32 特征。返回 5 级特征。
     """
 
     def __init__(self, swin_pretrained=True, debug_shapes=False):
@@ -2181,19 +2059,15 @@ class Encoder(nn.Module):
         self.layer3 = backbone.layer3
         self.layer4 = backbone.layer4
 
-        self.reduce_l1 = Conv2D_BN_activa(256, 128, 1, 1, 0)
-        self.reduce_l2 = Conv2D_BN_activa(512, 256, 1, 1, 0)
-        self.reduce_l3 = Conv2D_BN_activa(1024, 512, 1, 1, 0)
-        self.reduce_l4 = Conv2D_BN_activa(2048, 512, 1, 1, 0)
-        self.fuse_l34 = Conv2D_BN_activa(1024, 512, 3, 1, 1)
+        # 1x1 线性投影只做通道对齐，不加 BN / ReLU，也不再接空间卷积。
+        self.proj_l1 = nn.Conv2d(256, 128, kernel_size=1, bias=False)
+        self.proj_l2 = nn.Conv2d(512, 256, kernel_size=1, bias=False)
+        self.proj_l3 = nn.Conv2d(1024, 512, kernel_size=1, bias=False)
+        self.proj_l4 = nn.Conv2d(2048, 512, kernel_size=1, bias=False)
 
         self.swin_branch = SwinEncoderBranch(pretrained=swin_pretrained)
 
-        # 第三阶段自适应多尺度 skip 融合：
-        # H/4 和 H/8 使用 AdaptiveSkipFusion，根据内容、位置和通道动态控制 Swin 注入比例。
-        # ★[D7 V3.2] init_beta 由 0.03/0.05 调整为 0.10/0.15。
-        # 原因：旧版初始 beta 极小，前 50 epoch Swin 信号几乎不参与，等价于
-        # 浪费了 ImageNet 预训练 Swin-Tiny 的能力。提高初值让双编码器更早协作。
+        # H/4、H/8：Swin 只作为高光区域上的残差，不覆盖 ResNet skip。
         self.fuse_h4 = AdaptiveSkipFusion(
             res_channels=128,
             swin_channels=self.swin_branch.channels_4,
@@ -2202,21 +2076,13 @@ class Encoder(nn.Module):
             res_channels=256,
             swin_channels=self.swin_branch.channels_8,
             init_beta=0.15)
-        self.swin16_proj = nn.Sequential(
-            nn.Conv2d(self.swin_branch.channels_16, 512, kernel_size=1, stride=1, padding=0, bias=False),
-            nn.BatchNorm2d(512),
-            nn.GELU(),
-            nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(512),
-            nn.GELU(),
-        )
+        self.swin16_proj = nn.Conv2d(
+            self.swin_branch.channels_16, 512, kernel_size=1, stride=1, padding=0, bias=False)
 
-        # H/16 仍沿用第一阶段 CrossModalFusion，不额外 residual add，避免重复注入上下文。
+        # H/16：交叉注意力的输出残差加回 ResNet 投影。
         self.cross_modal_fusion = CrossModalFusion(
             cnn_dim=512, context_dim=512,
             out_dim=512, num_heads=4, sr_ratio=2)
-        self.top_down_refine = CrossScaleTopDownRefinement(
-            h4_channels=128, h8_channels=256, h16_channels=512, init_gamma=0.05)
         self.cba_after_backbone = Conv2D_BN_activa(512, 256, 3, 1, 1)
         self.ffc_bottleneck = FFC_BN_ACT(256, 256, 3, 0.5, 0.5, padding=1)
         self.hf_enhance = HighFrequencyEnhancement(channels=256)
@@ -2229,20 +2095,29 @@ class Encoder(nn.Module):
 
         x = self.stem_pool(x_bb_1)
         x_l1 = self.layer1(x)
-        x_bb_2 = self.reduce_l1(x_l1)
+        x_bb_2 = self.proj_l1(x_l1)
         x_l2 = self.layer2(x_l1)
-        x_bb_3 = self.reduce_l2(x_l2)
+        x_bb_3 = self.proj_l2(x_l2)
         x_l3 = self.layer3(x_l2)
         x_l4 = self.layer4(x_l3)
 
-        x_l3_512 = self.reduce_l3(x_l3)
-        x_l4_512 = self.reduce_l4(x_l4)
-        x_bb_4 = self.fuse_l34(torch.cat([x_l3_512, x_l4_512], 1))
+        x_l4_proj = self.proj_l4(x_l4)
+        x_l3_proj = self.proj_l3(x_l3)
+        if x_l3_proj.shape[-2:] != x_l4_proj.shape[-2:]:
+            x_l3_proj = F.interpolate(
+                x_l3_proj, size=x_l4_proj.shape[-2:],
+                mode='bilinear', align_corners=False)
+        x_bb_4 = x_l4_proj + x_l3_proj
 
         swin_feats = self.swin_branch(x_in)
-        swin_4 = swin_feats["swin_4"]
-        swin_8 = swin_feats["swin_8"]
-        swin_16 = swin_feats["swin_16"]
+        pad_h = swin_feats["pad_h"]
+        pad_w = swin_feats["pad_w"]
+        swin_4 = _crop_swin_padding(swin_feats["swin_4"], pad_h, pad_w, stride=4)
+        swin_8 = _crop_swin_padding(swin_feats["swin_8"], pad_h, pad_w, stride=8)
+        swin_16 = _crop_swin_padding(swin_feats["swin_16"], pad_h, pad_w, stride=16)
+        swin_4 = _align_feature(swin_4, x_bb_2)
+        swin_8 = _align_feature(swin_8, x_bb_3)
+        swin_16 = _align_feature(swin_16, x_bb_4)
 
         if self.debug_shapes:
             print(
@@ -2251,11 +2126,9 @@ class Encoder(nn.Module):
                 f"x_bb_4={tuple(x_bb_4.shape)}, swin_16={tuple(swin_16.shape)}"
             )
 
-        # H/4 自适应融合：保留细条纹和浅层边缘，同时按内容注入 Swin 局部窗口上下文。
-        x_bb_2 = self.fuse_h4(x_bb_2, swin_4)
-
-        # H/8 自适应融合：对高光边界、局部反射区域和弱高光结构进行内容自适应增强。
-        x_bb_3 = self.fuse_h8(x_bb_3, swin_8)
+        highlight_prior = compute_highlight_prior(x_in)
+        x_bb_2 = self.fuse_h4(x_bb_2, swin_4, highlight_prior)
+        x_bb_3 = self.fuse_h8(x_bb_3, swin_8, highlight_prior)
 
         if self.debug_shapes:
             gate4 = self.fuse_h4.last_gate_mean
@@ -2268,13 +2141,9 @@ class Encoder(nn.Module):
                 f"gate_h8_mean={gate8_str}"
             )
 
-        # H/16 瓶颈融合保持第一阶段设计：投影到 512 后与 ResNet x_bb_4 做 CrossModalFusion。
-        if swin_16.shape[-2:] != x_bb_4.shape[-2:]:
-            swin_16 = F.interpolate(swin_16, size=x_bb_4.shape[-2:], mode='bilinear', align_corners=False)
         swin_feat_16 = self.swin16_proj(swin_16)
-
         fused = self.cross_modal_fusion(x_bb_4, swin_feat_16)
-        x_bb_2, x_bb_3, x_bb_4 = self.top_down_refine(x_bb_2, x_bb_3, fused)
+        x_bb_4 = x_bb_4 + fused
         x_c = self.cba_after_backbone(x_bb_4)
 
         nl = 256 - int(256 * 0.5)
@@ -2304,9 +2173,8 @@ class GradientDecoder(nn.Module):
         - "哪里是边界"（梯度头）
         - "哪里是高光"（高光概率头）
 
-    这个 `x_s` 还会被馈送到 EnhancementLayers 的 `specular_gate` 和
-    MainDecoder 的 `joint_gate/spec_lik_gate`，作为显式监督下的高光先验，
-    替代原来仅依赖"亮度+梯度"启发式的隐式估计。
+    这个 `x_s` 被馈送到 EnhancementLayers 的 `specular_gate`，
+    作为显式监督下的高光先验。主解码器不再对它做第二路门控。
     ─────────────────────────────────────────────────
     """
 
@@ -2443,10 +2311,10 @@ class GradientDecoder(nn.Module):
 
 class MainDecoder(nn.Module):
     """
-    主解码器：融合编码器 skip connection + 梯度分支增强特征 + 梯度图，
-    逐级上采样并最终输出镜面分量 est_b。
-    每级 transposed_block 输出后使用 SpecularAwareAttention，
-    利用原始输入亮度作为先验增强高光区域响应。
+    主解码器：融合编码器 skip connection 与梯度分支增强特征，
+    逐级上采样并输出镜面分量 est_b 和直接漫反射 r_direct。
+    高光位置由 EnhancementLayers 写入 xe，再在这里与 skip 拼接。
+    每一级只保留 SpecularAwareAttention 作为亮度先验，不再做三路乘法门控。
     """
 
     def __init__(self, in_channels):
@@ -2498,54 +2366,14 @@ class MainDecoder(nn.Module):
         self.sa3 = SpecularAwareAttention(64 * 3, threshold=0.8)
         self.sa4 = SpecularAwareAttention(32 * 3, threshold=0.8)
 
-        # [P10 + NEW] 三条并行调制通道：
-        #   grad_gate_i    ← 仅 x_g（梯度先验：哪里是边界）
-        #   joint_gate_i   ← concat(x_g, input, x_s) 3 通道：高光相关联合判别
-        #   spec_lik_gate_i← 仅 x_s（监督下的高光概率，独立 scale 控制）
-        # 三条通道相加再乘到特征上，让主解码器既保留泛边缘提示，也获得显式高光定位。
-        self.grad_gate_2 = nn.Sequential(nn.Conv2d(1, 1, 3, 1, 1, bias=True), nn.Sigmoid())
-        self.grad_gate_3 = nn.Sequential(nn.Conv2d(1, 1, 3, 1, 1, bias=True), nn.Sigmoid())
-        self.grad_gate_4 = nn.Sequential(nn.Conv2d(1, 1, 3, 1, 1, bias=True), nn.Sigmoid())
-        # joint_gate: 输入由原来 2 通道(g, input) → 3 通道(g, input, s)
-        self.joint_gate_2 = nn.Sequential(nn.Conv2d(3, 1, 3, 1, 1, bias=True), nn.Sigmoid())
-        self.joint_gate_3 = nn.Sequential(nn.Conv2d(3, 1, 3, 1, 1, bias=True), nn.Sigmoid())
-        self.joint_gate_4 = nn.Sequential(nn.Conv2d(3, 1, 3, 1, 1, bias=True), nn.Sigmoid())
-        # [NEW] spec_lik_gate: 1 通道(s)，独立 scale，专门反映监督下的高光概率
-        self.spec_lik_gate_2 = nn.Sequential(nn.Conv2d(1, 1, 3, 1, 1, bias=True), nn.Sigmoid())
-        self.spec_lik_gate_3 = nn.Sequential(nn.Conv2d(1, 1, 3, 1, 1, bias=True), nn.Sigmoid())
-        self.spec_lik_gate_4 = nn.Sequential(nn.Conv2d(1, 1, 3, 1, 1, bias=True), nn.Sigmoid())
-        # ★[D6] V3.2 调整：让三路门控初始就有显著调制作用。
-        # 旧版 bias=-1.0 → sigmoid(-1)≈0.27，scale=0.15 clamp[0,0.3]
-        # → 初始调制 1+3×0.15×0.27=1.12 几乎无作用
-        # 新版 bias=0.0 → sigmoid(0)=0.5, scale=0.25 clamp[0,0.4]
-        # → 初始调制 1+3×0.25×0.5=1.375，前期就能发挥作用
-        self.grad_gate_scale = nn.Parameter(torch.tensor(0.25))
-        self.joint_gate_scale = nn.Parameter(torch.tensor(0.25))
-        self.spec_lik_gate_scale = nn.Parameter(torch.tensor(0.25))
-        self._init_aux_gates()
         # ★[D1] dual-head 融合系数（logit 形式，sigmoid 后约 0.5，初始平衡两路）
         # alpha = sigmoid(logit_alpha)，最终 r = alpha * r_direct + (1-alpha) * r_subtraction
         # 初始 logit_alpha = 0.0 → alpha = 0.5（两路等权）
         self.dual_head_alpha_logit = nn.Parameter(torch.tensor(0.0))
 
-    def _init_aux_gates(self):
-        # ★[D6] bias 由 -1.0 调整为 0.0，让初始 sigmoid 输出≈0.5（中性而非偏低）
-        for gate in (self.grad_gate_2, self.grad_gate_3, self.grad_gate_4,
-                     self.joint_gate_2, self.joint_gate_3, self.joint_gate_4,
-                     self.spec_lik_gate_2, self.spec_lik_gate_3, self.spec_lik_gate_4):
-            conv = gate[0]
-            nn.init.zeros_(conv.weight)
-            nn.init.constant_(conv.bias, 0.0)  # 由 -1.0 → 0.0
-
-    @staticmethod
-    def _resize_prior(prior, size, device, dtype):
-        if prior.shape[1] != 1:
-            prior = prior.mean(dim=1, keepdim=True)
-        if prior.shape[-2:] != size:
-            prior = F.interpolate(prior, size=size, mode='bilinear', align_corners=False)
-        return prior.to(device=device, dtype=dtype)
-
     def forward(self, c_features, enhanced_features, x_g, x_s, original_input):
+        # x_s 已在 EnhancementLayers 中调制 xe，这里不再做第二路门控。
+        del x_s
         x_bb_1, x_bb_2, x_bb_3, x_bb_4, x_c = c_features
         xe1, xe2, xe3, xe4 = enhanced_features
 
@@ -2570,14 +2398,6 @@ class MainDecoder(nn.Module):
         nl = 384 - int(384 * 0.25)
         fo = self.ffc_h8((x[:, :nl], x[:, nl:]))
         x = torch.cat([fo[0], fo[1]], 1) + x
-        # [P10 + NEW] 三通道联合调制：grad + joint(g,i,s) + spec_lik
-        _xg2 = F.interpolate(x_g, x.shape[-2:], mode='bilinear', align_corners=False) if x_g.shape[-2:] != x.shape[-2:] else x_g
-        _xs2 = F.interpolate(x_s, x.shape[-2:], mode='bilinear', align_corners=False) if x_s.shape[-2:] != x.shape[-2:] else x_s
-        _inp2 = self._resize_prior(original_input, x.shape[-2:], x.device, x.dtype)
-        x = x * (1.0 +
-                 self.grad_gate_scale.clamp(0.0, 0.3) * self.grad_gate_2(_xg2) +
-                 self.joint_gate_scale.clamp(0.0, 0.3) * self.joint_gate_2(torch.cat([_xg2, _inp2, _xs2], dim=1)) +
-                 self.spec_lik_gate_scale.clamp(0.0, 0.3) * self.spec_lik_gate_2(_xs2))
         x = self.sa2(x, original_input)
         if x_bb_3.shape[-2:] != x.shape[-2:]:
             x_bb_3 = F.interpolate(x_bb_3, x.shape[-2:], mode='bilinear', align_corners=False)
@@ -2592,14 +2412,6 @@ class MainDecoder(nn.Module):
         nl4 = 192 - int(192 * 0.25)
         fo4 = self.ffc_h4((x[:, :nl4], x[:, nl4:]))
         x = torch.cat([fo4[0], fo4[1]], 1) + x
-        # [P10 + NEW] 三通道联合调制 Level 3
-        _xg3 = F.interpolate(x_g, x.shape[-2:], mode='bilinear', align_corners=False) if x_g.shape[-2:] != x.shape[-2:] else x_g
-        _xs3 = F.interpolate(x_s, x.shape[-2:], mode='bilinear', align_corners=False) if x_s.shape[-2:] != x.shape[-2:] else x_s
-        _inp3 = self._resize_prior(original_input, x.shape[-2:], x.device, x.dtype)
-        x = x * (1.0 +
-                 self.grad_gate_scale.clamp(0.0, 0.3) * self.grad_gate_3(_xg3) +
-                 self.joint_gate_scale.clamp(0.0, 0.3) * self.joint_gate_3(torch.cat([_xg3, _inp3, _xs3], dim=1)) +
-                 self.spec_lik_gate_scale.clamp(0.0, 0.3) * self.spec_lik_gate_3(_xs3))
         x = self.sa3(x, original_input)
         if x_bb_2.shape[-2:] != x.shape[-2:]:
             x_bb_2 = F.interpolate(x_bb_2, x.shape[-2:], mode='bilinear', align_corners=False)
@@ -2610,14 +2422,6 @@ class MainDecoder(nn.Module):
 
         # Level 4
         x = self.transposed_block_4(x)
-        # [P10 + NEW] 三通道联合调制 Level 4
-        _xg4 = F.interpolate(x_g, x.shape[-2:], mode='bilinear', align_corners=False) if x_g.shape[-2:] != x.shape[-2:] else x_g
-        _xs4 = F.interpolate(x_s, x.shape[-2:], mode='bilinear', align_corners=False) if x_s.shape[-2:] != x.shape[-2:] else x_s
-        _inp4 = self._resize_prior(original_input, x.shape[-2:], x.device, x.dtype)
-        x = x * (1.0 +
-                 self.grad_gate_scale.clamp(0.0, 0.3) * self.grad_gate_4(_xg4) +
-                 self.joint_gate_scale.clamp(0.0, 0.3) * self.joint_gate_4(torch.cat([_xg4, _inp4, _xs4], dim=1)) +
-                 self.spec_lik_gate_scale.clamp(0.0, 0.3) * self.spec_lik_gate_4(_xs4))
         x = self.sa4(x, original_input)
         if x_bb_1.shape[-2:] != x.shape[-2:]:
             x_bb_1 = F.interpolate(x_bb_1, x.shape[-2:], mode='bilinear', align_corners=False)

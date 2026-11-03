@@ -147,9 +147,31 @@ d = load('absolute_phase_81-72-64_masked.mat');
 phase = d.phase_data;   % 2D，相位；掩码外为 NaN
 ```
 
+### 4) `fringe_gray_analysis_triple.py`
+
+**用途**
+
+- 在同一 ROI、同一行/列上对比 **三条** 灰度剖面（典型：漫反射原图、网络处理、高动态 HDR）。
+- 以漫反射为参考，输出网络与高动态相对参考的 **两条误差曲线**。
+- 交互/手动参数风格与 `fringe_gray_analysis.py` 一致。
+
+**怎么用**
+
+- 修改脚本底部 `PATH_DIFFUSE` / `PATH_NETWORK` / `PATH_HDR` 及标签后运行：
+  `python phase_analysis/fringe_gray_analysis_triple.py`
+
+**输出**
+
+- `{basename}_images.png`（三图并排）、`_compare.png`（三线剖面）、`_error.png`（双误差）
+- `{basename}_diffuse.png` / `_network.png` / `_hdr.png`
+- `{basename}.npy` / `.mat`
+
+---
+
 ## 选型建议
 
 - **只看灰度剖面 / 想做高反光前后对比**：用 `fringe_gray_analysis.py`
+- **三条曲线（漫反射 + 网络 + HDR）一次对比**：用 `fringe_gray_analysis_triple.py`
 - **已有掩码，想快速算三频绝对相位并出图**：用 `three_frequency_phase_visualization.py`
 - **想要一站式（ROI→绝对相位→保存→曲线+伪彩+3D）**：用 `integrated_absolute_phase_tool.py`
 

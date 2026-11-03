@@ -380,7 +380,7 @@ def main():
         'VIS_EVERY_N_EPOCHS': 10,
         'VIS_NUM_SAMPLES': 2,
         'VIS_SAMPLE_SEED': None,
-        'OUTPUT_FOLDER': f'experiments/hdrnet_{timestamp}',
+        'OUTPUT_FOLDER': f'comporison_model/experiments/hdrnet_{timestamp}',
     }
 
     print("\n当前配置:")
